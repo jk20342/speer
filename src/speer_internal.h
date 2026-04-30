@@ -30,7 +30,6 @@
     #include <errno.h>
     #include <time.h>
     #define CLOSESOCKET close
-    #define SHUT_RDWR SHUT_RDWR
 #endif
 
 #define SPEER_STATE_INITIAL 0
