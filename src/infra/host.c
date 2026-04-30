@@ -381,7 +381,7 @@ int speer_peer_set_address(speer_peer_t* peer, const char* address) {
     if (inet_pton(AF_INET, host, &sin->sin_addr) != 1) {
         struct hostent* he = gethostbyname(host);
         if (he && he->h_addrtype == AF_INET) {
-            memcpy(&sin->sin_addr, he->h_addr, 4);
+            memcpy(&sin->sin_addr, he->h_addr_list[0], 4);
         } else {
             return SPEER_ERROR_NETWORK;
         }

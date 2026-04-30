@@ -2,6 +2,10 @@
 #define _WIN32_WINNT 0x0600
 #endif
 
+#if !defined(_WIN32)
+#define _GNU_SOURCE
+#endif
+
 #include "speer_internal.h"
 
 #if defined(_WIN32)
@@ -9,6 +13,8 @@
     #include <wincrypt.h>
 #else
     #include <sys/random.h>
+    #include <sys/time.h>
+    #include <time.h>
     #include <fcntl.h>
     #include <unistd.h>
     #include <errno.h>

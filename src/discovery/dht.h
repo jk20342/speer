@@ -10,7 +10,6 @@
 #define DHT_K 20
 #define DHT_ALPHA 3
 #define DHT_MAX_BUCKETS 160
-#define DHT_MAX_NODES_PER_BUCKET 20
 #define DHT_RPC_TIMEOUT_MS 5000
 #define DHT_REFRESH_INTERVAL_MS 900000
 #define DHT_REPUBLISH_INTERVAL_MS 86400000
@@ -41,15 +40,6 @@ typedef struct dht_bucket_s {
 } dht_bucket_t;
 
 typedef struct {
-    uint8_t id[DHT_ID_BYTES];
-    dht_bucket_t* root;
-    int (*send_rpc)(void* user, const char* addr, const uint8_t* data, size_t len);
-    void* user;
-    uint32_t total_nodes;
-    uint64_t start_time_ms;
-} dht_t;
-
-typedef struct {
     uint8_t key[DHT_ID_BYTES];
     uint8_t value[DHT_VALUE_MAX_SIZE];
     size_t value_len;
@@ -57,6 +47,29 @@ typedef struct {
     uint64_t expires_at_ms;
     uint8_t original_publisher[DHT_ID_BYTES];
 } dht_value_t;
+
+typedef struct {
+    uint8_t id[DHT_ID_BYTES];
+    dht_bucket_t* root;
+    int (*send_rpc)(void* user, const char* addr, const uint8_t* data, size_t len);
+    void* user;
+    uint32_t total_nodes;
+    uint64_t start_time_ms;
+    bool bootstrapped;
+    uint64_t last_bootstrap_ms;
+} dht_t;
+
+typedef struct {
+    char address[64];
+    uint64_t last_attempt_ms;
+    int failures;
+} dht_bootstrap_t;
+
+typedef struct {
+    dht_bootstrap_t nodes[8];
+    int num_nodes;
+    int active_count;
+} dht_bootstrap_list_t;
 
 int dht_init(dht_t* dht, const uint8_t node_id[DHT_ID_BYTES]);
 void dht_free(dht_t* dht);
@@ -90,6 +103,11 @@ int dht_iterative_find_value(dht_t* dht, const uint8_t* key,
 
 void dht_refresh_buckets(dht_t* dht, uint64_t now_ms);
 void dht_expire_values(dht_t* dht, uint64_t now_ms);
+
+void dht_bootstrap_init(dht_bootstrap_list_t* list);
+void dht_bootstrap_add(dht_bootstrap_list_t* list, const char* address);
+int dht_bootstrap_run(dht_t* dht, dht_bootstrap_list_t* list, uint64_t now_ms);
+int dht_is_bootstrapped(dht_t* dht);
 
 void dht_distance(const uint8_t* a, const uint8_t* b, uint8_t* out);
 int dht_distance_cmp(const uint8_t* a, const uint8_t* b, const uint8_t* target);
