@@ -48,13 +48,16 @@ typedef struct {
 } speer_quic_pkt_t;
 
 int speer_quic_keys_init_initial(speer_quic_keys_t *client_keys, speer_quic_keys_t *server_keys,
-                                 const uint8_t *initial_dcid, size_t initial_dcid_len);
+                                 const uint8_t *initial_dcid, size_t initial_dcid_len,
+                                 uint32_t version);
 
 int speer_quic_pkt_encode_long(uint8_t *out, size_t out_cap, size_t *out_len,
                                const speer_quic_pkt_t *p, speer_quic_keys_t *keys);
 
 int speer_quic_pkt_decode_long(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_len,
                                speer_quic_keys_t *keys);
+
+uint64_t speer_quic_decode_pn(uint64_t largest_pn, uint64_t truncated_pn, size_t pn_nbits);
 
 int speer_quic_pkt_encode_short(uint8_t *out, size_t out_cap, size_t *out_len, const uint8_t *dcid,
                                 size_t dcid_len, uint64_t pn, size_t pn_length,

@@ -70,10 +70,19 @@ typedef struct {
     speer_tls13_keys_t client_app_keys;
     speer_tls13_keys_t server_app_keys;
 
+    uint8_t transcript_hash_after_cert[SPEER_TLS13_MAX_HASH];
+    uint8_t transcript_hash_after_cv[SPEER_TLS13_MAX_HASH];
+    uint8_t transcript_hash_after_sfin[SPEER_TLS13_MAX_HASH];
+
     uint8_t peer_libp2p_pub[64];
     size_t peer_libp2p_pub_len;
     speer_libp2p_keytype_t peer_libp2p_kt;
     int peer_libp2p_verified;
+    int peer_cert_outer_verified;
+
+    uint8_t peer_spki_pubkey[600];
+    size_t peer_spki_pubkey_len;
+    uint16_t peer_spki_alg_tls_id;
 
     const char *alpn;
     char negotiated_alpn[32];
@@ -83,6 +92,13 @@ typedef struct {
 
     uint8_t out_buf[8192];
     size_t out_len;
+
+    uint64_t client_record_seq;
+    uint64_t server_record_seq;
+
+    int client_finished_sent;
+    int server_finished_received;
+    int cert_request_seen;
 } speer_tls13_t;
 
 int speer_tls13_init_handshake(speer_tls13_t *h, speer_tls_role_t role, const uint8_t cert_priv[32],

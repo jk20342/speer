@@ -14,7 +14,8 @@ void speer_pb_reader_init(speer_pb_reader_t *r, const uint8_t *buf, size_t len) 
 }
 
 static int pb_avail(speer_pb_reader_t *r, size_t n) {
-    return r->pos + n <= r->len;
+    if (r->pos > r->len) return 0;
+    return n <= r->len - r->pos;
 }
 
 int speer_pb_read_varint(speer_pb_reader_t *r, uint64_t *v) {
@@ -33,7 +34,12 @@ int speer_pb_read_varint(speer_pb_reader_t *r, uint64_t *v) {
 int speer_pb_read_tag(speer_pb_reader_t *r, uint32_t *field, uint32_t *wire) {
     uint64_t tag = 0;
     if (speer_pb_read_varint(r, &tag) != 0) return -1;
-    if (field) *field = (uint32_t)(tag >> 3);
+    uint32_t f = (uint32_t)(tag >> 3);
+    if (f == 0) {
+        r->err = 1;
+        return -1;
+    }
+    if (field) *field = f;
     if (wire) *wire = (uint32_t)(tag & 0x7);
     return 0;
 }
@@ -62,6 +68,10 @@ int speer_pb_read_bool(speer_pb_reader_t *r, int *v) {
 int speer_pb_read_bytes(speer_pb_reader_t *r, const uint8_t **data, size_t *len) {
     uint64_t l = 0;
     if (speer_pb_read_varint(r, &l) != 0) return -1;
+    if (l > (uint64_t)SIZE_MAX) {
+        r->err = 1;
+        return -1;
+    }
     if (!pb_avail(r, (size_t)l)) {
         r->err = 1;
         return -1;

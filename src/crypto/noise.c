@@ -220,78 +220,80 @@ int speer_noise_xx_read_msg3(speer_handshake_t *hs, const uint8_t in[48]) {
     return 0;
 }
 
+int speer_noise_xx_write_msg2_p(speer_handshake_t *hs, const uint8_t *payload, size_t payload_len,
+                                uint8_t *out, size_t out_cap, size_t *out_len) {
+    if (!hs || !out) return -1;
+    if (out_cap < 80 + payload_len + 16) return -1;
+
+    if (speer_noise_xx_write_msg2(hs, out) != 0) return -1;
+
+    uint8_t scratch[1024];
+    if (payload_len > sizeof(scratch)) return -1;
+    if (payload_len > 0) COPY(scratch, payload, payload_len);
+    encrypt_and_hash(hs, out + 80, scratch, payload_len);
+    if (out_len) *out_len = 80 + payload_len + 16;
+    WIPE(scratch, payload_len);
+    return 0;
+}
+
+int speer_noise_xx_read_msg2_p(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
+                               uint8_t *payload_out, size_t payload_cap, size_t *payload_len) {
+    if (!hs || !in || in_len < 80 + 16) return -1;
+    if (speer_noise_xx_read_msg2(hs, in) != 0) return -1;
+    size_t pl = in_len - 80 - 16;
+    if (pl > payload_cap) return -1;
+    if (decrypt_and_hash(hs, payload_out, in + 80, pl + 16) != 0) return -1;
+    if (payload_len) *payload_len = pl;
+    return 0;
+}
+
+int speer_noise_xx_write_msg3_p(speer_handshake_t *hs, const uint8_t *payload, size_t payload_len,
+                                uint8_t *out, size_t out_cap, size_t *out_len) {
+    if (!hs || !out) return -1;
+    if (out_cap < 48 + payload_len + 16) return -1;
+
+    if (speer_noise_xx_write_msg3(hs, out) != 0) return -1;
+
+    uint8_t scratch[1024];
+    if (payload_len > sizeof(scratch)) return -1;
+    if (payload_len > 0) COPY(scratch, payload, payload_len);
+    encrypt_and_hash(hs, out + 48, scratch, payload_len);
+    if (out_len) *out_len = 48 + payload_len + 16;
+    WIPE(scratch, payload_len);
+    return 0;
+}
+
+int speer_noise_xx_read_msg3_p(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
+                               uint8_t *payload_out, size_t payload_cap, size_t *payload_len) {
+    if (!hs || !in || in_len < 48 + 16) return -1;
+    if (speer_noise_xx_read_msg3(hs, in) != 0) return -1;
+    size_t pl = in_len - 48 - 16;
+    if (pl > payload_cap) return -1;
+    if (decrypt_and_hash(hs, payload_out, in + 48, pl + 16) != 0) return -1;
+    if (payload_len) *payload_len = pl;
+    return 0;
+}
+
 int speer_noise_xx_initiator_handshake(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
                                        uint8_t *out, size_t *out_len,
                                        const uint8_t local_privkey[32]) {
-    uint8_t temp[32];
-    size_t n;
-
-    switch (hs->step) {
-    case 0:
-        speer_noise_xx_write_e(hs, out, out_len);
-
-        if (in_len < 32) return -1;
-        speer_noise_xx_read_e(hs, in, 32);
-        in += 32;
-        in_len -= 32;
-
-        if (in_len < 48) return -1;
-        if (speer_noise_xx_read_s(hs, in, 48) != 0) return -1;
-        in += 48;
-        in_len -= 48;
-
-        speer_x25519(temp, local_privkey, hs->remote_pubkey);
-        mix_key(hs, temp);
-        WIPE(temp, 32);
-
-        speer_noise_xx_write_s(hs, out + *out_len, &n);
-        *out_len += n;
-
-        speer_x25519(temp, local_privkey, hs->remote_pubkey);
-        mix_key(hs, temp);
-        WIPE(temp, 32);
-
-        hs->step = 1;
-        return 0;
-
-    default:
-        return -1;
-    }
+    (void)hs;
+    (void)in;
+    (void)in_len;
+    (void)out;
+    (void)out_len;
+    (void)local_privkey;
+    return -1;
 }
 
 int speer_noise_xx_responder_handshake(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
                                        uint8_t *out, size_t *out_len,
                                        const uint8_t local_privkey[32]) {
-    uint8_t temp[32];
-    size_t n;
-
-    switch (hs->step) {
-    case 0:
-        if (in_len < 32) return -1;
-        speer_noise_xx_read_e(hs, in, 32);
-        in += 32;
-        in_len -= 32;
-
-        speer_noise_xx_write_e(hs, out, out_len);
-
-        speer_x25519(temp, local_privkey, hs->remote_pubkey);
-        mix_key(hs, temp);
-        WIPE(temp, 32);
-
-        speer_noise_xx_write_s(hs, out + *out_len, &n);
-        *out_len += n;
-
-        speer_x25519(temp, local_privkey, hs->remote_pubkey);
-        mix_key(hs, temp);
-        WIPE(temp, 32);
-
-        if (in_len < 48) return -1;
-        if (speer_noise_xx_read_s(hs, in, 48) != 0) return -1;
-
-        hs->step = 1;
-        return 0;
-
-    default:
-        return -1;
-    }
+    (void)hs;
+    (void)in;
+    (void)in_len;
+    (void)out;
+    (void)out_len;
+    (void)local_privkey;
+    return -1;
 }

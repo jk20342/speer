@@ -49,7 +49,7 @@ int speer_tls13_set_handshake_secret(speer_tls13_keysched_t *ks, const uint8_t *
 int speer_tls13_set_master_secret(speer_tls13_keysched_t *ks);
 
 int speer_tls13_handshake_keys(const speer_tls13_keysched_t *ks, speer_tls13_keys_t *client_keys,
-                               speer_tls13_keys_t *server_keys, const uint8_t *hs_transcript_hash);
+                               speer_tls13_keys_t *server_keys);
 
 int speer_tls13_application_keys(const speer_tls13_keysched_t *ks, speer_tls13_keys_t *client_keys,
                                  speer_tls13_keys_t *server_keys,

@@ -101,7 +101,6 @@ static void ge_p3_tobytes(uint8_t s[32], const ge_p3 *p) {
     s[31] |= (fe25519_isnegative(x) ? 0x80 : 0);
 }
 
-/* Ed25519 group order L = 2^252 + 27742317777372353535851937790883648493 */
 static const int64_t L_LIMBS[32] = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
                                     0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
                                     0,    0,    0,    0,    0,    0,    0,    0,

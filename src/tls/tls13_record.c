@@ -2,6 +2,10 @@
 
 #include "speer_internal.h"
 
+#define TLS13_MAX_RECORD_PLAINTEXT 16384
+#define TLS13_MAX_RECORD_TLSCT     (5 + TLS13_MAX_RECORD_PLAINTEXT + 256 + 16)
+#define TLS13_SEQ_MAX              ((uint64_t)1 << 48)
+
 void speer_tls13_record_dir_init(speer_tls13_record_dir_t *d, const speer_tls13_suite_t *suite,
                                  const speer_tls13_keys_t *k) {
     ZERO(d, sizeof(*d));
@@ -19,7 +23,13 @@ int speer_tls13_record_seal(speer_tls13_record_dir_t *d, uint8_t inner_type,
                             const uint8_t *plaintext, size_t pt_len, uint8_t *out_record,
                             size_t out_cap, size_t *out_len) {
     if (!d->active) return -1;
+    if (d->seq >= TLS13_SEQ_MAX) return -1;
+    if (pt_len > TLS13_MAX_RECORD_PLAINTEXT) return -1;
+    if (inner_type != TLS_CT_HANDSHAKE && inner_type != TLS_CT_APPLICATION_DATA &&
+        inner_type != TLS_CT_ALERT)
+        return -1;
     size_t inner_len = pt_len + 1;
+    if (inner_len + 16 > 0xffff) return -1;
     size_t total = 5 + inner_len + 16;
     if (total > out_cap) return -1;
 
@@ -47,10 +57,14 @@ int speer_tls13_record_open(speer_tls13_record_dir_t *d, const uint8_t *record, 
                             uint8_t *out_plain, size_t out_cap, size_t *out_len,
                             uint8_t *out_inner_type) {
     if (!d->active) return -1;
+    if (d->seq >= TLS13_SEQ_MAX) return -1;
     if (record_len < 5 + 16) return -1;
+    if (record_len > TLS13_MAX_RECORD_TLSCT) return -1;
     if (record[0] != TLS_CT_APPLICATION_DATA) return -1;
+    if (record[1] != 0x03 || record[2] != 0x03) return -1;
     size_t body_len = ((size_t)record[3] << 8) | record[4];
-    if (body_len < 16 || 5 + body_len > record_len) return -1;
+    if (body_len < 16 || 5 + body_len != record_len) return -1;
+    if (body_len > TLS13_MAX_RECORD_PLAINTEXT + 256 + 16) return -1;
     size_t ct_len = body_len - 16;
     if (ct_len > out_cap) return -1;
 
@@ -64,7 +78,10 @@ int speer_tls13_record_open(speer_tls13_record_dir_t *d, const uint8_t *record, 
     size_t pt_len = ct_len;
     while (pt_len > 0 && out_plain[pt_len - 1] == 0) pt_len--;
     if (pt_len == 0) return -1;
-    if (out_inner_type) *out_inner_type = out_plain[pt_len - 1];
+    uint8_t inner = out_plain[pt_len - 1];
+    if (inner != TLS_CT_HANDSHAKE && inner != TLS_CT_APPLICATION_DATA && inner != TLS_CT_ALERT)
+        return -1;
+    if (out_inner_type) *out_inner_type = inner;
     if (out_len) *out_len = pt_len - 1;
     return 0;
 }

@@ -34,9 +34,14 @@ typedef struct {
     int64_t not_before_utc;
     int64_t not_after_utc;
     int is_ca;
+    int has_basic_constraints;
+    int has_path_len;
     int path_len_constraint;
     int key_usage;
+    int has_key_usage;
     int ext_key_usage;
+    int has_ext_key_usage;
+    int unknown_critical_ext;
     char san_dns[SPEER_X509_MAX_DNS][SPEER_X509_NAME_MAX];
     size_t num_san_dns;
 } speer_x509_t;

@@ -16,11 +16,13 @@ int speer_libp2p_noise_init(speer_libp2p_noise_t *n, const uint8_t static_pub[32
     COPY(n->local_static_pub, static_pub, 32);
     COPY(n->local_static_priv, static_priv, 32);
     n->local_keytype = kt;
-    if (libp2p_pub && libp2p_pub_len <= sizeof(n->local_libp2p_pub)) {
+    if (libp2p_pub) {
+        if (libp2p_pub_len > sizeof(n->local_libp2p_pub)) return -1;
         COPY(n->local_libp2p_pub, libp2p_pub, libp2p_pub_len);
         n->local_libp2p_pub_len = libp2p_pub_len;
     }
-    if (libp2p_priv && libp2p_priv_len <= sizeof(n->local_libp2p_priv)) {
+    if (libp2p_priv) {
+        if (libp2p_priv_len > sizeof(n->local_libp2p_priv)) return -1;
         COPY(n->local_libp2p_priv, libp2p_priv, libp2p_priv_len);
         n->local_libp2p_priv_len = libp2p_priv_len;
     }
@@ -50,6 +52,9 @@ int speer_libp2p_noise_payload_parse(const uint8_t *in, size_t in_len, speer_lib
     speer_pb_reader_t r;
     speer_pb_reader_init(&r, in, in_len);
     int got_id = 0;
+    int got_sig = 0;
+    if (sig) *sig = NULL;
+    if (sig_len) *sig_len = 0;
     while (r.pos < r.len) {
         uint32_t f, wire;
         if (speer_pb_read_tag(&r, &f, &wire) != 0) return -1;
@@ -62,11 +67,14 @@ int speer_libp2p_noise_payload_parse(const uint8_t *in, size_t in_len, speer_lib
             got_id = 1;
         } else if (f == 2 && wire == PB_WIRE_LEN) {
             if (speer_pb_read_bytes(&r, sig, sig_len) != 0) return -1;
+            if (!sig_len || *sig_len != 64) return -1;
+            got_sig = 1;
         } else {
             if (speer_pb_skip(&r, wire) != 0) return -1;
         }
     }
-    return got_id ? 0 : -1;
+    if (!got_id || !got_sig) return -1;
+    return 0;
 }
 
 int speer_libp2p_noise_sign_static(uint8_t *sig_out, size_t sig_cap, size_t *sig_len,

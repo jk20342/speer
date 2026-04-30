@@ -267,9 +267,17 @@ void speer_hkdf2_extract(const speer_hash_iface_t *h, uint8_t *prk, const uint8_
 
 void speer_hkdf2_expand(const speer_hash_iface_t *h, uint8_t *okm, size_t okm_len,
                         const uint8_t *prk, size_t prk_len, const uint8_t *info, size_t info_len) {
+    if (info_len > 256) {
+        ZERO(okm, okm_len);
+        return;
+    }
+    size_t n = (okm_len + h->digest_size - 1) / h->digest_size;
+    if (n > 255) {
+        ZERO(okm, okm_len);
+        return;
+    }
     uint8_t t[SPEER_HASH_MAX_DIGEST];
     size_t t_len = 0;
-    size_t n = (okm_len + h->digest_size - 1) / h->digest_size;
 
     for (size_t i = 1; i <= n; i++) {
         uint8_t buf[SPEER_HASH_MAX_DIGEST + 256 + 1];

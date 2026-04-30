@@ -74,3 +74,8 @@ void speer_log(speer_log_level_t level, const char *module, const char *file, co
         fprintf(stderr, "[%s] %s:%d (%s) %s: %s\n", lvl, fname, line, func, module, buf);
     }
 }
+
+void speer_log_str(speer_log_level_t level, const char *module, const char *file, const char *func,
+                   int line, const char *msg) {
+    speer_log(level, module, file, func, line, "%s", msg ? msg : "(null)");
+}

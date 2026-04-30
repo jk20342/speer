@@ -12,10 +12,8 @@
         return 1;                     \
     } while (0)
 
-/* SEQUENCE { INTEGER 42 } */
 static const uint8_t kSeqInt[] = {0x30, 0x03, 0x02, 0x01, 0x2a};
 
-/* OID 2.5.4.3 (commonName) */
 static const uint8_t kOidCn[] = {0x06, 0x03, 0x55, 0x04, 0x03};
 
 int main(void) {

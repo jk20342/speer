@@ -95,13 +95,14 @@ int speer_sig_verify(uint16_t alg_id, const uint8_t *pubkey, size_t pubkey_len, 
 
 static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t **n, size_t *n_len,
                             const uint8_t **e, size_t *e_len) {
-    /* SPKI is wrapped at higher layer; here we expect a SEQUENCE { INTEGER n, INTEGER e } */
     if (spki_len < 4 || spki[0] != 0x30) return -1;
     size_t pos = 1;
     size_t seq_len;
+    if (pos >= spki_len) return -1;
     if (spki[pos] & 0x80) {
         size_t k = spki[pos] & 0x7f;
-        if (k > 4 || pos + 1 + k > spki_len) return -1;
+        if (k == 0 || k > 4) return -1;
+        if (k > spki_len - pos - 1) return -1;
         seq_len = 0;
         for (size_t i = 0; i < k; i++) seq_len = (seq_len << 8) | spki[pos + 1 + i];
         pos += 1 + k;
@@ -109,13 +110,16 @@ static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t 
         seq_len = spki[pos];
         pos += 1;
     }
-    (void)seq_len;
-    if (spki[pos] != 0x02) return -1;
+    if (seq_len > spki_len - pos) return -1;
+
+    if (pos >= spki_len || spki[pos] != 0x02) return -1;
     pos++;
+    if (pos >= spki_len) return -1;
     size_t nl;
     if (spki[pos] & 0x80) {
         size_t k = spki[pos] & 0x7f;
-        if (k > 4) return -1;
+        if (k == 0 || k > 4) return -1;
+        if (k > spki_len - pos - 1) return -1;
         nl = 0;
         for (size_t i = 0; i < k; i++) nl = (nl << 8) | spki[pos + 1 + i];
         pos += 1 + k;
@@ -123,14 +127,19 @@ static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t 
         nl = spki[pos];
         pos++;
     }
+    if (nl > spki_len - pos) return -1;
     *n = spki + pos;
     *n_len = nl;
     pos += nl;
-    if (spki[pos] != 0x02) return -1;
+
+    if (pos >= spki_len || spki[pos] != 0x02) return -1;
     pos++;
+    if (pos >= spki_len) return -1;
     size_t el;
     if (spki[pos] & 0x80) {
         size_t k = spki[pos] & 0x7f;
+        if (k == 0 || k > 4) return -1;
+        if (k > spki_len - pos - 1) return -1;
         el = 0;
         for (size_t i = 0; i < k; i++) el = (el << 8) | spki[pos + 1 + i];
         pos += 1 + k;
@@ -138,6 +147,7 @@ static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t 
         el = spki[pos];
         pos++;
     }
+    if (el > spki_len - pos) return -1;
     *e = spki + pos;
     *e_len = el;
     return 0;

@@ -8,20 +8,6 @@
 #include "header_protect.h"
 #include "quic_pkt.h"
 
-/* RFC 9001 Appendix A.1: Keys derived from
- * Destination Connection ID = 0x8394c8f03e515708
- *
- * client initial secret = c00cf151ca5be075ed0ebfb5c80323c4
- *                         2d6b7db67881289af4008f1f6c357aef
- * client key  = 1f369613dd76d5467730efcbe3b1a22d
- * client iv   = fa044b2f42a3fd3b46fb255c
- * client hp   = 9f50449e04a0e810283a1e9933adedd2
- * server initial secret = 3c9bf6a9c1c8c71819876967bd8b979e
- *                         fd98ec665edf27f22c06e95943a2af09
- * server key  = cf3a5331653c364c88f0f379b6067e37
- * server iv   = 0ac1493ca1905853b0bba03e
- * server hp   = c206b8d9b9f0f37644430b490eeaa314
- */
 static const uint8_t DCID[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08};
 static const uint8_t CKEY[16] = {0x1f, 0x36, 0x96, 0x13, 0xdd, 0x76, 0xd5, 0x46,
                                  0x77, 0x30, 0xef, 0xcb, 0xe3, 0xb1, 0xa2, 0x2d};
@@ -51,7 +37,7 @@ static int eq(const char *tag, const uint8_t *a, const uint8_t *b, size_t n) {
 
 int main(void) {
     speer_quic_keys_t ck, sk;
-    speer_quic_keys_init_initial(&ck, &sk, DCID, sizeof(DCID));
+    speer_quic_keys_init_initial(&ck, &sk, DCID, sizeof(DCID), QUIC_VERSION_V1);
     int fail = 0;
     fail |= eq("client key", ck.key, CKEY, 16);
     fail |= eq("client iv ", ck.iv, CIV, 12);

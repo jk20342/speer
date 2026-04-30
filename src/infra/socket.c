@@ -300,13 +300,15 @@ uint64_t speer_timestamp_ms(void) {
 #endif
 }
 
-void speer_random_bytes(uint8_t *buf, size_t len) {
+int speer_random_bytes_or_fail(uint8_t *buf, size_t len) {
+    if (len == 0) return 0;
+    if (!buf) return -1;
 #if defined(_WIN32)
     const size_t total = len;
     HCRYPTPROV hProvider = 0;
     if (!CryptAcquireContextW(&hProvider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
         ZERO(buf, total);
-        return;
+        return -1;
     }
     uint8_t *p = buf;
     while (len > 0) {
@@ -314,13 +316,15 @@ void speer_random_bytes(uint8_t *buf, size_t len) {
         if (!CryptGenRandom(hProvider, chunk, p)) {
             ZERO(buf, total);
             CryptReleaseContext(hProvider, 0);
-            return;
+            return -1;
         }
         p += chunk;
         len -= chunk;
     }
     CryptReleaseContext(hProvider, 0);
+    return 0;
 #else
+    size_t total = len;
     size_t offset = 0;
 #if defined(__linux__) && defined(__GLIBC__) && \
     (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25))
@@ -347,7 +351,16 @@ void speer_random_bytes(uint8_t *buf, size_t len) {
             close(fd);
         }
     }
+    if (offset < total) {
+        ZERO(buf, total);
+        return -1;
+    }
+    return 0;
 #endif
+}
+
+void speer_random_bytes(uint8_t *buf, size_t len) {
+    (void)speer_random_bytes_or_fail(buf, len);
 }
 
 int speer_generate_keypair(uint8_t public_key[SPEER_PUBLIC_KEY_SIZE],

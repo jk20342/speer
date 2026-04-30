@@ -197,23 +197,59 @@ static int tcp_listen_op(speer_transport_endpoint_t **out_ep, const char *addr, 
     return SPEER_TR_OK;
 }
 
+#define SPEER_TCP_MAX_CONN    1024
+#define SPEER_TCP_MAX_PER_SEC 128
+
+static uint64_t g_tcp_window_start_ms = 0;
+static uint32_t g_tcp_window_count = 0;
+static uint32_t g_tcp_active_conns = 0;
+
+static int tcp_rate_limit(void) {
+    extern uint64_t speer_timestamp_ms(void);
+    uint64_t now = speer_timestamp_ms();
+    if (now - g_tcp_window_start_ms >= 1000) {
+        g_tcp_window_start_ms = now;
+        g_tcp_window_count = 0;
+    }
+    if (g_tcp_window_count >= SPEER_TCP_MAX_PER_SEC) return -1;
+    if (g_tcp_active_conns >= SPEER_TCP_MAX_CONN) return -1;
+    g_tcp_window_count++;
+    g_tcp_active_conns++;
+    return 0;
+}
+
+static void tcp_rate_release(void) {
+    if (g_tcp_active_conns > 0) g_tcp_active_conns--;
+}
+
 static int tcp_dial_op(speer_transport_conn_t **out_conn, const char *addr, void *cfg) {
     (void)cfg;
     if (!addr) return SPEER_TR_INVALID;
+    if (tcp_rate_limit() != 0) return SPEER_TR_AGAIN;
     char host[46] = {0};
     const char *colon = NULL;
     for (const char *p = addr; *p; p++)
         if (*p == ':') colon = p;
-    if (!colon) return SPEER_TR_INVALID;
+    if (!colon) {
+        tcp_rate_release();
+        return SPEER_TR_INVALID;
+    }
     size_t hl = (size_t)(colon - addr);
-    if (hl >= sizeof(host)) return SPEER_TR_INVALID;
+    if (hl >= sizeof(host)) {
+        tcp_rate_release();
+        return SPEER_TR_INVALID;
+    }
     COPY(host, addr, hl);
     uint16_t port = (uint16_t)atoi(colon + 1);
 
     speer_transport_conn_t *c = (speer_transport_conn_t *)calloc(1, sizeof(*c));
-    if (!c) return SPEER_TR_FAIL;
+    if (!c) {
+        tcp_rate_release();
+        return SPEER_TR_FAIL;
+    }
     if (speer_tcp_dial(&c->fd, host, port) < 0) {
         free(c);
+        tcp_rate_release();
         return SPEER_TR_REFUSED;
     }
     snprintf(c->peer_addr, sizeof(c->peer_addr), "%s:%u", host, (unsigned)port);
@@ -222,10 +258,15 @@ static int tcp_dial_op(speer_transport_conn_t **out_conn, const char *addr, void
 }
 
 static int tcp_accept_op(speer_transport_endpoint_t *ep, speer_transport_conn_t **out_conn) {
+    if (tcp_rate_limit() != 0) return SPEER_TR_AGAIN;
     speer_transport_conn_t *c = (speer_transport_conn_t *)calloc(1, sizeof(*c));
-    if (!c) return SPEER_TR_FAIL;
+    if (!c) {
+        tcp_rate_release();
+        return SPEER_TR_FAIL;
+    }
     if (speer_tcp_accept(ep->listen_fd, &c->fd, c->peer_addr, sizeof(c->peer_addr)) < 0) {
         free(c);
+        tcp_rate_release();
         return SPEER_TR_AGAIN;
     }
     *out_conn = c;
@@ -244,6 +285,7 @@ static int tcp_recv_op(speer_transport_conn_t *c, uint8_t *b, size_t cap, size_t
 static int tcp_close_conn_op(speer_transport_conn_t *c) {
     speer_tcp_close(c->fd);
     free(c);
+    tcp_rate_release();
     return SPEER_TR_OK;
 }
 static int tcp_close_endpoint_op(speer_transport_endpoint_t *ep) {

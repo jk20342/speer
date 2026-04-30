@@ -16,21 +16,9 @@ speer_peer_t *speer_peer_lookup_by_pubkey(speer_host_t *host,
     return NULL;
 }
 
-static void generate_cid(uint8_t *cid, uint8_t *cid_len, uint32_t *state) {
+static int generate_cid(uint8_t *cid, uint8_t *cid_len) {
     *cid_len = SPEER_CONNECTION_ID_SIZE;
-    for (int i = 0; i < SPEER_CONNECTION_ID_SIZE; i += 4) {
-        uint32_t s = state[0];
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        state[0] = s;
-
-        if (i == 0) state[1] ^= state[0];
-        if (i == 4) state[2] ^= state[1];
-        if (i == 8) state[3] ^= state[2];
-
-        STORE32_LE(cid + i, s);
-    }
+    return speer_random_bytes_or_fail(cid, SPEER_CONNECTION_ID_SIZE);
 }
 
 speer_peer_t *speer_peer_create(speer_host_t *host, const uint8_t pubkey[SPEER_PUBLIC_KEY_SIZE]) {
@@ -47,7 +35,10 @@ speer_peer_t *speer_peer_create(speer_host_t *host, const uint8_t pubkey[SPEER_P
     if (pubkey) { COPY(peer->pubkey, pubkey, SPEER_PUBLIC_KEY_SIZE); }
 
     speer_conn_init(&peer->conn);
-    generate_cid(peer->conn.cid, &peer->conn.cid_len, host->next_cid);
+    if (generate_cid(peer->conn.cid, &peer->conn.cid_len) != 0) {
+        free(peer);
+        return NULL;
+    }
 
     peer->next_stream_id = 0;
     peer->max_streams = host->config.max_streams;

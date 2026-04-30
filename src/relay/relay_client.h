@@ -72,9 +72,9 @@ typedef struct {
     void (*on_data)(void *user, uint32_t circuit_id, const uint8_t *data, size_t len);
     void (*on_circuit_closed)(void *user, uint32_t circuit_id);
     void *user;
-    uint8_t recv_buf[RELAY_MAX_FRAME_SIZE];
+    uint8_t recv_buf[RELAY_FRAME_HEADER_SIZE + RELAY_MAX_FRAME_SIZE];
     size_t recv_len;
-    uint8_t frame_buf[RELAY_MAX_FRAME_SIZE];
+    uint8_t frame_buf[RELAY_FRAME_HEADER_SIZE + RELAY_MAX_FRAME_SIZE];
     size_t frame_len;
     uint64_t last_send_ms;
     uint64_t last_recv_ms;

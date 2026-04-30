@@ -26,6 +26,7 @@ static inline uint8_t speer_ct_select_u8(uint32_t mask, uint8_t a, uint8_t b) {
 }
 
 static inline int speer_ct_memeq(const void *a, const void *b, size_t n) {
+    if (n == 0) return 1;
     const uint8_t *ap = (const uint8_t *)a;
     const uint8_t *bp = (const uint8_t *)b;
     uint8_t diff = 0;

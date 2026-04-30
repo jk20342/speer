@@ -1,5 +1,7 @@
 #include "speer_internal.h"
 
+#include "field25519.h"
+
 static const uint32_t chacha_const[4] = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
 
 static INLINE uint32_t load32(const uint8_t *p) {
@@ -70,7 +72,10 @@ void speer_chacha_block(speer_chacha_ctx_t *ctx, uint8_t out[64]) {
     for (int i = 0; i < 16; i++) store32(out + 4 * i, x[i]);
 
     s[12]++;
-    if (UNLIKELY(s[12] == 0)) s[13]++;
+}
+
+int speer_chacha_block_counter_at_max(const speer_chacha_ctx_t *ctx) {
+    return ctx->state[12] == 0xffffffffu;
 }
 
 void speer_chacha_crypt(speer_chacha_ctx_t *ctx, uint8_t *out, const uint8_t *in, size_t len) {
@@ -95,7 +100,7 @@ void speer_chacha_crypt(speer_chacha_ctx_t *ctx, uint8_t *out, const uint8_t *in
 static void poly1305_blocks(uint32_t h[5], uint32_t r[5], const uint8_t *m, size_t len,
                             uint32_t padbit) {
     const uint32_t r0 = r[0], r1 = r[1], r2 = r[2], r3 = r[3], r4 = r[4];
-    const uint32_t s1 = r0 * 5, s2 = r1 * 5, s3 = r2 * 5, s4 = r3 * 5;
+    const uint32_t s1 = r1 * 5, s2 = r2 * 5, s3 = r3 * 5, s4 = r4 * 5;
     uint32_t h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3], h4 = h[4];
 
     while (len >= 16) {
@@ -110,11 +115,16 @@ static void poly1305_blocks(uint32_t h[5], uint32_t r[5], const uint8_t *m, size
         h3 += ((((t3) << 32) | (t2)) >> 14) & 0x3ffffff;
         h4 += (uint32_t)(((t3) >> 8) | ((uint64_t)padbit << 24));
 
-        uint64_t d0 = (h0 * r0) + (h1 * s4) + (h2 * s3) + (h3 * s2) + (h4 * s1);
-        uint64_t d1 = (h0 * r1) + (h1 * r0) + (h2 * s4) + (h3 * s3) + (h4 * s2);
-        uint64_t d2 = (h0 * r2) + (h1 * r1) + (h2 * r0) + (h3 * s4) + (h4 * s3);
-        uint64_t d3 = (h0 * r3) + (h1 * r2) + (h2 * r1) + (h3 * r0) + (h4 * s4);
-        uint64_t d4 = (h0 * r4) + (h1 * r3) + (h2 * r2) + (h3 * r1) + (h4 * r0);
+        uint64_t d0 = ((uint64_t)h0 * r0) + ((uint64_t)h1 * s4) + ((uint64_t)h2 * s3) +
+                      ((uint64_t)h3 * s2) + ((uint64_t)h4 * s1);
+        uint64_t d1 = ((uint64_t)h0 * r1) + ((uint64_t)h1 * r0) + ((uint64_t)h2 * s4) +
+                      ((uint64_t)h3 * s3) + ((uint64_t)h4 * s2);
+        uint64_t d2 = ((uint64_t)h0 * r2) + ((uint64_t)h1 * r1) + ((uint64_t)h2 * r0) +
+                      ((uint64_t)h3 * s4) + ((uint64_t)h4 * s3);
+        uint64_t d3 = ((uint64_t)h0 * r3) + ((uint64_t)h1 * r2) + ((uint64_t)h2 * r1) +
+                      ((uint64_t)h3 * r0) + ((uint64_t)h4 * s4);
+        uint64_t d4 = ((uint64_t)h0 * r4) + ((uint64_t)h1 * r3) + ((uint64_t)h2 * r2) +
+                      ((uint64_t)h3 * r1) + ((uint64_t)h4 * r0);
 
         uint32_t c = (uint32_t)(d0 >> 26);
         h0 = (uint32_t)d0 & 0x3ffffff;
@@ -206,30 +216,33 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
     g3 = h3 + c;
     c = g3 >> 26;
     g3 &= 0x3ffffff;
-    g4 = h4 + c;
-    c = g4 >> 26;
-    g4 &= 0x3ffffff;
-    g0 += c * 5;
+    g4 = h4 + c - (1u << 26);
 
-    mask = 0u - (c ^ 1u);
-    h0 = (h0 & ~mask) | (g0 & mask);
-    h1 = (h1 & ~mask) | (g1 & mask);
-    h2 = (h2 & ~mask) | (g2 & mask);
-    h3 = (h3 & ~mask) | (g3 & mask);
-    h4 = (h4 & ~mask) | (g4 & mask);
+    mask = (g4 >> 31) - 1u;
+    g0 &= mask;
+    g1 &= mask;
+    g2 &= mask;
+    g3 &= mask;
+    g4 &= mask;
+    mask = ~mask;
+    h0 = (h0 & mask) | g0;
+    h1 = (h1 & mask) | g1;
+    h2 = (h2 & mask) | g2;
+    h3 = (h3 & mask) | g3;
+    h4 = (h4 & mask) | g4;
 
     h0 = (h0 | (h1 << 26)) & 0xffffffff;
     h1 = ((h1 >> 6) | (h2 << 20)) & 0xffffffff;
     h2 = ((h2 >> 12) | (h3 << 14)) & 0xffffffff;
     h3 = ((h3 >> 18) | (h4 << 8)) & 0xffffffff;
 
-    uint64_t f = h0 + load32(s + 0);
+    uint64_t f = (uint64_t)h0 + load32(s + 0);
     h0 = (uint32_t)f;
-    f = h1 + load32(s + 4) + (f >> 32);
+    f = (uint64_t)h1 + load32(s + 4) + (f >> 32);
     h1 = (uint32_t)f;
-    f = h2 + load32(s + 8) + (f >> 32);
+    f = (uint64_t)h2 + load32(s + 8) + (f >> 32);
     h2 = (uint32_t)f;
-    f = h3 + load32(s + 12) + (f >> 32);
+    f = (uint64_t)h3 + load32(s + 12) + (f >> 32);
     h3 = (uint32_t)f;
 
     store32(mac + 0, h0);
@@ -238,133 +251,54 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
     store32(mac + 12, h3);
 }
 
-typedef long long i64;
-typedef i64 gf[16];
-
-static const gf gf_121665 = {0xdb41, 1};
-
-static void car25519(gf o) {
-    for (int i = 0; i < 16; i++) {
-        o[i] += 1LL << 16;
-        i64 c = o[i] >> 16;
-        o[(i + 1) & 15] += c - 1 + 37 * (c - 1) * (i == 15);
-        o[i] -= c << 16;
-    }
-}
-
-static void sel25519(gf p, gf q, int b) {
-    i64 c = ~(i64)(b - 1);
-    for (int i = 0; i < 16; i++) {
-        i64 t = c & (p[i] ^ q[i]);
-        p[i] ^= t;
-        q[i] ^= t;
-    }
-}
-
-static void unpack25519(gf o, const uint8_t n[32]) {
-    for (int i = 0; i < 16; i++) o[i] = n[2 * i] + ((i64)n[2 * i + 1] << 8);
-    o[15] &= 0x7fff;
-}
-
-static void pack25519(uint8_t o[32], const gf n) {
-    gf m, t;
-    for (int i = 0; i < 16; i++) t[i] = n[i];
-    car25519(t);
-    car25519(t);
-    car25519(t);
-    for (int j = 0; j < 2; j++) {
-        m[0] = t[0] - 0xffed;
-        for (int i = 1; i < 15; i++) {
-            m[i] = t[i] - 0xffff - ((m[i - 1] >> 16) & 1);
-            m[i - 1] &= 0xffff;
-        }
-        m[15] = t[15] - 0x7fff - ((m[14] >> 16) & 1);
-        i64 b = (m[15] >> 16) & 1;
-        m[14] &= 0xffff;
-        sel25519(t, m, 1 - (int)b);
-    }
-    for (int i = 0; i < 16; i++) {
-        o[2 * i] = (uint8_t)(t[i] & 0xff);
-        o[2 * i + 1] = (uint8_t)(t[i] >> 8);
-    }
-}
-
-static void fe_add(gf o, const gf a, const gf b) {
-    for (int i = 0; i < 16; i++) o[i] = a[i] + b[i];
-}
-
-static void fe_sub(gf o, const gf a, const gf b) {
-    for (int i = 0; i < 16; i++) o[i] = a[i] - b[i];
-}
-
-static void fe_mul(gf o, const gf a, const gf b) {
-    i64 t[31] = {0};
-    for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 16; j++) t[i + j] += a[i] * b[j];
-    }
-    for (int i = 30; i >= 16; i--) t[i - 16] += 38 * t[i];
-    for (int i = 0; i < 16; i++) o[i] = t[i];
-    car25519(o);
-    car25519(o);
-}
-
-static void fe_sqr(gf o, const gf a) {
-    fe_mul(o, a, a);
-}
-
-static void inv25519(gf o, const gf i) {
-    gf c;
-    for (int a = 0; a < 16; a++) c[a] = i[a];
-    for (int a = 253; a >= 0; a--) {
-        fe_sqr(c, c);
-        if (a != 2 && a != 4) fe_mul(c, c, i);
-    }
-    for (int a = 0; a < 16; a++) o[a] = c[a];
-}
+static const fe25519 fe_121665 = {0xdb41, 1};
 
 static void x25519_scalar_mult(uint8_t out[32], const uint8_t scalar[32], const uint8_t point[32]) {
     uint8_t z[32];
-    gf x, a, b, c, d, e, f;
+    fe25519 x, a, b, c, d, e, f;
 
     COPY(z, scalar, 32);
     z[31] = (z[31] & 127) | 64;
     z[0] &= 248;
 
-    unpack25519(x, point);
-    for (int i = 0; i < 16; i++) {
-        b[i] = x[i];
-        d[i] = a[i] = c[i] = 0;
-    }
+    fe25519_frombytes(x, point);
+    fe25519_copy(b, x);
+    fe25519_0(a);
+    fe25519_0(c);
+    fe25519_0(d);
     a[0] = d[0] = 1;
 
+    int swap = 0;
     for (int i = 254; i >= 0; i--) {
         int r = (z[i >> 3] >> (i & 7)) & 1;
-        sel25519(a, b, r);
-        sel25519(c, d, r);
-        fe_add(e, a, c);
-        fe_sub(a, a, c);
-        fe_add(c, b, d);
-        fe_sub(b, b, d);
-        fe_sqr(d, e);
-        fe_sqr(f, a);
-        fe_mul(a, c, a);
-        fe_mul(c, b, e);
-        fe_add(e, a, c);
-        fe_sub(a, a, c);
-        fe_sqr(b, a);
-        fe_sub(c, d, f);
-        fe_mul(a, c, gf_121665);
-        fe_add(a, a, d);
-        fe_mul(c, c, a);
-        fe_mul(a, d, f);
-        fe_mul(d, b, x);
-        fe_sqr(b, e);
-        sel25519(a, b, r);
-        sel25519(c, d, r);
+        swap ^= r;
+        fe25519_cswap(a, b, swap);
+        fe25519_cswap(c, d, swap);
+        swap = r;
+        fe25519_add(e, a, c);
+        fe25519_sub(a, a, c);
+        fe25519_add(c, b, d);
+        fe25519_sub(b, b, d);
+        fe25519_sq(d, e);
+        fe25519_sq(f, a);
+        fe25519_mul(a, c, a);
+        fe25519_mul(c, b, e);
+        fe25519_add(e, a, c);
+        fe25519_sub(a, a, c);
+        fe25519_sq(b, a);
+        fe25519_sub(c, d, f);
+        fe25519_mul(a, c, fe_121665);
+        fe25519_add(a, a, d);
+        fe25519_mul(c, c, a);
+        fe25519_mul(a, d, f);
+        fe25519_mul(d, b, x);
+        fe25519_sq(b, e);
     }
-    inv25519(c, c);
-    fe_mul(a, a, c);
-    pack25519(out, a);
+    fe25519_cswap(a, b, swap);
+    fe25519_cswap(c, d, swap);
+    fe25519_invert(c, c);
+    fe25519_mul(a, a, c);
+    fe25519_tobytes(out, a);
 }
 
 static const uint8_t x25519_base_point[32] = {9};

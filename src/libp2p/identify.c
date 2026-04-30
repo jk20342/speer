@@ -49,44 +49,41 @@ int speer_identify_decode(speer_identify_t *id, const uint8_t *in, size_t in_len
         if (speer_pb_read_bytes(&r, &d, &l) != 0) return -1;
         switch (f) {
         case 1:
-            if (l <= sizeof(id->pubkey_proto)) {
-                COPY(id->pubkey_proto, d, l);
-                id->pubkey_proto_len = l;
-            }
+            if (l > sizeof(id->pubkey_proto)) return -1;
+            COPY(id->pubkey_proto, d, l);
+            id->pubkey_proto_len = l;
             break;
         case 2:
-            if (id->num_listen_addrs < IDENTIFY_MAX_LISTEN_ADDRS &&
-                l <= sizeof(id->listen_addrs[0].bytes)) {
+            if (l > sizeof(id->listen_addrs[0].bytes)) return -1;
+            if (id->num_listen_addrs < IDENTIFY_MAX_LISTEN_ADDRS) {
                 COPY(id->listen_addrs[id->num_listen_addrs].bytes, d, l);
                 id->listen_addrs[id->num_listen_addrs].len = l;
                 id->num_listen_addrs++;
             }
             break;
         case 3:
-            if (id->num_protocols < IDENTIFY_MAX_PROTOCOLS && l < 64) {
+            if (l >= 64) return -1;
+            if (id->num_protocols < IDENTIFY_MAX_PROTOCOLS) {
                 COPY(id->protocols[id->num_protocols], d, l);
                 id->protocols[id->num_protocols][l] = 0;
                 id->num_protocols++;
             }
             break;
         case 4:
-            if (l <= sizeof(id->observed_addr.bytes)) {
-                COPY(id->observed_addr.bytes, d, l);
-                id->observed_addr.len = l;
-                id->has_observed = 1;
-            }
+            if (l > sizeof(id->observed_addr.bytes)) return -1;
+            COPY(id->observed_addr.bytes, d, l);
+            id->observed_addr.len = l;
+            id->has_observed = 1;
             break;
         case 5:
-            if (l < IDENTIFY_PROTOCOL_VERSION_MAX) {
-                COPY(id->protocol_version, d, l);
-                id->protocol_version[l] = 0;
-            }
+            if (l >= IDENTIFY_PROTOCOL_VERSION_MAX) return -1;
+            COPY(id->protocol_version, d, l);
+            id->protocol_version[l] = 0;
             break;
         case 6:
-            if (l < IDENTIFY_AGENT_VERSION_MAX) {
-                COPY(id->agent_version, d, l);
-                id->agent_version[l] = 0;
-            }
+            if (l >= IDENTIFY_AGENT_VERSION_MAX) return -1;
+            COPY(id->agent_version, d, l);
+            id->agent_version[l] = 0;
             break;
         default:
             break;

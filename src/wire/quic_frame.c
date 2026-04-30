@@ -74,7 +74,7 @@ int speer_qf_r_u8(speer_qf_reader_t *r, uint8_t *v) {
 }
 
 int speer_qf_r_bytes(speer_qf_reader_t *r, const uint8_t **d, size_t n) {
-    if (r->err || r->pos + n > r->len) {
+    if (r->err || n > r->len - r->pos) {
         r->err = 1;
         return -1;
     }
@@ -124,6 +124,8 @@ int speer_qf_encode_ack(speer_qf_writer_t *w, uint64_t largest, uint64_t delay,
 
 int speer_qf_encode_stream(speer_qf_writer_t *w, uint64_t stream_id, uint64_t offset,
                            const uint8_t *data, size_t len, int fin) {
+    if (offset > UINT64_MAX - (uint64_t)len) return -1;
+    if (offset + (uint64_t)len > ((uint64_t)1 << 62) - 1) return -1;
     uint8_t type = QF_STREAM_BASE | 0x02;
     if (offset > 0) type |= 0x04;
     if (fin) type |= 0x01;
@@ -161,6 +163,8 @@ int speer_qf_encode_connection_close(speer_qf_writer_t *w, uint64_t error_code, 
 int speer_qf_encode_new_connection_id(speer_qf_writer_t *w, uint64_t seq, uint64_t retire_prior_to,
                                       const uint8_t *cid, size_t cid_len,
                                       const uint8_t reset_token[16]) {
+    if (cid_len < 1 || cid_len > 20) return -1;
+    if (retire_prior_to > seq) return -1;
     if (speer_qf_w_u8(w, QF_NEW_CONNECTION_ID) != 0) return -1;
     if (speer_qf_w_varint(w, seq) != 0) return -1;
     if (speer_qf_w_varint(w, retire_prior_to) != 0) return -1;

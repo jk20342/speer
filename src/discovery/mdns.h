@@ -82,8 +82,6 @@ int mdns_announce(mdns_ctx_t *ctx);
 
 int mdns_build_probe(uint8_t *out, size_t *out_len, const char *service_name);
 int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t *svc);
-/* sender_ipv4_s_addr: sockaddr_in.sin_addr.s_addr from recvfrom (network byte order); use 0 if
- * unknown */
 int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *out_peer_id,
                       size_t peer_id_cap, char *out_multiaddr, size_t multiaddr_cap,
                       uint32_t sender_ipv4_s_addr);

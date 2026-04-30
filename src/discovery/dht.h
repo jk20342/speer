@@ -83,6 +83,12 @@ int dht_handle_find_value(dht_t *dht, const uint8_t *key, uint8_t *response, siz
 int dht_handle_store(dht_t *dht, const uint8_t *key, const uint8_t *value, size_t value_len,
                      const uint8_t *publisher_id);
 
+int dht_compute_store_token(dht_t *dht, const char *sender_addr, uint8_t token[16]);
+int dht_verify_store_token(dht_t *dht, const char *sender_addr, const uint8_t token[16]);
+int dht_handle_store_with_token(dht_t *dht, const char *sender_addr, const uint8_t token[16],
+                                const uint8_t *key, const uint8_t *value, size_t value_len,
+                                const uint8_t *publisher_id);
+
 int dht_ping(dht_t *dht, const char *address);
 int dht_find_node(dht_t *dht, const uint8_t *target_id);
 int dht_find_value(dht_t *dht, const uint8_t *key);

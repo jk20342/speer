@@ -6,6 +6,7 @@ int speer_asn1_parse(const uint8_t *in, size_t in_len, speer_asn1_t *out) {
     if (in_len < 2) return -1;
     out->tlv_start = in;
     out->tag = in[0];
+    if ((in[0] & 0x1f) == 0x1f) return -1;
     size_t pos = 1;
     size_t len;
     uint8_t b = in[pos++];
@@ -14,11 +15,11 @@ int speer_asn1_parse(const uint8_t *in, size_t in_len, speer_asn1_t *out) {
     } else {
         size_t nbytes = b & 0x7f;
         if (nbytes == 0 || nbytes > 4) return -1;
-        if (pos + nbytes > in_len) return -1;
+        if (nbytes > in_len - pos) return -1;
         len = 0;
         for (size_t i = 0; i < nbytes; i++) len = (len << 8) | in[pos++];
     }
-    if (pos + len > in_len) return -1;
+    if (len > in_len - pos) return -1;
     out->value = in + pos;
     out->value_len = len;
     out->tlv_total_len = pos + len;
@@ -68,6 +69,7 @@ int speer_asn1_get_bit_string(const speer_asn1_t *node, const uint8_t **bits, si
                               uint8_t *unused_bits) {
     if (node->tag != ASN1_BIT_STRING) return -1;
     if (node->value_len < 1) return -1;
+    if (node->value[0] > 7) return -1;
     if (unused_bits) *unused_bits = node->value[0];
     if (bits) *bits = node->value + 1;
     if (bit_count) *bit_count = node->value_len - 1;

@@ -1,15 +1,3 @@
-/*
- * Runnable walkthrough of speer's higher-level building blocks:
- *   - Layer 1: Noise-based host (UDP) identity and poll
- *   - libp2p: multiaddr, PeerID (base58), Ed25519 signing for Noise static key
- *   - Layer 2 (optional argv): TCP dial + multistream-select /noise probe
- *   - Relay + DCUtR (when built with SPEER_RELAY): client init and event-loop notes
- *
- * Usage:
- *   advanced_stack_demo              -> identity + multiaddr + relay notes
- *   advanced_stack_demo tcp HOST PORT -> TCP multistream /noise (like libp2p_ping dial)
- */
-
 #include "speer.h"
 
 #include <stdio.h>

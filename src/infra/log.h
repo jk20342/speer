@@ -31,6 +31,12 @@ void speer_log_set_level(speer_log_level_t level);
 void speer_log(speer_log_level_t level, const char *module, const char *file, const char *func,
                int line, const char *fmt, ...);
 
+void speer_log_str(speer_log_level_t level, const char *module, const char *file, const char *func,
+                   int line, const char *msg);
+
+#define SPEER_LOG_STR(level, module, msg) \
+    speer_log_str(level, module, __FILE__, __func__, __LINE__, msg)
+
 #define SPEER_LOG(level, module, fmt, ...) \
     speer_log(level, module, __FILE__, __func__, __LINE__, fmt, ##__VA_ARGS__)
 

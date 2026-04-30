@@ -221,7 +221,6 @@ void speer_bn_submod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, co
 }
 
 void speer_bn_mulmod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, const speer_bn_t *m) {
-    /* schoolbook multiplication with reduction */
     uint32_t prod[2 * LIMBS] = {0};
     size_t n = a->n + b->n;
     if (n > 2 * LIMBS) return;

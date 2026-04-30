@@ -99,20 +99,33 @@ int relay_client_connect(relay_client_t *client, const char *relay_addr,
                          const uint8_t *relay_peer_id, size_t relay_peer_id_len) {
     if (client->state != RELAY_STATE_DISCONNECTED) relay_client_disconnect(client);
     char host[64];
+    ZERO(host, sizeof(host));
     uint16_t port = 4001;
     const char *colon = strrchr(relay_addr, ':');
     if (colon) {
         size_t host_len = colon - relay_addr;
+        if (host_len >= sizeof(host)) host_len = sizeof(host) - 1;
         COPY(host, relay_addr, host_len);
         host[host_len] = 0;
         port = (uint16_t)atoi(colon + 1);
     } else {
-        COPY(host, relay_addr, sizeof(host) - 1);
+        size_t addr_len = strlen(relay_addr);
+        if (addr_len >= sizeof(host)) addr_len = sizeof(host) - 1;
+        COPY(host, relay_addr, addr_len);
+        host[addr_len] = 0;
     }
-    COPY(client->address, relay_addr, MIN(strlen(relay_addr) + 1, sizeof(client->address)));
-    if (relay_peer_id_len <= sizeof(client->relay_peer_id)) {
+    {
+        size_t addr_len = strlen(relay_addr);
+        if (addr_len >= sizeof(client->address)) addr_len = sizeof(client->address) - 1;
+        COPY(client->address, relay_addr, addr_len);
+        client->address[addr_len] = 0;
+    }
+    if (relay_peer_id && relay_peer_id_len > 0 &&
+        relay_peer_id_len <= sizeof(client->relay_peer_id)) {
         COPY(client->relay_peer_id, relay_peer_id, relay_peer_id_len);
         client->relay_peer_id_len = relay_peer_id_len;
+    } else {
+        client->relay_peer_id_len = 0;
     }
     struct sockaddr_in sin;
     ZERO(&sin, sizeof(sin));

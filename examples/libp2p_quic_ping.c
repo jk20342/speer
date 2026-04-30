@@ -22,7 +22,7 @@ int main(void) {
     speer_random_bytes(scid, sizeof(scid));
 
     speer_quic_keys_t ck, sk;
-    speer_quic_keys_init_initial(&ck, &sk, dcid, sizeof(dcid));
+    speer_quic_keys_init_initial(&ck, &sk, dcid, sizeof(dcid), QUIC_VERSION_V1);
 
     uint8_t fake_ch[64];
     for (size_t i = 0; i < sizeof(fake_ch); i++) fake_ch[i] = (uint8_t)i;
@@ -58,7 +58,7 @@ int main(void) {
     hex("encoded Initial", pkt, pkt_len);
 
     speer_quic_keys_t rck, rsk;
-    speer_quic_keys_init_initial(&rck, &rsk, dcid, sizeof(dcid));
+    speer_quic_keys_init_initial(&rck, &rsk, dcid, sizeof(dcid), QUIC_VERSION_V1);
 
     speer_quic_pkt_t in_pkt;
     if (speer_quic_pkt_decode_long(&in_pkt, pkt, pkt_len, &rck) != 0) {

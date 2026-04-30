@@ -47,7 +47,33 @@ typedef struct {
     uint32_t stream_id;
 } dcutr_ctx_t;
 
-static dcutr_ctx_t g_dcutr_ctx;
+#define DCUTR_MAX_PEERS 16
+static dcutr_ctx_t g_dcutr_ctxs[DCUTR_MAX_PEERS];
+static speer_peer_t *g_dcutr_peers[DCUTR_MAX_PEERS];
+
+#define g_dcutr_ctx (g_dcutr_ctxs[0])
+
+static dcutr_ctx_t *find_or_alloc_ctx(speer_peer_t *peer) {
+    if (!peer) return &g_dcutr_ctxs[0];
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        if (g_dcutr_peers[i] == peer) return &g_dcutr_ctxs[i];
+    }
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        if (g_dcutr_peers[i] == NULL) {
+            g_dcutr_peers[i] = peer;
+            return &g_dcutr_ctxs[i];
+        }
+    }
+    return NULL;
+}
+
+static dcutr_ctx_t *find_ctx(const speer_peer_t *peer) {
+    if (!peer) return &g_dcutr_ctxs[0];
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        if (g_dcutr_peers[i] == peer) return &g_dcutr_ctxs[i];
+    }
+    return NULL;
+}
 
 static int add_ipv4_candidate(dcutr_candidate_t *out, size_t max, size_t *count,
                               const struct sockaddr_in *sin) {
@@ -79,7 +105,8 @@ static int gather_local_addrs(dcutr_ctx_t *ctx, dcutr_candidate_t *out, size_t m
 #define STUB(x) (void)(x)
 
 int speer_dcutr_init(speer_peer_t *peer, int is_initiator) {
-    dcutr_ctx_t *ctx = &g_dcutr_ctx;
+    dcutr_ctx_t *ctx = find_or_alloc_ctx(peer);
+    if (!ctx) return -1;
     speer_dcutr_send_fn send_fn = ctx->send_fn;
     void *user = ctx->user;
     uint32_t stream_id = ctx->stream_id;
@@ -99,6 +126,12 @@ int speer_dcutr_init(speer_peer_t *peer, int is_initiator) {
 void speer_dcutr_set_transport(speer_dcutr_send_fn send_fn, void *user) {
     g_dcutr_ctx.send_fn = send_fn;
     g_dcutr_ctx.user = user;
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        if (g_dcutr_peers[i] != NULL && g_dcutr_ctxs[i].send_fn == NULL) {
+            g_dcutr_ctxs[i].send_fn = send_fn;
+            g_dcutr_ctxs[i].user = user;
+        }
+    }
 }
 
 static int send_stream(void *user, const uint8_t *data, size_t len) {
@@ -110,35 +143,49 @@ static int send_stream(void *user, const uint8_t *data, size_t len) {
 
 int speer_dcutr_start_stream(speer_peer_t *peer, uint32_t stream_id, int is_initiator) {
     if (!peer) return -1;
-    g_dcutr_ctx.stream_id = stream_id;
-    g_dcutr_ctx.send_fn = send_stream;
-    g_dcutr_ctx.user = &g_dcutr_ctx;
+    dcutr_ctx_t *ctx = find_or_alloc_ctx(peer);
+    if (!ctx) return -1;
+    ctx->stream_id = stream_id;
+    ctx->send_fn = send_stream;
+    ctx->user = ctx;
     return speer_dcutr_init(peer, is_initiator);
 }
 
 int speer_dcutr_on_stream_data(speer_peer_t *peer, uint32_t stream_id, const uint8_t *data,
                                size_t len) {
     if (stream_id != DCUTR_STREAM_ID) return 0;
-    if (!speer_dcutr_is_active()) {
-        g_dcutr_ctx.stream_id = stream_id;
-        g_dcutr_ctx.send_fn = send_stream;
-        g_dcutr_ctx.user = &g_dcutr_ctx;
+    dcutr_ctx_t *ctx = find_ctx(peer);
+    int active = ctx && ctx->state != DCUTR_STATE_IDLE && ctx->state != DCUTR_STATE_COMPLETE &&
+                 ctx->state != DCUTR_STATE_FAILED;
+    if (!active) {
+        ctx = find_or_alloc_ctx(peer);
+        if (!ctx) return -1;
+        ctx->stream_id = stream_id;
+        ctx->send_fn = send_stream;
+        ctx->user = ctx;
         if (speer_dcutr_init(peer, 0) != 0) return -1;
     }
     return speer_dcutr_on_msg(data, len);
 }
 
 void speer_dcutr_free(void) {
-    memset(&g_dcutr_ctx, 0, sizeof(g_dcutr_ctx));
+    memset(g_dcutr_ctxs, 0, sizeof(g_dcutr_ctxs));
+    memset(g_dcutr_peers, 0, sizeof(g_dcutr_peers));
 }
 
 int speer_dcutr_is_active(void) {
-    return g_dcutr_ctx.state != DCUTR_STATE_IDLE && g_dcutr_ctx.state != DCUTR_STATE_COMPLETE &&
-           g_dcutr_ctx.state != DCUTR_STATE_FAILED;
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        dcutr_state_t s = g_dcutr_ctxs[i].state;
+        if (s != DCUTR_STATE_IDLE && s != DCUTR_STATE_COMPLETE && s != DCUTR_STATE_FAILED) return 1;
+    }
+    return 0;
 }
 
 int speer_dcutr_success(void) {
-    return g_dcutr_ctx.state == DCUTR_STATE_COMPLETE;
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        if (g_dcutr_ctxs[i].state == DCUTR_STATE_COMPLETE) return 1;
+    }
+    return 0;
 }
 
 static int send_msg(dcutr_ctx_t *ctx, const speer_dcutr_msg_t *m) {
@@ -209,12 +256,7 @@ static void try_connect(dcutr_ctx_t *ctx) {
     }
 }
 
-void speer_dcutr_poll(void) {
-    dcutr_ctx_t *ctx = &g_dcutr_ctx;
-    if (!speer_dcutr_is_active()) return;
-
-    uint64_t now = speer_timestamp_ms();
-
+static void poll_ctx(dcutr_ctx_t *ctx, uint64_t now) {
     if (now - ctx->start_ms > DCUTR_TIMEOUT_MS) {
         SPEER_LOG_WARN("dcutr", "hole punching timed out");
         ctx->state = DCUTR_STATE_FAILED;
@@ -258,8 +300,28 @@ void speer_dcutr_poll(void) {
     }
 }
 
+void speer_dcutr_poll(void) {
+    uint64_t now = speer_timestamp_ms();
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        dcutr_ctx_t *ctx = &g_dcutr_ctxs[i];
+        if (ctx->state == DCUTR_STATE_IDLE || ctx->state == DCUTR_STATE_COMPLETE ||
+            ctx->state == DCUTR_STATE_FAILED)
+            continue;
+        poll_ctx(ctx, now);
+    }
+}
+
 int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
-    dcutr_ctx_t *ctx = &g_dcutr_ctx;
+    dcutr_ctx_t *ctx = NULL;
+    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
+        if (g_dcutr_ctxs[i].state != DCUTR_STATE_IDLE &&
+            g_dcutr_ctxs[i].state != DCUTR_STATE_COMPLETE &&
+            g_dcutr_ctxs[i].state != DCUTR_STATE_FAILED) {
+            ctx = &g_dcutr_ctxs[i];
+            break;
+        }
+    }
+    if (!ctx) ctx = &g_dcutr_ctxs[0];
     speer_dcutr_msg_t m;
 
     if (speer_dcutr_decode(&m, data, len) != 0) {
@@ -274,10 +336,23 @@ int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
         SPEER_LOG_DEBUG("dcutr", "received CONNECT with %zu addrs", m.num_addrs);
         for (size_t i = 0; i < m.num_addrs && ctx->num_remote < DCUTR_MAX_ADDRS; i++) {
             if (m.addrs[i].len >= 7 && m.addrs[i].bytes[0] == 0x04) {
+                struct sockaddr_in cand;
+                ZERO(&cand, sizeof(cand));
+                cand.sin_family = AF_INET;
+                memcpy(&cand.sin_addr, &m.addrs[i].bytes[1], 4);
+                memcpy(&cand.sin_port, &m.addrs[i].bytes[5], 2);
+
+                int trust = 0;
+                if (ctx->peer && ctx->peer->addr.ss_family == AF_INET) {
+                    const struct sockaddr_in *known = (const struct sockaddr_in *)&ctx->peer->addr;
+                    uint32_t known_ip = ntohl(known->sin_addr.s_addr);
+                    uint32_t cand_ip = ntohl(cand.sin_addr.s_addr);
+                    if ((known_ip & 0xffffff00u) == (cand_ip & 0xffffff00u)) trust = 1;
+                }
+                if (!trust) continue;
+
                 struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->remote[ctx->num_remote].addr;
-                sin->sin_family = AF_INET;
-                memcpy(&sin->sin_addr, &m.addrs[i].bytes[1], 4);
-                memcpy(&sin->sin_port, &m.addrs[i].bytes[5], 2);
+                *sin = cand;
                 ctx->remote[ctx->num_remote].addr_len = sizeof(*sin);
                 ctx->num_remote++;
             }

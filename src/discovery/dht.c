@@ -5,6 +5,9 @@
 
 #include <string.h>
 
+#include "../speer_internal.h"
+#include "../util/ct_helpers.h"
+
 #if defined(_WIN32)
 #include <winsock2.h>
 #else
@@ -16,6 +19,38 @@
 #define COPY(dst, src, len) memcpy((dst), (src), (len))
 #define ZERO(p, len)        memset((p), 0, (len))
 #define EQUAL(a, b, len)    (memcmp((a), (b), (len)) == 0)
+
+static uint8_t g_dht_token_secret[32];
+static int g_dht_token_secret_initialized = 0;
+
+static void dht_token_init_if_needed(void) {
+    if (g_dht_token_secret_initialized) return;
+    if (speer_random_bytes_or_fail(g_dht_token_secret, sizeof(g_dht_token_secret)) != 0) {
+        ZERO(g_dht_token_secret, sizeof(g_dht_token_secret));
+    }
+    g_dht_token_secret_initialized = 1;
+}
+
+int dht_compute_store_token(dht_t *dht, const char *sender_addr, uint8_t token[16]) {
+    (void)dht;
+    if (!sender_addr || !token) return -1;
+    dht_token_init_if_needed();
+    sha256_ctx_t ctx;
+    speer_sha256_init(&ctx);
+    speer_sha256_update(&ctx, g_dht_token_secret, sizeof(g_dht_token_secret));
+    speer_sha256_update(&ctx, (const uint8_t *)sender_addr, strlen(sender_addr));
+    speer_sha256_update(&ctx, g_dht_token_secret, sizeof(g_dht_token_secret));
+    uint8_t mac[32];
+    speer_sha256_final(&ctx, mac);
+    COPY(token, mac, 16);
+    return 0;
+}
+
+int dht_verify_store_token(dht_t *dht, const char *sender_addr, const uint8_t token[16]) {
+    uint8_t expect[16];
+    if (dht_compute_store_token(dht, sender_addr, expect) != 0) return -1;
+    return speer_ct_memeq(expect, token, 16) ? 0 : -1;
+}
 
 void dht_distance(const uint8_t *a, const uint8_t *b, uint8_t *out) {
     for (int i = 0; i < DHT_ID_BYTES; i++) { out[i] = a[i] ^ b[i]; }
@@ -220,12 +255,21 @@ int dht_handle_find_node(dht_t *dht, const uint8_t *target_id, uint8_t *response
 static dht_value_t stored_values[DHT_MAX_STORED_VALUES];
 static int num_stored_values = 0;
 
+int dht_handle_store_with_token(dht_t *dht, const char *sender_addr, const uint8_t token[16],
+                                const uint8_t *key, const uint8_t *value, size_t value_len,
+                                const uint8_t *publisher_id) {
+    if (!sender_addr || !token) return -1;
+    if (dht_verify_store_token(dht, sender_addr, token) != 0) return -1;
+    return dht_handle_store(dht, key, value, value_len, publisher_id);
+}
+
 int dht_handle_store(dht_t *dht, const uint8_t *key, const uint8_t *value, size_t value_len,
                      const uint8_t *publisher_id) {
     (void)dht;
+    if (!key || !value || !publisher_id) return -1;
+    if (value_len == 0 || value_len > DHT_VALUE_MAX_SIZE) return -1;
     for (int i = 0; i < num_stored_values; i++) {
         if (EQUAL(stored_values[i].key, key, DHT_ID_BYTES)) {
-            if (value_len > DHT_VALUE_MAX_SIZE) return -1;
             COPY(stored_values[i].value, value, value_len);
             stored_values[i].value_len = value_len;
             stored_values[i].stored_at_ms = 0;

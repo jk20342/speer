@@ -77,14 +77,22 @@ int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
     int status;
     speer_relay_reservation_t res;
     uint8_t peer_id[64];
-    size_t peer_id_len;
+    size_t peer_id_len = sizeof(peer_id);
 
     if (speer_relay_decode(data, len, &type, &status, &res, peer_id, &peer_id_len) != 0) {
         return speer_relay_encode_hop_status(response, *response_len, response_len,
                                              RELAY_STATUS_MALFORMED_MESSAGE, NULL);
     }
+    if (peer_id_len == 0 || peer_id_len > sizeof(peer_id)) {
+        return speer_relay_encode_hop_status(response, *response_len, response_len,
+                                             RELAY_STATUS_MALFORMED_MESSAGE, NULL);
+    }
 
     if (type == HOP_TYPE_RESERVE) {
+        if (!srv->auth_fn || srv->auth_fn(srv->user, peer_id, peer_id_len, from, from_len) != 0) {
+            return speer_relay_encode_hop_status(response, *response_len, response_len,
+                                                 RELAY_STATUS_PERMISSION_DENIED, NULL);
+        }
         if (srv->num_reservations >= RELAY_SERVER_MAX_RESERVATIONS) {
             return speer_relay_encode_hop_status(response, *response_len, response_len,
                                                  RELAY_STATUS_RESOURCE_LIMIT_EXCEEDED, NULL);
@@ -158,19 +166,29 @@ int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
 int relay_server_on_stop(relay_server_t *srv, const uint8_t *data, size_t len,
                          const struct sockaddr_storage *from, socklen_t from_len, uint8_t *response,
                          size_t *response_len) {
-    (void)srv;
-    (void)from;
-    (void)from_len;
-
     speer_relay_msg_type_t type;
     int status;
     speer_relay_reservation_t res;
     uint8_t peer_id[64];
-    size_t peer_id_len;
+    size_t peer_id_len = sizeof(peer_id);
 
     if (speer_relay_decode(data, len, &type, &status, &res, peer_id, &peer_id_len) != 0) {
         return speer_relay_encode_stop_status(response, *response_len, response_len,
                                               RELAY_STATUS_MALFORMED_MESSAGE);
+    }
+    if (peer_id_len == 0 || peer_id_len > sizeof(peer_id)) {
+        return speer_relay_encode_stop_status(response, *response_len, response_len,
+                                              RELAY_STATUS_MALFORMED_MESSAGE);
+    }
+
+    relay_reservation_t *target = find_reservation(srv, peer_id, peer_id_len);
+    if (!target || target->expires_ms < speer_timestamp_ms()) {
+        return speer_relay_encode_stop_status(response, *response_len, response_len,
+                                              RELAY_STATUS_NO_RESERVATION);
+    }
+    if (target->addr_len != from_len || memcmp(&target->addr, from, from_len) != 0) {
+        return speer_relay_encode_stop_status(response, *response_len, response_len,
+                                              RELAY_STATUS_PERMISSION_DENIED);
     }
 
     return speer_relay_encode_stop_status(response, *response_len, response_len, RELAY_STATUS_OK);

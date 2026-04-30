@@ -1,19 +1,3 @@
-/*
- * libp2p ping example over /ip4/.../tcp/PORT
- *
- * Demonstrates the Phase 1 stack:
- *   transport_tcp -> multistream-select(/noise) -> Noise XX with libp2p payload
- *      -> multistream-select(/yamux/1.0.0) -> ping protocol
- *
- * NOTE: this binary intentionally does only the parts we have implemented in C.
- * It performs:
- *   - TCP listen / dial
- *   - multistream-select for /noise
- *   - libp2p payload encode/decode (proto + Ed25519 signature)
- *   - Noise XX message framing
- * The full /ipfs/ping/1.0.0 round-trip uses libp2p_noise post-handshake AEAD.
- */
-
 #include "speer_internal.h"
 
 #include <stdio.h>

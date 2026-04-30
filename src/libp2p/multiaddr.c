@@ -147,6 +147,20 @@ int speer_multiaddr_to_string(const speer_multiaddr_t *ma, char *out, size_t cap
         case SPEER_MA_P2P_CIRCUIT:
             pos += snprintf(out + pos, cap - pos, "/p2p-circuit");
             break;
+        case SPEER_MA_P2P: {
+            uint64_t l;
+            size_t k = speer_uvarint_decode(ma->bytes + i, ma->len - i, &l);
+            if (k == 0) return -1;
+            if (l > (uint64_t)(ma->len - i - k)) return -1;
+            if ((size_t)(pos + 5 + l) >= cap) return -1;
+            pos += snprintf(out + pos, cap - pos, "/p2p/");
+            for (size_t b = 0; b < (size_t)l && pos < cap - 1; b++) {
+                out[pos++] = (char)ma->bytes[i + k + b];
+            }
+            out[pos] = 0;
+            i += k + (size_t)l;
+            break;
+        }
         default:
             pos += snprintf(out + pos, cap - pos, "/unknown(%u)", (unsigned)code);
             return -1;
@@ -180,6 +194,7 @@ int speer_multiaddr_to_host_port_v4(const speer_multiaddr_t *ma, char *host, siz
             uint64_t l;
             size_t k = speer_uvarint_decode(ma->bytes + i, ma->len - i, &l);
             if (k == 0) return -1;
+            if (l > (uint64_t)(ma->len - i - k)) return -1;
             i += k + (size_t)l;
         } else {
             break;
@@ -199,15 +214,24 @@ int speer_multiaddr_get_p2p_id(const speer_multiaddr_t *ma, const uint8_t **id, 
             uint64_t l;
             size_t k = speer_uvarint_decode(ma->bytes + i, ma->len - i, &l);
             if (k == 0) return -1;
+            if (l > (uint64_t)(ma->len - i - k)) return -1;
             *id = ma->bytes + i + k;
             *id_len = (size_t)l;
             return 0;
-        } else if (code == SPEER_MA_IP4)
+        } else if (code == SPEER_MA_IP4) {
+            if (4 > ma->len - i) return -1;
             i += 4;
-        else if (code == SPEER_MA_IP6)
+        } else if (code == SPEER_MA_IP6) {
+            if (16 > ma->len - i) return -1;
             i += 16;
-        else if (code == SPEER_MA_TCP || code == SPEER_MA_UDP)
+        } else if (code == SPEER_MA_TCP || code == SPEER_MA_UDP) {
+            if (2 > ma->len - i) return -1;
             i += 2;
+        } else if (code == SPEER_MA_QUIC || code == SPEER_MA_QUICV1 ||
+                   code == SPEER_MA_P2P_CIRCUIT) {
+        } else {
+            return -1;
+        }
     }
     return -1;
 }

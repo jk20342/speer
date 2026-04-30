@@ -24,10 +24,19 @@ set(SPEER_UNIT_TESTS
     dcutr_relay_integration_check
     relay_client_check
     cpu_features_check
+    parser_robustness_check
+    rng_failure_check
+    poly1305_kat_check
+    chacha_counter_check
+    ecdsa_p256_check
+    quic_pkt_robustness_check
+    identify_check
+    dht_check_negative
 )
 
 if(SPEER_ENABLE_WEBPKI)
     list(APPEND SPEER_UNIT_TESTS webpki_check)
+    list(APPEND SPEER_UNIT_TESTS tls13_auth_check)
 endif()
 
 foreach(test_name ${SPEER_UNIT_TESTS})

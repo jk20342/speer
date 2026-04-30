@@ -6,6 +6,10 @@
 #include "sig_dispatch.h"
 #include "tls_msg.h"
 
+static int is_digit(char c) {
+    return c >= '0' && c <= '9';
+}
+
 static int parse_time(const speer_asn1_t *node, int64_t *out) {
     int yr, mo, d, h, m, s;
     const char *v = (const char *)node->value;
@@ -13,28 +17,41 @@ static int parse_time(const speer_asn1_t *node, int64_t *out) {
     int yr_offset;
     if (node->tag == ASN1_UTCTIME) {
         if (l < 11) return -1;
+        if (!is_digit(v[0]) || !is_digit(v[1])) return -1;
         int yy = (v[0] - '0') * 10 + (v[1] - '0');
         yr = yy < 50 ? 2000 + yy : 1900 + yy;
         yr_offset = 2;
     } else if (node->tag == ASN1_GENERALIZEDTIME) {
         if (l < 13) return -1;
+        if (!is_digit(v[0]) || !is_digit(v[1]) || !is_digit(v[2]) || !is_digit(v[3])) return -1;
         yr = (v[0] - '0') * 1000 + (v[1] - '0') * 100 + (v[2] - '0') * 10 + (v[3] - '0');
         yr_offset = 4;
     } else
         return -1;
+    if ((size_t)yr_offset + 10 > l) return -1;
+    for (int i = 0; i < 10; i++) {
+        if (!is_digit(v[yr_offset + i])) return -1;
+    }
     mo = (v[yr_offset] - '0') * 10 + (v[yr_offset + 1] - '0');
     d = (v[yr_offset + 2] - '0') * 10 + (v[yr_offset + 3] - '0');
     h = (v[yr_offset + 4] - '0') * 10 + (v[yr_offset + 5] - '0');
     m = (v[yr_offset + 6] - '0') * 10 + (v[yr_offset + 7] - '0');
     s = (v[yr_offset + 8] - '0') * 10 + (v[yr_offset + 9] - '0');
 
+    if (mo < 1 || mo > 12) return -1;
+    if (d < 1 || d > 31) return -1;
+    if (h > 23 || m > 59 || s > 60) return -1;
+    if (yr < 1900 || yr > 9999) return -1;
+
+    static const int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    int leap = (yr % 4 == 0 && yr % 100 != 0) || (yr % 400 == 0);
+    int dim = days_in_month[mo - 1] + ((mo == 2 && leap) ? 1 : 0);
+    if (d > dim) return -1;
+
     static const int days_before_month[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
     int64_t t = (yr - 1970) * 365LL + ((yr - 1969) / 4) - ((yr - 1901) / 100) + ((yr - 1601) / 400);
     t += days_before_month[mo - 1] + (d - 1);
-    if (mo > 2) {
-        int leap = (yr % 4 == 0 && yr % 100 != 0) || (yr % 400 == 0);
-        if (leap) t++;
-    }
+    if (mo > 2 && leap) t++;
     t = t * 86400 + h * 3600 + m * 60 + s;
     *out = t;
     return 0;
@@ -70,13 +87,16 @@ static int parse_extensions(speer_x509_t *x, const speer_asn1_t *exts) {
         speer_asn1_t maybe;
         if (speer_asn1_seq_next(&xc, xe, &maybe) != 0) continue;
         speer_asn1_t value;
+        int critical = 0;
         if (maybe.tag == ASN1_BOOLEAN) {
+            critical = maybe.value_len > 0 && maybe.value[0] != 0;
             if (speer_asn1_seq_next(&xc, xe, &value) != 0) continue;
         } else
             value = maybe;
         if (value.tag != ASN1_OCTET_STRING) continue;
 
         if (oid_eq(&oid, OID_BASIC_CONSTRAINTS, sizeof(OID_BASIC_CONSTRAINTS))) {
+            x->has_basic_constraints = 1;
             speer_asn1_t bc;
             if (speer_asn1_parse(value.value, value.value_len, &bc) != 0) continue;
             if (bc.tag != ASN1_SEQUENCE) continue;
@@ -92,13 +112,16 @@ static int parse_extensions(speer_x509_t *x, const speer_asn1_t *exts) {
                     uint32_t pl = 0;
                     speer_asn1_get_int_u32(&inner, &pl);
                     x->path_len_constraint = (int)pl;
+                    x->has_path_len = 1;
                 }
             }
         } else if (oid_eq(&oid, OID_KEY_USAGE, sizeof(OID_KEY_USAGE))) {
+            x->has_key_usage = 1;
             speer_asn1_t bs;
             if (speer_asn1_parse(value.value, value.value_len, &bs) != 0) continue;
             if (bs.tag == ASN1_BIT_STRING && bs.value_len >= 2) { x->key_usage = bs.value[1]; }
         } else if (oid_eq(&oid, OID_EXT_KEY_USAGE, sizeof(OID_EXT_KEY_USAGE))) {
+            x->has_ext_key_usage = 1;
             speer_asn1_t s;
             if (speer_asn1_parse(value.value, value.value_len, &s) != 0) continue;
             const uint8_t *ec;
@@ -112,7 +135,14 @@ static int parse_extensions(speer_x509_t *x, const speer_asn1_t *exts) {
                 if (oid_eq(&o, OID_EKU_CLIENT_AUTH, sizeof(OID_EKU_CLIENT_AUTH)))
                     x->ext_key_usage |= X509_EKU_CLIENT_AUTH;
             }
-        } else if (oid_eq(&oid, OID_SAN, sizeof(OID_SAN))) {
+        } else if (critical &&
+                   !oid_eq(&oid, OID_BASIC_CONSTRAINTS, sizeof(OID_BASIC_CONSTRAINTS)) &&
+                   !oid_eq(&oid, OID_KEY_USAGE, sizeof(OID_KEY_USAGE)) &&
+                   !oid_eq(&oid, OID_EXT_KEY_USAGE, sizeof(OID_EXT_KEY_USAGE)) &&
+                   !oid_eq(&oid, OID_SAN, sizeof(OID_SAN))) {
+            x->unknown_critical_ext = 1;
+        }
+        if (oid_eq(&oid, OID_SAN, sizeof(OID_SAN))) {
             speer_asn1_t s;
             if (speer_asn1_parse(value.value, value.value_len, &s) != 0) continue;
             const uint8_t *sc;
@@ -334,11 +364,14 @@ static int verify_signed_by(const speer_x509_t *child, const uint8_t *parent_spk
 int speer_x509_verify_chain(const speer_ca_store_t *store, const speer_x509_t *leaf,
                             const speer_x509_t *intermediates, size_t num_intermediates,
                             const char *hostname, int64_t now_utc) {
+    if (leaf->unknown_critical_ext) return -1;
     if (now_utc < leaf->not_before_utc || now_utc > leaf->not_after_utc) return -1;
     if (hostname && speer_x509_match_hostname(leaf, hostname) != 0) return -1;
-    if (!(leaf->ext_key_usage & X509_EKU_SERVER_AUTH) && leaf->ext_key_usage != 0) return -1;
+    if (leaf->has_ext_key_usage && !(leaf->ext_key_usage & X509_EKU_SERVER_AUTH)) return -1;
+    if (leaf->has_key_usage && !(leaf->key_usage & X509_KU_DIGITAL_SIGNATURE)) return -1;
 
     const speer_x509_t *current = leaf;
+    size_t intermediate_depth = 0;
     for (size_t depth = 0; depth < num_intermediates; depth++) {
         const speer_x509_t *parent = NULL;
         for (size_t j = 0; j < num_intermediates; j++) {
@@ -350,11 +383,15 @@ int speer_x509_verify_chain(const speer_ca_store_t *store, const speer_x509_t *l
             }
         }
         if (!parent) break;
+        if (parent->unknown_critical_ext) return -1;
         if (now_utc < parent->not_before_utc || now_utc > parent->not_after_utc) return -1;
         if (!parent->is_ca) return -1;
-        if (!(parent->key_usage & X509_KU_KEY_CERT_SIGN) && parent->key_usage != 0) return -1;
+        if (!(parent->key_usage & X509_KU_KEY_CERT_SIGN)) return -1;
+        if (parent->has_path_len && (int)intermediate_depth > parent->path_len_constraint)
+            return -1;
         if (verify_signed_by(current, parent->spki_pubkey, parent->spki_pubkey_len) != 0) return -1;
         current = parent;
+        intermediate_depth++;
     }
 
     for (size_t i = 0; i < store->count; i++) {

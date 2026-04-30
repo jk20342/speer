@@ -50,6 +50,8 @@ typedef struct {
     uint64_t packets_relayed;
     int (*send_fn)(void *user, const struct sockaddr_storage *addr, socklen_t addr_len,
                    const uint8_t *data, size_t len);
+    int (*auth_fn)(void *user, const uint8_t *peer_id, size_t peer_id_len,
+                   const struct sockaddr_storage *addr, socklen_t addr_len);
     void *user;
 } relay_server_t;
 

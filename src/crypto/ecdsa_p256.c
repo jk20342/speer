@@ -56,8 +56,7 @@ static void pt_double(pt_t *r, const pt_t *p) {
         *r = *p;
         return;
     }
-    /* affine doubling for simplicity (slow but correct) */
-    speer_bn_t two_y, three_x2, lam, x2, x2_a, num, inv_den, t;
+    speer_bn_t two_y, three_x2, lam, x2, num, inv_den;
     speer_bn_addmod(&two_y, &p->y, &p->y, &bn_p);
     if (speer_bn_is_zero(&two_y)) {
         pt_set_zero(r);
@@ -84,8 +83,6 @@ static void pt_double(pt_t *r, const pt_t *p) {
     speer_bn_copy(&r->x, &rx);
     speer_bn_copy(&r->y, &ry);
     r->infinity = 0;
-    (void)x2_a;
-    (void)t;
 }
 
 static void pt_add(pt_t *r, const pt_t *p, const pt_t *q) {
@@ -141,6 +138,20 @@ static void pt_scalar_mul(pt_t *r, const pt_t *base, const speer_bn_t *k) {
     *r = res;
 }
 
+static int validate_pubkey_on_curve(const pt_t *q) {
+    if (q->infinity) return -1;
+    if (speer_bn_cmp(&q->x, &bn_p) >= 0 || speer_bn_cmp(&q->y, &bn_p) >= 0) return -1;
+    speer_bn_t y2, x2, x3, x3_minus_3x, rhs, three_x;
+    speer_bn_mulmod(&y2, &q->y, &q->y, &bn_p);
+    speer_bn_mulmod(&x2, &q->x, &q->x, &bn_p);
+    speer_bn_mulmod(&x3, &x2, &q->x, &bn_p);
+    speer_bn_addmod(&three_x, &q->x, &q->x, &bn_p);
+    speer_bn_addmod(&three_x, &three_x, &q->x, &bn_p);
+    speer_bn_submod(&x3_minus_3x, &x3, &three_x, &bn_p);
+    speer_bn_addmod(&rhs, &x3_minus_3x, &bn_b, &bn_p);
+    return speer_bn_cmp(&y2, &rhs) == 0 ? 0 : -1;
+}
+
 int speer_ecdsa_p256_verify(const uint8_t pubkey[64], const uint8_t *msg_hash, size_t msg_hash_len,
                             const uint8_t *sig_r, size_t sig_r_len, const uint8_t *sig_s,
                             size_t sig_s_len) {
@@ -151,6 +162,11 @@ int speer_ecdsa_p256_verify(const uint8_t pubkey[64], const uint8_t *msg_hash, s
     if (speer_bn_from_bytes_be(&s, sig_s, sig_s_len) != 0) return -1;
     if (speer_bn_is_zero(&r) || speer_bn_cmp(&r, &bn_n) >= 0) return -1;
     if (speer_bn_is_zero(&s) || speer_bn_cmp(&s, &bn_n) >= 0) return -1;
+
+    speer_bn_t half_n;
+    speer_bn_copy(&half_n, &bn_n);
+    speer_bn_shr1(&half_n);
+    if (speer_bn_cmp(&s, &half_n) > 0) return -1;
 
     speer_bn_t e;
     if (msg_hash_len > 32) msg_hash_len = 32;
@@ -171,6 +187,7 @@ int speer_ecdsa_p256_verify(const uint8_t pubkey[64], const uint8_t *msg_hash, s
     speer_bn_from_bytes_be(&Q.x, pubkey, 32);
     speer_bn_from_bytes_be(&Q.y, pubkey + 32, 32);
     Q.infinity = 0;
+    if (validate_pubkey_on_curve(&Q) != 0) return -1;
 
     pt_t u1G, u2Q, R;
     pt_scalar_mul(&u1G, &G, &u1);

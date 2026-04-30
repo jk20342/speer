@@ -73,17 +73,28 @@ size_t speer_varint_decode(const uint8_t *in, uint64_t *val) {
     return 0;
 }
 
+static size_t varint_decode_bounded(const uint8_t *in, size_t avail, uint64_t *val) {
+    if (avail < 1) return 0;
+    uint8_t type = in[0] >> 6;
+    static const size_t need[4] = {1, 2, 4, 8};
+    if (avail < need[type]) return 0;
+    return speer_varint_decode(in, val);
+}
+
 static size_t encode_cid(uint8_t *out, const uint8_t cid[SPEER_MAX_CID_LEN], uint8_t cid_len) {
     out[0] = cid_len;
     COPY(out + 1, cid, cid_len);
     return 1 + cid_len;
 }
 
-static size_t decode_cid(const uint8_t *in, uint8_t cid[SPEER_MAX_CID_LEN], uint8_t *cid_len) {
+static size_t decode_cid(const uint8_t *in, size_t avail, uint8_t cid[SPEER_MAX_CID_LEN],
+                         uint8_t *cid_len) {
+    if (avail < 1) return 0;
     *cid_len = in[0];
     if (*cid_len > SPEER_MAX_CID_LEN) return 0;
+    if ((size_t)*cid_len > avail - 1) return 0;
     COPY(cid, in + 1, *cid_len);
-    return 1 + *cid_len;
+    return 1 + (size_t)*cid_len;
 }
 
 static size_t encode_header(uint8_t *out, uint8_t type, const uint8_t cid[SPEER_MAX_CID_LEN],
@@ -104,11 +115,13 @@ static size_t decode_header(const uint8_t *in, size_t in_len, uint8_t *type,
     if (type) *type = in[1];
     size_t n = 2;
 
-    size_t d = decode_cid(in + n, cid, cid_len);
+    size_t d = decode_cid(in + n, in_len - n, cid, cid_len);
     if (d == 0) return 0;
     n += d;
 
-    n += speer_varint_decode(in + n, pkt_num);
+    size_t pn_n = varint_decode_bounded(in + n, in_len - n, pkt_num);
+    if (pn_n == 0) return 0;
+    n += pn_n;
     return n;
 }
 

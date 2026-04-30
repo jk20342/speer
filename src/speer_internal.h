@@ -260,6 +260,7 @@ void speer_crypto_init(void);
 void speer_chacha_init(speer_chacha_ctx_t *ctx, const uint8_t key[32], const uint8_t nonce[12]);
 void speer_chacha_block(speer_chacha_ctx_t *ctx, uint8_t out[64]);
 void speer_chacha_crypt(speer_chacha_ctx_t *ctx, uint8_t *out, const uint8_t *in, size_t len);
+int speer_chacha_block_counter_at_max(const speer_chacha_ctx_t *ctx);
 
 int speer_x25519(uint8_t out[32], const uint8_t scalar[32], const uint8_t point[32]);
 void speer_x25519_base(uint8_t out[32], const uint8_t scalar[32]);
@@ -322,6 +323,15 @@ int speer_noise_xx_write_msg2(speer_handshake_t *hs, uint8_t out[80]);
 int speer_noise_xx_read_msg2(speer_handshake_t *hs, const uint8_t in[80]);
 int speer_noise_xx_write_msg3(speer_handshake_t *hs, uint8_t out[48]);
 int speer_noise_xx_read_msg3(speer_handshake_t *hs, const uint8_t in[48]);
+
+int speer_noise_xx_write_msg2_p(speer_handshake_t *hs, const uint8_t *payload, size_t payload_len,
+                                uint8_t *out, size_t out_cap, size_t *out_len);
+int speer_noise_xx_read_msg2_p(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
+                               uint8_t *payload_out, size_t payload_cap, size_t *payload_len);
+int speer_noise_xx_write_msg3_p(speer_handshake_t *hs, const uint8_t *payload, size_t payload_len,
+                                uint8_t *out, size_t out_cap, size_t *out_len);
+int speer_noise_xx_read_msg3_p(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
+                               uint8_t *payload_out, size_t payload_cap, size_t *payload_len);
 
 int speer_packet_encode(uint8_t *out, size_t *out_len, const uint8_t *in, size_t in_len,
                         const uint8_t cid[SPEER_MAX_CID_LEN], uint8_t cid_len, uint64_t pkt_num,

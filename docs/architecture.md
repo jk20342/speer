@@ -248,14 +248,51 @@ For integration with existing event loops:
 
 | Protocol | Status | Notes |
 |----------|--------|-------|
-| libp2p Noise XX | Full | libp2p extensions included |
-| Yamux | Full | Stream multiplexing |
-| mDNS Discovery | Full | Local peer discovery |
-| Kademlia DHT | Partial | Basic routing table, iterative lookups |
-| QUIC v1 | Partial | Initial packet support, basic framing |
-| TLS 1.3 | Partial | Client/server handshake |
-| Circuit Relay v2 | Partial | Reservation, basic relaying |
-| DCUtR | Partial | Hole punching coordination |
+| libp2p Noise XX | Full | libp2p signed payload encrypted in messages 2/3 |
+| Yamux | Full | Stream multiplexing with windowed flow control |
+| mDNS Discovery | Full | Local peer discovery (claims treated as untrusted hints) |
+| Kademlia DHT | Partial | Routing table, iterative lookups, STORE tokens |
+| QUIC v1 | Partial | Initial packet support, packet number reconstruction, basic framing |
+| TLS 1.3 | Partial | Client + server handshake; CertificateVerify and Finished verified |
+| Circuit Relay v2 | Partial | Reservation auth, signed STOP binding |
+| DCUtR | Partial | Per-peer state, anti-spoofed candidate addresses |
+
+### TLS 1.3 details
+
+- Client and server flows are both implemented. The server emits
+  ServerHello / EncryptedExtensions / Certificate / CertificateVerify /
+  Finished and the client sends its Finished as a second flight.
+- `CertificateVerify` is parsed as `(sigalg, length-prefixed signature)`,
+  the RFC 8446 §4.4.3 signed-content blob is rebuilt over the
+  transcript-hash captured immediately after `Certificate`, and the
+  signature is verified through `sig_dispatch` against the SPKI public
+  key extracted from the leaf certificate.
+- `Finished` is verified by computing the expected MAC with
+  `speer_tls13_finished_mac` over the post-CertificateVerify transcript
+  hash and comparing in constant time.
+- The outer X.509 self-signature is verified in addition to the
+  embedded libp2p extension; when a Web PKI bundle is supplied,
+  `speer_x509_verify_chain` is invoked which enforces critical
+  extensions, leaf `serverAuth` EKU, intermediate `keyCertSign` KU, and
+  `path_len_constraint`.
+- Cipher suites: `AES_128_GCM_SHA256`, `AES_256_GCM_SHA384`, and
+  `CHACHA20_POLY1305_SHA256`. Key share: `x25519` (with `secp256r1`
+  hooks). Sigalgs: `ed25519`, `ecdsa_secp256r1_sha256`,
+  `rsa_pss_rsae_sha256`. HRR/KeyUpdate/CertificateRequest scaffolding
+  is in place; mutual authentication and full HRR are partial.
+- The record layer caps sequence numbers below `2^48`, enforces the
+  RFC 8446 §5.1 record-size limit, validates the legacy version
+  bytes (`0x0303`), rejects `inner_type = 0`, and produces / consumes
+  records on a per-direction sequence counter.
+
+### libp2p Noise
+
+- `write_s` / `read_s` carry the libp2p signed payload (built with
+  `speer_libp2p_noise_payload_make`) instead of the bare 32-byte static
+  key, so the peer's signature over `noise-libp2p-static-key:<static>`
+  binds the PeerID to the Noise session.
+- Both the embedded public key and the 64-byte signature are required
+  on the receive path; payloads missing either field are rejected.
 
 ## Security Considerations
 
@@ -280,12 +317,31 @@ For integration with existing event loops:
 - Maximum packet size enforced (1350 bytes)
 - Connection limits prevent resource exhaustion
 
+### Implemented (Security)
+
+- TCP transport rate limit (concurrent connection cap and per-second
+  accept budget in `transport_tcp.c`).
+- HKDF expand bounds: `n <= 255` and `info_len <= 256` are enforced.
+- ChaCha block counter cap: `speer_chacha_block_counter_at_max` allows
+  callers to detect the 2^32 block ceiling per nonce and rotate before
+  the counter wraps into the IETF 96-bit nonce.
+- Constant-time tag/MAC comparisons via `speer_ct_memeq`, including the
+  `n == 0` early-return.
+- Cryptographic Connection IDs (`speer_random_bytes_or_fail` instead of
+  the previous LCG) so peers cannot predict CIDs.
+- DHT STORE tokens (HMAC-keyed by per-node secret + sender address) to
+  block cross-network store amplification.
+- Critical extension enforcement and EKU/KU/path-len policy checks in
+  `x509_webpki.c`; unknown critical extensions fail the chain.
+- Per-peer DCUTR state with anti-spoofed candidate addresses (only
+  /24 IPv4 / /48 IPv6 prefixes matching the authenticated session
+  address are accepted in `CONNECT` candidates).
+
 ### Not Implemented (Security)
 
 - Certificate pinning
-- Peer blacklisting
-- Rate limiting
-- DDoS protection
+- Peer blacklisting beyond the rate-limit window
+- DDoS protection beyond the transport rate limit
 
 ## Performance Characteristics
 

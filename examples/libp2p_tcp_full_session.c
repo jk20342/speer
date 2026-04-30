@@ -1,17 +1,3 @@
-/*
- * Full libp2p-style TCP session (speer-to-speer):
- *   TCP -> multistream /noise -> Noise XX (plain speer handshake, length-prefixed u16) ->
- *   encrypted multistream /yamux/1.0.0 -> yamux echo on stream 1
- *
- * This interoperates with itself only (not go-libp2p), using the handshake in tests/noise_check.c.
- *
- * Usage (two terminals on the same machine):
- *   libp2p_tcp_full_session listen 4001
- *   libp2p_tcp_full_session dial 127.0.0.1 4001
- *
- * For relay + DCUtR against a real network, see relay_example.c and relay_client.h.
- */
-
 #include "speer_internal.h"
 
 #include <stdio.h>

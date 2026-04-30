@@ -44,6 +44,7 @@ static int chacha20_poly1305_seal(const uint8_t *key, const uint8_t *nonce, cons
 
     speer_poly1305(out_tag, mac_in, mac_len, poly_key);
     free(mac_in);
+    WIPE(poly_key, sizeof(poly_key));
     return 0;
 }
 
@@ -88,9 +89,15 @@ static int chacha20_poly1305_open(const uint8_t *key, const uint8_t *nonce, cons
     speer_poly1305(computed, mac_in, mac_len, poly_key);
     free(mac_in);
 
-    if (!speer_ct_memeq(computed, tag, 16)) return -1;
+    if (!speer_ct_memeq(computed, tag, 16)) {
+        WIPE(poly_key, sizeof(poly_key));
+        WIPE(computed, sizeof(computed));
+        return -1;
+    }
 
     speer_chacha_crypt(&ctx, out_pt, ct, ct_len);
+    WIPE(poly_key, sizeof(poly_key));
+    WIPE(computed, sizeof(computed));
     return 0;
 }
 

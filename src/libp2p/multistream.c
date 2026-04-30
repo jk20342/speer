@@ -31,12 +31,8 @@ static int read_lp_string(void *user, speer_ms_recv_fn recv_fn, char *out, size_
     if (speer_uvarint_decode(lp, total, &plen) == 0) return -1;
     if (plen == 0 || plen > cap) return -1;
     if (recv_fn(user, (uint8_t *)out, (size_t)plen, &got) != 0 || got != plen) return -1;
-    if (out[plen - 1] == '\n')
-        out[plen - 1] = 0;
-    else if (plen < cap)
-        out[plen] = 0;
-    else
-        return -1;
+    if (out[plen - 1] != '\n') return -1;
+    out[plen - 1] = 0;
     return 0;
 }
 

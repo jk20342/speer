@@ -176,12 +176,14 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
     if (speer_yamux_hdr_unpack(&h, hbuf) != 0) return -1;
 
     if (h.type == YAMUX_TYPE_DATA) {
+        if (h.length > YAMUX_INITIAL_WINDOW) return -1;
         speer_yamux_stream_t *st = find_stream(s, h.stream_id);
         if (!st && (h.flags & YAMUX_FLAG_SYN)) {
             st = alloc_stream(s, h.stream_id);
             if (!st) return -1;
         }
         if (h.length > 0 && st) {
+            if (h.length > st->recv_window) return -1;
             uint8_t *tmp = (uint8_t *)malloc(h.length);
             if (!tmp) return -1;
             if (s->recv_raw(s->user, tmp, h.length, &got) != 0 || got != h.length) {
@@ -197,10 +199,12 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
             }
         } else if (h.length > 0) {
             uint8_t *tmp = (uint8_t *)malloc(h.length);
-            if (tmp) {
-                s->recv_raw(s->user, tmp, h.length, &got);
+            if (!tmp) return -1;
+            if (s->recv_raw(s->user, tmp, h.length, &got) != 0 || got != h.length) {
                 free(tmp);
+                return -1;
             }
+            free(tmp);
         }
         if (st && (h.flags & YAMUX_FLAG_FIN)) st->remote_closed = 1;
         if (st && (h.flags & YAMUX_FLAG_RST)) {
@@ -210,7 +214,11 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
     } else if (h.type == YAMUX_TYPE_WINDOW_UPDATE) {
         speer_yamux_stream_t *st = find_stream(s, h.stream_id);
         if (!st && (h.flags & YAMUX_FLAG_SYN)) { st = alloc_stream(s, h.stream_id); }
-        if (st) st->send_window += h.length;
+        if (st) {
+            uint64_t nw = (uint64_t)st->send_window + (uint64_t)h.length;
+            if (nw > UINT32_MAX) nw = UINT32_MAX;
+            st->send_window = (uint32_t)nw;
+        }
     } else if (h.type == YAMUX_TYPE_PING) {
         if (h.flags & YAMUX_FLAG_SYN) { speer_yamux_send_ping(s, h.length, 1); }
     } else if (h.type == YAMUX_TYPE_GO_AWAY) {

@@ -8,20 +8,35 @@
 #include "hash_iface.h"
 #include "varint.h"
 
-static const uint8_t kInitialSalt[20] = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34,
-                                         0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8,
-                                         0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};
+static const uint8_t kInitialSaltV1[20] = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34,
+                                           0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8,
+                                           0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};
 
 static void hp_init_aes128(speer_hp_ctx_t *h, const uint8_t *k) {
     speer_hp_init(h, SPEER_HP_AES_128, k);
 }
 
+uint64_t speer_quic_decode_pn(uint64_t largest_pn, uint64_t truncated_pn, size_t pn_nbits) {
+    uint64_t expected_pn = largest_pn + 1;
+    uint64_t pn_win = (uint64_t)1 << pn_nbits;
+    uint64_t pn_hwin = pn_win >> 1;
+    uint64_t pn_mask = pn_win - 1;
+    uint64_t candidate_pn = (expected_pn & ~pn_mask) | truncated_pn;
+    if (candidate_pn + pn_hwin <= expected_pn && candidate_pn < ((uint64_t)1 << 62) - pn_win)
+        candidate_pn += pn_win;
+    else if (candidate_pn > expected_pn + pn_hwin && candidate_pn >= pn_win)
+        candidate_pn -= pn_win;
+    return candidate_pn;
+}
+
 int speer_quic_keys_init_initial(speer_quic_keys_t *ck, speer_quic_keys_t *sk, const uint8_t *dcid,
-                                 size_t dcid_len) {
+                                 size_t dcid_len, uint32_t version) {
+    if (dcid_len > QUIC_MAX_CID_LEN) return -1;
+    if (version != QUIC_VERSION_V1) return -1;
     ZERO(ck, sizeof(*ck));
     ZERO(sk, sizeof(*sk));
     uint8_t initial_secret[32];
-    speer_hkdf2_extract(&speer_hash_sha256, initial_secret, kInitialSalt, sizeof(kInitialSalt),
+    speer_hkdf2_extract(&speer_hash_sha256, initial_secret, kInitialSaltV1, sizeof(kInitialSaltV1),
                         dcid, dcid_len);
 
     uint8_t client_secret[32], server_secret[32];
@@ -134,15 +149,19 @@ int speer_quic_pkt_decode_long(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_len
     p->is_long = 1;
     p->version = ((uint32_t)pkt[1] << 24) | ((uint32_t)pkt[2] << 16) | ((uint32_t)pkt[3] << 8) |
                  pkt[4];
+    if (p->version != QUIC_VERSION_V1) return -1;
     size_t pos = 5;
 
     if (pos + 1 > pkt_len) return -1;
     p->dcid_len = pkt[pos++];
-    if (pos + p->dcid_len + 1 > pkt_len) return -1;
+    if (p->dcid_len > QUIC_MAX_CID_LEN) return -1;
+    if (p->dcid_len > pkt_len - pos) return -1;
     if (p->dcid_len > 0) COPY(p->dcid, pkt + pos, p->dcid_len);
     pos += p->dcid_len;
+    if (pos + 1 > pkt_len) return -1;
     p->scid_len = pkt[pos++];
-    if (pos + p->scid_len > pkt_len) return -1;
+    if (p->scid_len > QUIC_MAX_CID_LEN) return -1;
+    if (p->scid_len > pkt_len - pos) return -1;
     if (p->scid_len > 0) COPY(p->scid, pkt + pos, p->scid_len);
     pos += p->scid_len;
 
@@ -151,7 +170,8 @@ int speer_quic_pkt_decode_long(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_len
     if (p->pkt_type == QUIC_PT_INITIAL) {
         uint64_t tlen;
         size_t n = speer_qvarint_decode(pkt + pos, pkt_len - pos, &tlen);
-        if (n == 0 || pos + n + tlen > pkt_len) return -1;
+        if (n == 0) return -1;
+        if (tlen > (uint64_t)(pkt_len - pos - n)) return -1;
         pos += n;
         p->token = pkt + pos;
         p->token_len = (size_t)tlen;
@@ -162,27 +182,30 @@ int speer_quic_pkt_decode_long(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_len
     size_t n = speer_qvarint_decode(pkt + pos, pkt_len - pos, &length_field);
     if (n == 0) return -1;
     pos += n;
-    if (pos + length_field > pkt_len) return -1;
+    if (length_field > (uint64_t)(pkt_len - pos)) return -1;
+    if (length_field > (uint64_t)pkt_len) return -1;
 
     size_t pn_offset = pos;
     size_t pn_length;
     if (speer_hp_unprotect(&keys->hp, pkt, pkt_len, pn_offset, &pn_length) != 0) return -1;
     p->pn_length = pn_length;
+    if (length_field < (uint64_t)pn_length + 16) return -1;
 
     uint64_t pn = 0;
     for (size_t i = 0; i < pn_length; i++) pn = (pn << 8) | pkt[pn_offset + i];
-    p->pkt_num = pn;
+    p->pkt_num = speer_quic_decode_pn(keys->largest_acked, pn, pn_length * 8);
 
     size_t hdr_len = pn_offset + pn_length;
     size_t ct_len = (size_t)length_field - pn_length - 16;
     if (hdr_len + ct_len + 16 > pkt_len) return -1;
 
     uint8_t nonce[12];
-    make_nonce(nonce, keys->iv, pn);
+    make_nonce(nonce, keys->iv, p->pkt_num);
     if (keys->aead->open(keys->key, nonce, pkt, hdr_len, pkt + hdr_len, ct_len,
                          pkt + hdr_len + ct_len, pkt + hdr_len) != 0)
         return -1;
 
+    if (p->pkt_num > keys->largest_acked) keys->largest_acked = p->pkt_num;
     p->payload = pkt + hdr_len;
     p->payload_len = ct_len;
     return 0;
@@ -242,18 +265,19 @@ int speer_quic_pkt_decode_short(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_le
 
     uint64_t pn = 0;
     for (size_t i = 0; i < pn_length; i++) pn = (pn << 8) | pkt[pn_offset + i];
-    p->pkt_num = pn;
+    p->pkt_num = speer_quic_decode_pn(keys->largest_acked, pn, pn_length * 8);
 
     size_t hdr_len = pn_offset + pn_length;
     if (hdr_len + 16 > pkt_len) return -1;
     size_t ct_len = pkt_len - hdr_len - 16;
 
     uint8_t nonce[12];
-    make_nonce(nonce, keys->iv, pn);
+    make_nonce(nonce, keys->iv, p->pkt_num);
     if (keys->aead->open(keys->key, nonce, pkt, hdr_len, pkt + hdr_len, ct_len,
                          pkt + hdr_len + ct_len, pkt + hdr_len) != 0)
         return -1;
 
+    if (p->pkt_num > keys->largest_acked) keys->largest_acked = p->pkt_num;
     p->payload = pkt + hdr_len;
     p->payload_len = ct_len;
     return 0;

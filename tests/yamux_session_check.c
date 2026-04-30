@@ -134,7 +134,6 @@ int main(void) {
     if (byteq_push(&ca.q, gh, sizeof(gh)) != 0) FAIL("enqueue goaway\n");
     if (speer_yamux_pump(&client) != -1) FAIL("goaway should fail pump\n");
 
-    /* New streams for RST path */
     speer_yamux_close(&client);
     speer_yamux_close(&server);
     ZERO(&ca, sizeof(ca));

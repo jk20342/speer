@@ -385,8 +385,9 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
     uint16_t port = 0;
     char txt_peer_id[MDNS_MAX_NAME_LENGTH] = {0};
     char txt_dnsaddr[256] = {0};
-    uint16_t total_records = hdr.answers + hdr.authority + hdr.additional;
-    for (uint16_t i = 0; i < total_records && pos < len; i++) {
+    uint32_t total_records = (uint32_t)hdr.answers + hdr.authority + hdr.additional;
+    if (total_records > 64) total_records = 64;
+    for (uint32_t i = 0; i < total_records && pos < len; i++) {
         char name[MDNS_MAX_NAME_LENGTH];
         size_t name_len = decode_name(data, len, pos, name, sizeof(name), 0);
         if (name_len == 0 || name_len >= len) break;

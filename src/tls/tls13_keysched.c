@@ -106,8 +106,7 @@ static void derive_keys(const speer_tls13_suite_t *s, const uint8_t *traffic_sec
 }
 
 int speer_tls13_handshake_keys(const speer_tls13_keysched_t *ks, speer_tls13_keys_t *client_keys,
-                               speer_tls13_keys_t *server_keys, const uint8_t *hs_transcript_hash) {
-    (void)hs_transcript_hash;
+                               speer_tls13_keys_t *server_keys) {
     derive_keys(&ks->suite, ks->client_handshake_traffic, client_keys);
     derive_keys(&ks->suite, ks->server_handshake_traffic, server_keys);
     return 0;

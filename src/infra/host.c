@@ -196,7 +196,6 @@ static int process_packet(speer_host_t *host, const uint8_t *data, size_t len,
 
             speer_noise_xx_init(&peer->handshake, host->pubkey, host->privkey);
 
-            peer->host->bind_addr_len = 0;
             return process_handshake_response(host, peer, data + hdr_len, len - hdr_len, addr,
                                               addr_len);
         }
