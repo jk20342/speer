@@ -40,7 +40,7 @@ static int my_inet_pton(int af, const char *src, void *dst) {
     if (src_len >= sizeof(src_copy)) return 0;
     memcpy(src_copy, src, src_len + 1);
 
-    ss.ss_family = (ADDRESS_FAMILY)af;
+    ss.ss_family = (short)af;
     int size = sizeof(ss);
     if (WSAStringToAddressA(src_copy, af, NULL, (struct sockaddr *)&ss, &size) != 0) { return 0; }
 

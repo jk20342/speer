@@ -278,8 +278,8 @@ For integration with existing event loops:
 - Cipher suites: `AES_128_GCM_SHA256`, `AES_256_GCM_SHA384`, and
   `CHACHA20_POLY1305_SHA256`. Key share: `x25519` (with `secp256r1`
   hooks). Sigalgs: `ed25519`, `ecdsa_secp256r1_sha256`,
-  `rsa_pss_rsae_sha256`. HRR/KeyUpdate/CertificateRequest scaffolding
-  is in place; mutual authentication and full HRR are partial.
+  `rsa_pss_rsae_sha256`. Post-handshake KeyUpdate advances application
+  traffic secrets; mutual authentication and full HRR are partial.
 - The record layer caps sequence numbers below `2^48`, enforces the
   RFC 8446 §5.1 record-size limit, validates the legacy version
   bytes (`0x0303`), rejects `inner_type = 0`, and produces / consumes

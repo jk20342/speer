@@ -73,6 +73,18 @@ int main(void) {
     if (ret != 1) FAIL("should find stored value\n");
     if (found.value_len != sizeof(value)) FAIL("value length mismatch\n");
     if (memcmp(found.value, value, sizeof(value)) != 0) FAIL("value data mismatch\n");
+    if (dht.num_values != 1) FAIL("value should be stored on this DHT\n");
+
+    dht_t other;
+    uint8_t other_id[DHT_ID_BYTES] = {0x55};
+    if (dht_init(&other, other_id) != 0) FAIL("other dht_init failed\n");
+    response_len = sizeof(response);
+    ret = dht_handle_find_value(&other, key, response, &response_len, &found);
+    if (ret != 0) FAIL("other DHT should not see value\n");
+    dht_free(&other);
+
+    dht_expire_values(&dht, DHT_VALUE_TTL_MS + 1);
+    if (dht.num_values != 0) FAIL("value should expire\n");
 
     uint8_t missing_key[DHT_ID_BYTES] = {0x99, 0x88, 0x77, 0x66};
     response_len = sizeof(response);

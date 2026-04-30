@@ -55,6 +55,9 @@ int speer_tls13_application_keys(const speer_tls13_keysched_t *ks, speer_tls13_k
                                  speer_tls13_keys_t *server_keys,
                                  const uint8_t *server_finished_hash);
 
+int speer_tls13_update_application_traffic(speer_tls13_keysched_t *ks, int from_server,
+                                           speer_tls13_keys_t *out_keys);
+
 int speer_tls13_finished_mac(const speer_tls13_keysched_t *ks, int from_server,
                              const uint8_t *base_secret, const uint8_t *transcript_hash,
                              uint8_t *out_mac);

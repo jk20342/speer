@@ -1,6 +1,6 @@
 # speer
 
-A tiny libp2p in C. Noise XX, libp2p over TCP, partial QUIC v1, partial TLS 1.3, optional Web PKI. ~13k LOC of code, zero external dependencies.
+A tiny libp2p in C. Noise XX, libp2p over TCP, partial QUIC v1, TLS 1.3, optional Web PKI, practical DHT core. ~13k LOC of code, zero external dependencies.
 
 See [docs/architecture.md](docs/architecture.md) for the per-protocol status table and [docs/SECURITY.md](docs/SECURITY.md) for the trust model.
 
@@ -115,8 +115,8 @@ speer_x509_verify_chain(speer_ca_bundle_default(),
 | Noise XX         | full    |
 | Yamux            | full    |
 | mDNS             | full (records are untrusted hints) |
-| Kademlia DHT     | partial (STORE tokens, iterative lookup) |
-| TLS 1.3          | partial (CV/Finished verified; HRR/KeyUpdate/mutual partial) |
+| Kademlia DHT     | practical core (STORE tokens, iterative lookup, TTLs, bootstrap, libp2p protobuf boundary) |
+| TLS 1.3          | full core (CV/Finished verified; KeyUpdate, HRR, mTLS, PSK/NST hooks) |
 | QUIC v1          | partial (packet codec only; no full connection, loss recovery, migration) |
 | Circuit Relay v2 | partial (auth on RESERVE/STOP) |
 | DCUtR            | partial (per-peer state, anti-spoofed candidates) |

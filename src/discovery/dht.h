@@ -13,6 +13,7 @@
 #define DHT_RPC_TIMEOUT_MS        5000
 #define DHT_REFRESH_INTERVAL_MS   900000
 #define DHT_REPUBLISH_INTERVAL_MS 86400000
+#define DHT_VALUE_TTL_MS          86400000
 
 #define DHT_RPC_PING              0x01
 #define DHT_RPC_STORE             0x02
@@ -21,6 +22,7 @@
 #define DHT_RPC_ANNOUNCE          0x05
 
 #define DHT_VALUE_MAX_SIZE        1024
+#define DHT_MAX_STORED_VALUES     256
 
 typedef struct {
     uint8_t id[DHT_ID_BYTES];
@@ -51,8 +53,11 @@ typedef struct {
 typedef struct {
     uint8_t id[DHT_ID_BYTES];
     dht_bucket_t *root;
-    int (*send_rpc)(void *user, const char *addr, const uint8_t *data, size_t len);
+    int (*send_rpc)(void *user, const char *addr, uint8_t op, const uint8_t *request,
+                    size_t request_len, uint8_t *response, size_t *response_len);
     void *user;
+    dht_value_t values[DHT_MAX_STORED_VALUES];
+    int num_values;
     uint32_t total_nodes;
     uint64_t start_time_ms;
     bool bootstrapped;

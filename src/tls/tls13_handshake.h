@@ -48,6 +48,11 @@ typedef struct {
 
     uint8_t client_random[32];
     uint8_t server_random[32];
+    uint8_t hrr_seen;
+    uint16_t offered_cipher_suites[3];
+    size_t offered_cipher_suites_len;
+    uint16_t offered_sigalgs[8];
+    size_t offered_sigalgs_len;
 
     uint8_t *transcript;
     size_t transcript_len;
@@ -58,6 +63,8 @@ typedef struct {
 
     uint8_t our_cert_priv[32];
     uint8_t our_cert_pub[32];
+    uint8_t psk[64];
+    size_t psk_len;
 
     uint8_t libp2p_pubkey_proto[256];
     size_t libp2p_pubkey_proto_len;
@@ -96,6 +103,10 @@ typedef struct {
     uint64_t client_record_seq;
     uint64_t server_record_seq;
 
+    uint8_t alert_level;
+    uint8_t alert_description;
+
+    int require_client_auth;
     int client_finished_sent;
     int server_finished_received;
     int cert_request_seen;
@@ -108,9 +119,15 @@ int speer_tls13_init_handshake(speer_tls13_t *h, speer_tls_role_t role, const ui
                                const char *server_name);
 
 int speer_tls13_handshake_start(speer_tls13_t *h);
+int speer_tls13_set_psk(speer_tls13_t *h, const uint8_t *psk, size_t psk_len);
+int speer_tls13_set_require_client_auth(speer_tls13_t *h, int required);
 int speer_tls13_handshake_consume(speer_tls13_t *h, uint8_t msg_type, const uint8_t *body,
                                   size_t body_len);
 int speer_tls13_handshake_take_output(speer_tls13_t *h, uint8_t *out, size_t cap, size_t *out_len);
+
+int speer_tls13_send_key_update(speer_tls13_t *h, int request_peer_update);
+int speer_tls13_send_new_session_ticket(speer_tls13_t *h, uint32_t lifetime,
+                                        const uint8_t *ticket, size_t ticket_len);
 
 int speer_tls13_export_traffic_secret(const speer_tls13_t *h, int from_server, int application,
                                       uint8_t *out, size_t *out_len);

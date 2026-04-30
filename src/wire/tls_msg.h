@@ -16,6 +16,25 @@
 #define TLS_HS_KEY_UPDATE                    0x18
 #define TLS_HS_MESSAGE_HASH                  0xfe
 
+#define TLS_ALERT_LEVEL_WARNING              1
+#define TLS_ALERT_LEVEL_FATAL                2
+#define TLS_ALERT_CLOSE_NOTIFY               0
+#define TLS_ALERT_UNEXPECTED_MESSAGE         10
+#define TLS_ALERT_BAD_RECORD_MAC             20
+#define TLS_ALERT_HANDSHAKE_FAILURE          40
+#define TLS_ALERT_BAD_CERTIFICATE            42
+#define TLS_ALERT_UNSUPPORTED_CERTIFICATE    43
+#define TLS_ALERT_CERTIFICATE_REQUIRED       116
+#define TLS_ALERT_MISSING_EXTENSION          109
+#define TLS_ALERT_UNSUPPORTED_EXTENSION      110
+#define TLS_ALERT_UNRECOGNIZED_NAME          112
+#define TLS_ALERT_ILLEGAL_PARAMETER          47
+#define TLS_ALERT_DECODE_ERROR               50
+#define TLS_ALERT_DECRYPT_ERROR              51
+#define TLS_ALERT_PROTOCOL_VERSION           70
+#define TLS_ALERT_INSUFFICIENT_SECURITY      71
+#define TLS_ALERT_INTERNAL_ERROR             80
+
 #define TLS_EXT_SERVER_NAME                  0x0000
 #define TLS_EXT_SUPPORTED_GROUPS             0x000a
 #define TLS_EXT_SIGNATURE_ALGORITHMS         0x000d

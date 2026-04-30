@@ -22,7 +22,6 @@ static int find_libp2p_ext(const speer_asn1_t *tbs, const uint8_t **ext_value, s
     if (speer_asn1_seq_next(&c, e, &node) != 0) return -1;
     if (speer_asn1_seq_next(&c, e, &node) != 0) return -1;
     if (speer_asn1_seq_next(&c, e, &node) != 0) return -1;
-    if (speer_asn1_seq_next(&c, e, &node) != 0) return -1;
 
     while (c < e) {
         if (speer_asn1_seq_next(&c, e, &node) != 0) return -1;
@@ -109,7 +108,6 @@ int speer_x509_libp2p_parse(speer_x509_libp2p_t *out, const uint8_t *der, size_t
     if (node.tag == 0xa0) {
         if (speer_asn1_seq_next(&tc, te, &node) != 0) return -1;
     }
-    if (speer_asn1_seq_next(&tc, te, &node) != 0) return -1;
     if (speer_asn1_seq_next(&tc, te, &node) != 0) return -1;
     if (speer_asn1_seq_next(&tc, te, &node) != 0) return -1;
     if (speer_asn1_seq_next(&tc, te, &node) != 0) return -1;

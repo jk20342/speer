@@ -129,6 +129,19 @@ int speer_tls13_application_keys(const speer_tls13_keysched_t *ks, speer_tls13_k
     return 0;
 }
 
+int speer_tls13_update_application_traffic(speer_tls13_keysched_t *ks, int from_server,
+                                           speer_tls13_keys_t *out_keys) {
+    uint8_t next[SPEER_TLS13_MAX_HASH];
+    uint8_t *secret = from_server ? ks->server_application_traffic
+                                  : ks->client_application_traffic;
+    speer_hkdf_expand_label(ks->suite.hash, next, ks->suite.hash->digest_size, secret,
+                            ks->suite.hash->digest_size, "traffic upd", NULL, 0);
+    COPY(secret, next, ks->suite.hash->digest_size);
+    derive_keys(&ks->suite, secret, out_keys);
+    WIPE(next, sizeof(next));
+    return 0;
+}
+
 int speer_tls13_finished_mac(const speer_tls13_keysched_t *ks, int from_server,
                              const uint8_t *base_secret, const uint8_t *transcript_hash,
                              uint8_t *out_mac) {

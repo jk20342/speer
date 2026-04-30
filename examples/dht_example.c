@@ -29,12 +29,16 @@ static void print_hex(const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) printf("%02x", data[i]);
 }
 
-static int send_rpc(void *user, const char *addr, const uint8_t *data, size_t len) {
+static int send_rpc(void *user, const char *addr, uint8_t op, const uint8_t *request,
+                    size_t request_len, uint8_t *response, size_t *response_len) {
     (void)user;
     (void)addr;
-    (void)data;
-    (void)len;
-    return 0;
+    (void)op;
+    (void)request;
+    (void)request_len;
+    (void)response;
+    (void)response_len;
+    return -1;
 }
 
 int main(int argc, char **argv) {
