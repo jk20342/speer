@@ -26,8 +26,7 @@ int main(void) {
     if (speer_tls13_handshake_start(&h) != SPEER_TLS_NEED_OUT) FAIL("start\n");
 
     uint8_t fake_cv[64] = {0};
-    int rc = speer_tls13_handshake_consume(&h, 0x0f, fake_cv,
-                                           sizeof(fake_cv));
+    int rc = speer_tls13_handshake_consume(&h, 0x0f, fake_cv, sizeof(fake_cv));
     if (rc != SPEER_TLS_ERR) FAIL("consume out-of-order CV must error, got %d\n", rc);
 
     puts("tls13_auth: ok");
