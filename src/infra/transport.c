@@ -85,21 +85,6 @@ static void sent_queue_add(sent_pkt_queue_t* q, uint64_t pkt_num,
     q->tail++;
 }
 
-static sent_pkt_t* sent_queue_find(sent_pkt_queue_t* q, uint64_t pkt_num) {
-    for (uint32_t i = q->head; i < q->tail; i++) {
-        sent_pkt_t* pkt = &q->pkts[i % MAX_SENT_PKTS];
-        if (pkt->pkt_num == pkt_num) return pkt;
-    }
-    return NULL;
-}
-
-static void sent_queue_remove(sent_pkt_queue_t* q, sent_pkt_t* pkt) {
-    if (pkt->in_flight) {
-        q->bytes_in_flight -= pkt->len;
-        pkt->in_flight = 0;
-    }
-}
-
 static void sent_queue_cleanup(sent_pkt_queue_t* q) {
     while (q->head < q->tail) {
         sent_pkt_t* pkt = &q->pkts[q->head % MAX_SENT_PKTS];
@@ -170,13 +155,6 @@ static int recv_tracker_should_ack(recv_tracker_t* rt, uint64_t pkt_num, uint64_
     }
     
     return 1;
-}
-
-static void recv_tracker_clear_up_to(recv_tracker_t* rt, uint64_t largest_acked) {
-    while (rt->count > 0 && rt->received[rt->head % MAX_ACK_RANGES] <= largest_acked) {
-        rt->head = (rt->head + 1) % MAX_ACK_RANGES;
-        rt->count--;
-    }
 }
 
 typedef struct {
