@@ -1,0 +1,274 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # Build and test on Linux with GCC
+  linux-gcc:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build gcc g++ clang-format clang-tidy
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+          -DSPEER_BUILD_TESTS=ON \
+          -DSPEER_BUILD_EXAMPLES=ON \
+          -DSPEER_BUILD_TOOLS=ON \
+          -DSPEER_ENABLE_WEBPKI=ON \
+          -DSPEER_ENABLE_RELAY=ON \
+          -DSPEER_ENABLE_DHT=ON \
+          -DSPEER_ENABLE_MDNS=ON
+
+    - name: Build
+      run: cmake --build build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      working-directory: build
+      run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
+
+  # Build and test on Linux with Clang
+  linux-clang:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build clang
+
+    - name: Configure CMake
+      run: |
+        CC=clang CXX=clang++ cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+          -DSPEER_BUILD_TESTS=ON \
+          -DSPEER_BUILD_EXAMPLES=ON
+
+    - name: Build
+      run: cmake --build build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      working-directory: build
+      run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
+
+  # Build and test on macOS
+  macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+          -DSPEER_BUILD_TESTS=ON \
+          -DSPEER_BUILD_EXAMPLES=ON
+
+    - name: Build
+      run: cmake --build build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      working-directory: build
+      run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
+
+  # Build on Windows with MSVC
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: |
+        cmake -B build `
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} `
+          -DSPEER_BUILD_TESTS=ON `
+          -DSPEER_BUILD_EXAMPLES=ON
+
+    - name: Build
+      run: cmake --build build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      working-directory: build
+      run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
+
+  # Build on Windows with MinGW
+  windows-mingw:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MinGW
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
+
+    - name: Configure CMake
+      shell: msys2 {0}
+      run: |
+        cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+          -DSPEER_BUILD_TESTS=ON \
+          -DSPEER_BUILD_EXAMPLES=ON
+
+    - name: Build
+      shell: msys2 {0}
+      run: cmake --build build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      shell: msys2 {0}
+      working-directory: build
+      run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
+
+  # Code formatting check
+  format-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install clang-format
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format
+
+    - name: Check formatting
+      run: |
+        find . -name "*.c" -o -name "*.h" | grep -v "^./build" | xargs clang-format --dry-run --Werror
+
+  # Static analysis with clang-tidy
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build clang-tidy
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+          -DCMAKE_C_CLANG_TIDY="clang-tidy"
+
+    - name: Build (runs clang-tidy)
+      run: cmake --build build --config ${{env.BUILD_TYPE}}
+
+  # Sanitizer tests
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build
+
+    - name: Configure with ASan
+      run: |
+        cmake -B build-asan -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DSPEER_ENABLE_ASAN=ON \
+          -DSPEER_BUILD_TESTS=ON
+
+    - name: Build with ASan
+      run: cmake --build build-asan
+
+    - name: Test with ASan
+      working-directory: build-asan
+      run: ctest --output-on-failure
+
+    - name: Configure with UBSan
+      run: |
+        cmake -B build-ubsan -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DSPEER_ENABLE_UBSAN=ON \
+          -DSPEER_BUILD_TESTS=ON
+
+    - name: Build with UBSan
+      run: cmake --build build-ubsan
+
+    - name: Test with UBSan
+      working-directory: build-ubsan
+      run: ctest --output-on-failure
+
+  # Code coverage
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build lcov
+
+    - name: Configure with coverage
+      run: |
+        cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DSPEER_ENABLE_COVERAGE=ON \
+          -DSPEER_BUILD_TESTS=ON
+
+    - name: Build
+      run: cmake --build build
+
+    - name: Test
+      working-directory: build
+      run: ctest --output-on-failure
+
+    - name: Generate coverage report
+      run: |
+        lcov --capture --directory build --output-file coverage.info
+        lcov --remove coverage.info '/usr/*' '*/tests/*' --output-file coverage.info
+        lcov --list coverage.info
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: coverage.info
+        fail_ci_if_error: false
+
+  # Documentation build
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Doxygen
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y doxygen graphviz
+
+    - name: Configure
+      run: cmake -B build -DSPEER_BUILD_DOCS=ON
+
+    - name: Build docs
+      run: cmake --build build --target docs
+
+    - name: Upload documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: doxygen-docs
+        path: docs/doxygen/html

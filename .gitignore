@@ -1,0 +1,92 @@
+# Build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Build directories
+build/
+build-*/
+cmake-build-*/
+obj/
+out/
+bin/
+lib/
+
+# Generated files
+speer.c
+speer.h.single
+*.generated.c
+*.generated.h
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.vcxproj*
+
+# Clangd
+.cache/
+compile_commands.json
+.clangd/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+
+# Testing
+*.gcov
+*.gcno
+*.gcda
+coverage/
+coverage.info
+*.profraw
+*.profdata
+
+# Documentation generated
+docs/html/
+docs/latex/
+doxygen/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.pid
+
+# Package manager
+conan.lock
+conanbuildinfo.*
+conaninfo.txt
+graph_info.json
+
+# Fuzzing corpus and crashes
+corpus/
+crashes/
+findings/

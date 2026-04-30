@@ -1,0 +1,90 @@
+---
+Checks: >
+  bugprone-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  misc-*,
+  -misc-no-recursion,
+  modernize-*,
+  -modernize-macro-to-enum,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-avoid-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-named-parameter
+
+CheckOptions:
+  - key:   readability-identifier-naming.ClassCase
+    value: lower_case
+  - key:   readability-identifier-naming.ClassMemberCase
+    value: lower_case
+  - key:   readability-identifier-naming.ClassMemberPrefix
+    value: ''
+  - key:   readability-identifier-naming.ConstexprVariableCase
+    value: UPPER_CASE
+  - key:   readability-identifier-naming.EnumCase
+    value: lower_case
+  - key:   readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+  - key:   readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key:   readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+  - key:   readability-identifier-naming.GlobalFunctionCase
+    value: lower_case
+  - key:   readability-identifier-naming.LocalVariableCase
+    value: lower_case
+  - key:   readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key:   readability-identifier-naming.MemberCase
+    value: lower_case
+  - key:   readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key:   readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key:   readability-identifier-naming.ParameterPrefix
+    value: ''
+  - key:   readability-identifier-naming.StaticConstantCase
+    value: UPPER_CASE
+  - key:   readability-identifier-naming.StaticVariableCase
+    value: lower_case
+  - key:   readability-identifier-naming.StructCase
+    value: lower_case
+  - key:   readability-identifier-naming.TypedefCase
+    value: lower_case
+  - key:   readability-identifier-naming.UnionCase
+    value: lower_case
+  - key:   readability-identifier-naming.VariableCase
+    value: lower_case
+  - key:   cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+    value: 0
+  - key:   cppcoreguidelines-special-member-functions.AllowMissingMoveFunctionsWhenCopyIsDeleted
+    value: 0
+  - key:   bugprone-argument-comment.StrictMode
+    value: 0
+  - key:   bugprone-exception-escape.IgnoredExceptions
+    value: ''
+  - key:   bugprone-assert-side-effect.IgnoredFunctions
+    value: 'speer_random_bytes;speer_timestamp_ms'
+  - key:   clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+    value: 1
+  - key:   performance-unnecessary-value-param.AllowedTypes
+    value: ''
+  - key:   modernize-loop-convert.MaxCopySize
+    value: 16
+  - key:   modernize-use-auto.MinTypeNameLength
+    value: 5
+  - key:   modernize-use-nullptr.NullMacros
+    value: 'NULL'
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: false
+FormatStyle:     file
+User:            speer

@@ -1,0 +1,27 @@
+{
+  "name": "speer",
+  "version": "0.1.0",
+  "description": "A tiny libp2p implementation in C",
+  "homepage": "https://github.com/speer/speer",
+  "license": "MIT",
+  "dependencies": [],
+  "features": {
+    "webpki": {
+      "description": "Enable Web PKI support (X.509, RSA, ECDSA)"
+    },
+    "relay": {
+      "description": "Enable Circuit Relay v2 support"
+    },
+    "dht": {
+      "description": "Enable DHT discovery support"
+    },
+    "mdns": {
+      "description": "Enable mDNS discovery support"
+    }
+  },
+  "default-features": [
+    "relay",
+    "dht",
+    "mdns"
+  ]
+}

@@ -1,0 +1,72 @@
+# Pre-commit hooks for speer
+# Install: pip install pre-commit
+# Run: pre-commit run --all-files
+
+repos:
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^(tests/expected/)'
+      - id: end-of-file-fixer
+        exclude: '^(tests/expected/)'
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: detect-private-key
+      - id: forbid-new-submodules
+
+  # Commit message checks
+      - id: check-vcs-permalinks
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
+
+  # C/C++ specific hooks using local commands
+  - repo: local
+    hooks:
+      - id: clang-format
+        name: clang-format
+        entry: clang-format
+        language: system
+        files: '\.(c|h)$'
+        args: ['-i', '--style=file']
+        pass_filenames: true
+
+      - id: check-compilation
+        name: Check compilation
+        entry: make
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: ['clean', 'all']
+
+  # GitHub Actions linting
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.27.3
+    hooks:
+      - id: check-github-workflows
+        files: ^\.github/workflows/
+
+  # Security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: 'tests/'
+
+# Custom configurations
+default_stages: [pre-commit]
+default_language_version:
+  python: python3
+
+# Skip certain hooks in CI
+# CI=true skips hooks that require the full build environment
+ci:
+  skip: [check-compilation]

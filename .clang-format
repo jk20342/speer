@@ -1,0 +1,148 @@
+---
+Language: C
+BasedOnStyle: LLVM
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentCaseLabels: false
+IndentGotoLabels: false
+IndentPPDirectives: None
+IndentExternBlock: AfterExternBlock
+
+# Line length
+ColumnLimit: 100
+
+# Braces
+BreakBeforeBraces: Attach
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: Left
+AlignConsecutiveMacros: AcrossEmptyLines
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveBitFields: AcrossEmptyLines
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Pointer alignment
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Function definitions
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortEnumsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Function declarations/definitions
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakStringLiterals: true
+
+# Includes
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"speer(_internal)?\.h"$'
+    Priority: 1
+    SortPriority: 1
+  - Regex: '^"speer/.*\.h"$'
+    Priority: 2
+    SortPriority: 2
+  - Regex: '^<windows\.h>'
+    Priority: 3
+    SortPriority: 3
+  - Regex: '^<winsock'
+    Priority: 3
+    SortPriority: 4
+  - Regex: '^<sys/'
+    Priority: 3
+    SortPriority: 5
+  - Regex: '^<netinet/'
+    Priority: 3
+    SortPriority: 6
+  - Regex: '^<arpa/'
+    Priority: 3
+    SortPriority: 7
+  - Regex: '^<pthread'
+    Priority: 3
+    SortPriority: 8
+  - Regex: '^<std.*\.h>$'
+    Priority: 4
+    SortPriority: 9
+  - Regex: '^<.*\.h>$'
+    Priority: 5
+    SortPriority: 10
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyBlock: false
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Line breaks
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+SeparateDefinitionBlocks: Always
+
+# Comments
+FixNamespaceComments: false
+ReflowComments: true
+
+# Macros
+AttributeMacros:
+  - __attribute__
+  - __declspec
+ForEachMacros:
+  - foreach
+StatementMacros:
+  - Q_UNUSED
+  - QT_REQUIRE_VERSION
+
+# Sorting
+SortIncludes: CaseSensitive
+
+# Penalties
+PenaltyBreakAssignment: 100
+PenaltyBreakBeforeFirstCallParameter: 50
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyBreakTemplateDeclaration: 10
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 200
+PenaltyIndentedWhitespace: 0
+
+# C-specific
+C11:
+  BracedInitializerIndentWidth: 4
