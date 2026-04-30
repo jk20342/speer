@@ -39,7 +39,7 @@ static void compute_table(uint8_t T[16][16], const uint8_t h[16]) {
     }
 }
 
-static void gf_mul_table(uint8_t z[16], const uint8_t y[16], const uint8_t T[16][16]) {
+static void gf_mul_table(uint8_t z[16], const uint8_t y[16], uint8_t T[16][16]) {
     uint8_t tmp[16];
     int idx = y[15] & 0x0f;
     for (int i = 0; i < 16; i++) tmp[i] = T[idx][i];
@@ -68,7 +68,7 @@ void speer_ghash_soft_absorb(speer_ghash_state_t *s, uint8_t y[16], const uint8_
                              size_t len) {
     while (len >= 16) {
         for (int i = 0; i < 16; i++) y[i] ^= data[i];
-        gf_mul_table(y, y, (const uint8_t (*)[16])s->htables);
+        gf_mul_table(y, y, s->htables);
         data += 16;
         len -= 16;
     }
@@ -76,6 +76,6 @@ void speer_ghash_soft_absorb(speer_ghash_state_t *s, uint8_t y[16], const uint8_
         uint8_t blk[16] = {0};
         for (size_t i = 0; i < len; i++) blk[i] = data[i];
         for (int i = 0; i < 16; i++) y[i] ^= blk[i];
-        gf_mul_table(y, y, (const uint8_t (*)[16])s->htables);
+        gf_mul_table(y, y, s->htables);
     }
 }
