@@ -141,7 +141,3 @@ PenaltyBreakTemplateDeclaration: 10
 PenaltyExcessCharacter: 1000000
 PenaltyReturnTypeOnItsOwnLine: 200
 PenaltyIndentedWhitespace: 0
-
-# C-specific
-C11:
-  BracedInitializerIndentWidth: 4

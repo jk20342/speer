@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "tls13_keysched.h"
+#include "tls/tls13_keysched.h"
 #include "quic_pkt.h"
 
 int speer_quic_tls_set_keys_from_secret(speer_quic_keys_t* k,

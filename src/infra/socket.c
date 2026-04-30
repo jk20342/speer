@@ -4,6 +4,7 @@
 
 #if !defined(_WIN32)
 #define _GNU_SOURCE
+#include <sys/random.h>
 #endif
 
 #include "speer_internal.h"
@@ -12,7 +13,6 @@
     #include <windows.h>
     #include <wincrypt.h>
 #else
-    #include <sys/random.h>
     #include <sys/time.h>
     #include <time.h>
     #include <fcntl.h>
