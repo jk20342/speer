@@ -39,6 +39,7 @@ set(SPEER_SUBDIRS
     infra
     libp2p
     transport
+    quic
 )
 
 # Optional subdirectories based on features

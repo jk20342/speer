@@ -18,11 +18,14 @@ set(SPEER_UNIT_TESTS
     noise_check
     x25519_check
     quic_initial_check
-    webpki_check
     dht_check
     mdns_check
     relay_client_check
 )
+
+if(SPEER_ENABLE_WEBPKI)
+    list(APPEND SPEER_UNIT_TESTS webpki_check)
+endif()
 
 foreach(test_name ${SPEER_UNIT_TESTS})
     set(test_src ${CMAKE_CURRENT_SOURCE_DIR}/${test_name}.c)

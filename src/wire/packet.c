@@ -198,10 +198,6 @@ static INLINE void frame_init(frame_buf_t* f, uint8_t* buf, size_t cap) {
     f->cap = cap;
 }
 
-static INLINE size_t frame_avail(const frame_buf_t* f) {
-    return f->cap - f->len;
-}
-
 static INLINE void frame_write_u8(frame_buf_t* f, uint8_t v) {
     if (f->len < f->cap) f->buf[f->len++] = v;
 }
