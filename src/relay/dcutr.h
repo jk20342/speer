@@ -3,9 +3,8 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "speer.h"
 #include "multiaddr.h"
-
-typedef struct speer_peer speer_peer_t;
 
 #ifndef __GNUC__
 #define __attribute__(x)

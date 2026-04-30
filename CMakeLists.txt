@@ -263,8 +263,9 @@ if(SPEER_BUILD_DOCS)
         configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
         
         add_custom_target(docs
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/docs/doxygen
             COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             COMMENT "Generating API documentation with Doxygen"
             VERBATIM
         )
