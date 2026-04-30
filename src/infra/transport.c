@@ -215,7 +215,7 @@ static void recovery_on_packet_sent(recovery_ctx_t* rcv, uint64_t pkt_num,
     rcv->conn->pkt_num++;
 }
 
-static void __attribute__((unused)) recovery_on_ack_received(recovery_ctx_t* rcv, const ack_frame_t* ack, uint64_t now_ms) {
+static void recovery_on_ack_received(recovery_ctx_t* rcv, const ack_frame_t* ack, uint64_t now_ms) {
     uint64_t largest_acked = ack->largest_acked;
     
     if (largest_acked > rcv->largest_acked_pkt) {
@@ -255,7 +255,7 @@ static void __attribute__((unused)) recovery_on_ack_received(recovery_ctx_t* rcv
     }
 }
 
-static void __attribute__((unused)) recovery_on_packet_lost(recovery_ctx_t* rcv) {
+static void recovery_on_packet_lost(recovery_ctx_t* rcv) {
     rcv->conn->ssthresh = MAX(rcv->sent.bytes_in_flight / 2, MIN_CWND);
     rcv->conn->cwnd = rcv->conn->ssthresh;
 }
@@ -271,7 +271,7 @@ static void recovery_on_packet_received(recovery_ctx_t* rcv, uint64_t pkt_num, u
     rcv->conn->last_recv_ms = now_ms;
 }
 
-static int __attribute__((unused)) recovery_get_loss_pn(recovery_ctx_t* rcv, uint64_t now_ms, uint64_t* lost_pn) {
+static int recovery_get_loss_pn(recovery_ctx_t* rcv, uint64_t now_ms, uint64_t* lost_pn) {
     uint64_t loss_time = rcv->conn->rtt_ms + 4 * rcv->conn->rtt_var_ms;
     
     for (uint32_t i = rcv->sent.head; i < rcv->sent.tail; i++) {
@@ -284,7 +284,7 @@ static int __attribute__((unused)) recovery_get_loss_pn(recovery_ctx_t* rcv, uin
     return 0;
 }
 
-static size_t __attribute__((unused)) recovery_get_retransmissions(recovery_ctx_t* rcv, uint64_t now_ms,
+static size_t recovery_get_retransmissions(recovery_ctx_t* rcv, uint64_t now_ms,
                                            uint8_t** packets, uint64_t* pkt_nums,
                                            size_t max_pkts) {
     size_t count = 0;

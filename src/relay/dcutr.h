@@ -5,8 +5,9 @@
 #include <stddef.h>
 #include "multiaddr.h"
 
-struct speer_peer;
-typedef struct speer_peer speer_peer_t;
+#ifndef __GNUC__
+#define __attribute__(x)
+#endif
 
 #define DCUTR_PROTO "/libp2p/dcutr"
 #define DCUTR_MAX_ADDRS 8

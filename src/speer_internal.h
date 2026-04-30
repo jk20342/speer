@@ -45,14 +45,25 @@
 #define SPEER_MAX_TIMEOUT_MS 60000
 #define SPEER_DEFAULT_MTU 1350
 
-#define ALIGN(n) __attribute__((aligned(n)))
-#define LIKELY(x) __builtin_expect(!!(x), 1)
-#define UNLIKELY(x) __builtin_expect(!!(x), 0)
-#define INLINE inline __attribute__((always_inline))
-#define NOINLINE __attribute__((noinline))
-#define ATTR_PURE __attribute__((pure))
-#define ATTR_CONST __attribute__((const))
-#define PACKED __attribute__((packed))
+#if defined(_MSC_VER)
+    #define ALIGN(n) __declspec(align(n))
+    #define LIKELY(x) (x)
+    #define UNLIKELY(x) (x)
+    #define INLINE __forceinline
+    #define NOINLINE __declspec(noinline)
+    #define ATTR_PURE
+    #define ATTR_CONST
+    #define PACKED
+#else
+    #define ALIGN(n) __attribute__((aligned(n)))
+    #define LIKELY(x) __builtin_expect(!!(x), 1)
+    #define UNLIKELY(x) __builtin_expect(!!(x), 0)
+    #define INLINE inline __attribute__((always_inline))
+    #define NOINLINE __attribute__((noinline))
+    #define ATTR_PURE __attribute__((pure))
+    #define ATTR_CONST __attribute__((const))
+    #define PACKED __attribute__((packed))
+#endif
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))

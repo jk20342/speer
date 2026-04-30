@@ -135,7 +135,7 @@ int mdns_init(mdns_ctx_t* ctx) {
     mdns_ensure_wsa();
 #endif
     ZERO(ctx, sizeof(mdns_ctx_t));
-    ctx->socket_ipv4 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    ctx->socket_ipv4 = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (ctx->socket_ipv4 < 0) return -1;
     int reuse = 1;
     setsockopt(ctx->socket_ipv4, SOL_SOCKET, SO_REUSEADDR,

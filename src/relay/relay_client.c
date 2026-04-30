@@ -115,7 +115,7 @@ int relay_client_connect(relay_client_t* client, const char* relay_addr,
 #else
     inet_pton(AF_INET, host, &sin.sin_addr);
 #endif
-    client->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    client->socket = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (client->socket < 0) return -1;
     if (connect(client->socket, (struct sockaddr*)&sin, sizeof(sin)) < 0) {
         CLOSESOCKET(client->socket);
