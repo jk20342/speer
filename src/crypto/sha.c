@@ -28,9 +28,7 @@ static void sha256_transform(sha256_ctx_t *ctx, const uint8_t *data) {
     uint32_t m[64];
     uint32_t a, b, c, d, e, f, g, h;
 
-    for (int i = 0; i < 16; i++) {
-        m[i] = LOAD32_BE(data + i * 4);
-    }
+    for (int i = 0; i < 16; i++) { m[i] = LOAD32_BE(data + i * 4); }
     for (int i = 16; i < 64; i++) {
         m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
     }
@@ -117,14 +115,10 @@ void speer_sha256_final(void *state, uint8_t out[32]) {
     }
 
     uint64_t bit_count = ctx->bit_count;
-    for (int i = 0; i < 8; i++) {
-        ctx->buffer[56 + i] = (uint8_t)(bit_count >> (56 - 8 * i));
-    }
+    for (int i = 0; i < 8; i++) { ctx->buffer[56 + i] = (uint8_t)(bit_count >> (56 - 8 * i)); }
     sha256_transform(ctx, ctx->buffer);
 
-    for (int i = 0; i < 8; i++) {
-        STORE32_BE(out + i * 4, ctx->state[i]);
-    }
+    for (int i = 0; i < 8; i++) { STORE32_BE(out + i * 4, ctx->state[i]); }
 }
 
 void speer_sha256(uint8_t out[32], const uint8_t *in, size_t len) {
@@ -156,12 +150,9 @@ static void hmac_sha256(uint8_t out[32], const uint8_t *key, size_t key_len, con
 
     speer_sha256_init(&ctx);
     speer_sha256_update(&ctx, ipad, SHA256_BLOCK_SIZE);
-    if (a && a_len > 0)
-        speer_sha256_update(&ctx, a, a_len);
-    if (b && b_len > 0)
-        speer_sha256_update(&ctx, b, b_len);
-    if (c && c_len > 0)
-        speer_sha256_update(&ctx, c, c_len);
+    if (a && a_len > 0) speer_sha256_update(&ctx, a, a_len);
+    if (b && b_len > 0) speer_sha256_update(&ctx, b, b_len);
+    if (c && c_len > 0) speer_sha256_update(&ctx, c, c_len);
     speer_sha256_final(&ctx, inner);
 
     speer_sha256_init(&ctx);

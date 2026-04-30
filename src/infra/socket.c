@@ -37,15 +37,12 @@ static int my_inet_pton(int af, const char *src, void *dst) {
     struct sockaddr_storage ss;
     char src_copy[256];
     size_t src_len = strlen(src);
-    if (src_len >= sizeof(src_copy))
-        return 0;
+    if (src_len >= sizeof(src_copy)) return 0;
     memcpy(src_copy, src, src_len + 1);
 
     ss.ss_family = (ADDRESS_FAMILY)af;
     int size = sizeof(ss);
-    if (WSAStringToAddressA(src_copy, af, NULL, (struct sockaddr *)&ss, &size) != 0) {
-        return 0;
-    }
+    if (WSAStringToAddressA(src_copy, af, NULL, (struct sockaddr *)&ss, &size) != 0) { return 0; }
 
     if (af == AF_INET) {
         memcpy(dst, &((struct sockaddr_in *)&ss)->sin_addr, 4);
@@ -64,8 +61,7 @@ int speer_socket_create(uint16_t port, const char *bind_addr) {
 #endif
 
     int sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock < 0)
-        return -1;
+    if (sock < 0) return -1;
 
     int reuse = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse));
@@ -158,8 +154,7 @@ static int parse_address(const char *str, struct sockaddr_storage *addr, socklen
     if (host[0] == '[' && bracket) {
         *bracket = 0;
         port_str = bracket + 1;
-        if (*port_str == ':')
-            port_str++;
+        if (*port_str == ':') port_str++;
 
         struct in6_addr v6;
         if (inet_pton(AF_INET6, host + 1, &v6) == 1) {
@@ -209,13 +204,10 @@ int speer_stun_get_mapped_addr(const char *stun_server, struct sockaddr_storage 
     struct sockaddr_storage stun_addr;
     socklen_t stun_addr_len;
 
-    if (parse_address(stun_server, &stun_addr, &stun_addr_len) != 0) {
-        return -1;
-    }
+    if (parse_address(stun_server, &stun_addr, &stun_addr_len) != 0) { return -1; }
 
     int sock = (int)socket(stun_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock < 0)
-        return -1;
+    if (sock < 0) return -1;
 
     uint8_t tid[12];
     speer_random_bytes(tid, 12);
@@ -246,15 +238,12 @@ int speer_stun_get_mapped_addr(const char *stun_server, struct sockaddr_storage 
     int n = recv(sock, (char *)resp, sizeof(resp), 0);
     CLOSESOCKET(sock);
 
-    if (n < 20)
-        return -1;
+    if (n < 20) return -1;
 
     uint16_t resp_type = LOAD16_BE(resp);
-    if (resp_type != STUN_BINDING_RESPONSE)
-        return -1;
+    if (resp_type != STUN_BINDING_RESPONSE) return -1;
 
-    if (!EQUAL(resp + 8, tid, 12))
-        return -1;
+    if (!EQUAL(resp + 8, tid, 12)) return -1;
 
     uint16_t attr_len = LOAD16_BE(resp + 2);
     size_t pos = 20;
@@ -292,8 +281,7 @@ int speer_stun_get_mapped_addr(const char *stun_server, struct sockaddr_storage 
         }
 
         pos += 4 + attr_val_len;
-        if (attr_val_len % 4 != 0)
-            pos += 4 - (attr_val_len % 4);
+        if (attr_val_len % 4 != 0) pos += 4 - (attr_val_len % 4);
     }
 
     return -1;
@@ -339,8 +327,7 @@ void speer_random_bytes(uint8_t *buf, size_t len) {
     while (offset < len) {
         ssize_t ret = getrandom(buf + offset, len - offset, 0);
         if (ret < 0) {
-            if (errno == EINTR)
-                continue;
+            if (errno == EINTR) continue;
             break;
         }
         offset += (size_t)ret;
@@ -352,8 +339,7 @@ void speer_random_bytes(uint8_t *buf, size_t len) {
             while (offset < len) {
                 ssize_t ret = read(fd, buf + offset, len - offset);
                 if (ret < 0) {
-                    if (errno == EINTR)
-                        continue;
+                    if (errno == EINTR) continue;
                     break;
                 }
                 offset += (size_t)ret;

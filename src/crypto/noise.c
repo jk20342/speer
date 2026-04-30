@@ -41,8 +41,7 @@ static void encrypt_and_hash(speer_handshake_t *hs, uint8_t *out, const uint8_t 
 
 static int decrypt_and_hash(speer_handshake_t *hs, uint8_t *out, const uint8_t *ciphertext,
                             size_t len) {
-    if (len < 16)
-        return -1;
+    if (len < 16) return -1;
 
     size_t plaintext_len = len - 16;
     const uint8_t *mac = ciphertext + plaintext_len;
@@ -57,8 +56,7 @@ static int decrypt_and_hash(speer_handshake_t *hs, uint8_t *out, const uint8_t *
     uint8_t computed_mac[16];
     speer_poly1305(computed_mac, ciphertext, plaintext_len, poly_block);
 
-    if (!EQUAL(mac, computed_mac, 16))
-        return -1;
+    if (!EQUAL(mac, computed_mac, 16)) return -1;
 
     speer_chacha_crypt(&ctx, out, ciphertext, plaintext_len);
 
@@ -106,8 +104,7 @@ int speer_noise_xx_write_e(speer_handshake_t *hs, uint8_t *out, size_t *len) {
 }
 
 int speer_noise_xx_read_e(speer_handshake_t *hs, const uint8_t *in, size_t len) {
-    if (len < 32)
-        return -1;
+    if (len < 32) return -1;
 
     uint8_t ephemeral_pubkey[32];
     COPY(ephemeral_pubkey, in, 32);
@@ -133,13 +130,10 @@ int speer_noise_xx_write_s(speer_handshake_t *hs, uint8_t *out, size_t *len) {
 }
 
 int speer_noise_xx_read_s(speer_handshake_t *hs, const uint8_t *in, size_t len) {
-    if (len < 48)
-        return -1;
+    if (len < 48) return -1;
 
     uint8_t plaintext[32];
-    if (decrypt_and_hash(hs, plaintext, in, 48) != 0) {
-        return -1;
-    }
+    if (decrypt_and_hash(hs, plaintext, in, 48) != 0) { return -1; }
 
     COPY(hs->remote_pubkey, plaintext, 32);
 
@@ -196,8 +190,7 @@ int speer_noise_xx_read_msg2(speer_handshake_t *hs, const uint8_t in[80]) {
     speer_x25519(dh, hs->ephemeral_key, hs->remote_ephemeral);
     mix_key(hs, dh);
 
-    if (speer_noise_xx_read_s(hs, in + 32, 48) < 0)
-        return -1;
+    if (speer_noise_xx_read_s(hs, in + 32, 48) < 0) return -1;
 
     WIPE(dh, 32);
 
@@ -220,8 +213,7 @@ int speer_noise_xx_write_msg3(speer_handshake_t *hs, uint8_t out[48]) {
 }
 
 int speer_noise_xx_read_msg3(speer_handshake_t *hs, const uint8_t in[48]) {
-    if (speer_noise_xx_read_s(hs, in, 48) < 0)
-        return -1;
+    if (speer_noise_xx_read_s(hs, in, 48) < 0) return -1;
     hs->step = 3;
     return 0;
 }
@@ -236,16 +228,13 @@ int speer_noise_xx_initiator_handshake(speer_handshake_t *hs, const uint8_t *in,
     case 0:
         speer_noise_xx_write_e(hs, out, out_len);
 
-        if (in_len < 32)
-            return -1;
+        if (in_len < 32) return -1;
         speer_noise_xx_read_e(hs, in, 32);
         in += 32;
         in_len -= 32;
 
-        if (in_len < 48)
-            return -1;
-        if (speer_noise_xx_read_s(hs, in, 48) != 0)
-            return -1;
+        if (in_len < 48) return -1;
+        if (speer_noise_xx_read_s(hs, in, 48) != 0) return -1;
         in += 48;
         in_len -= 48;
 
@@ -276,8 +265,7 @@ int speer_noise_xx_responder_handshake(speer_handshake_t *hs, const uint8_t *in,
 
     switch (hs->step) {
     case 0:
-        if (in_len < 32)
-            return -1;
+        if (in_len < 32) return -1;
         speer_noise_xx_read_e(hs, in, 32);
         in += 32;
         in_len -= 32;
@@ -295,10 +283,8 @@ int speer_noise_xx_responder_handshake(speer_handshake_t *hs, const uint8_t *in,
         mix_key(hs, temp);
         WIPE(temp, 32);
 
-        if (in_len < 48)
-            return -1;
-        if (speer_noise_xx_read_s(hs, in, 48) != 0)
-            return -1;
+        if (in_len < 48) return -1;
+        if (speer_noise_xx_read_s(hs, in, 48) != 0) return -1;
 
         hs->step = 1;
         return 0;

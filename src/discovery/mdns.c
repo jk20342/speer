@@ -31,8 +31,7 @@ static void mdns_ensure_wsa(void) {
     static int done;
     if (!done) {
         WSADATA wsa;
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) == 0)
-            done = 1;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) == 0) done = 1;
     }
 }
 #endif
@@ -86,13 +85,11 @@ static size_t encode_name(uint8_t *out, const char *name) {
     while (*p) {
         const char *dot = strchr(p, '.');
         size_t len = dot ? (size_t)(dot - p) : strlen(p);
-        if (len > 63)
-            len = 63;
+        if (len > 63) len = 63;
         out[pos++] = (uint8_t)len;
         COPY(out + pos, p, len);
         pos += len;
-        if (!dot)
-            break;
+        if (!dot) break;
         p = dot + 1;
     }
     out[pos++] = 0;
@@ -101,8 +98,7 @@ static size_t encode_name(uint8_t *out, const char *name) {
 
 static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, char *out,
                           size_t out_cap, int depth) {
-    if (depth > 10)
-        return 0;
+    if (depth > 10) return 0;
     size_t out_pos = 0;
     int jumped = 0;
     size_t jump_target = 0;
@@ -113,31 +109,25 @@ static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, cha
             break;
         }
         if ((len & 0xC0) == 0xC0) {
-            if (offset + 1 >= pkt_len)
-                return 0;
+            if (offset + 1 >= pkt_len) return 0;
             if (!jumped) {
                 jump_target = offset + 2;
                 jumped = 1;
             }
             offset = ((len & 0x3F) << 8) | pkt[offset + 1];
-            if (offset >= pkt_len)
-                return 0;
+            if (offset >= pkt_len) return 0;
             continue;
         }
         offset++;
-        if (offset + len > pkt_len)
-            return 0;
-        if (out_pos > 0 && out_pos < out_cap)
-            out[out_pos++] = '.';
+        if (offset + len > pkt_len) return 0;
+        if (out_pos > 0 && out_pos < out_cap) out[out_pos++] = '.';
         size_t to_copy = len;
-        if (out_pos + to_copy > out_cap - 1)
-            to_copy = out_cap - out_pos - 1;
+        if (out_pos + to_copy > out_cap - 1) to_copy = out_cap - out_pos - 1;
         COPY(out + out_pos, pkt + offset, to_copy);
         out_pos += to_copy;
         offset += len;
     }
-    if (out_pos < out_cap)
-        out[out_pos] = 0;
+    if (out_pos < out_cap) out[out_pos] = 0;
     return jumped ? jump_target : offset;
 }
 
@@ -147,8 +137,7 @@ int mdns_init(mdns_ctx_t *ctx) {
 #endif
     ZERO(ctx, sizeof(mdns_ctx_t));
     ctx->socket_ipv4 = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (ctx->socket_ipv4 < 0)
-        return -1;
+    if (ctx->socket_ipv4 < 0) return -1;
     int reuse = 1;
     setsockopt(ctx->socket_ipv4, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse));
 #ifdef SO_REUSEPORT
@@ -182,12 +171,8 @@ int mdns_init(mdns_ctx_t *ctx) {
 }
 
 void mdns_free(mdns_ctx_t *ctx) {
-    if (ctx->socket_ipv4 >= 0) {
-        CLOSESOCKET(ctx->socket_ipv4);
-    }
-    if (ctx->socket_ipv6 >= 0) {
-        CLOSESOCKET(ctx->socket_ipv6);
-    }
+    if (ctx->socket_ipv4 >= 0) { CLOSESOCKET(ctx->socket_ipv4); }
+    if (ctx->socket_ipv6 >= 0) { CLOSESOCKET(ctx->socket_ipv6); }
     ZERO(ctx, sizeof(mdns_ctx_t));
     ctx->socket_ipv4 = -1;
     ctx->socket_ipv6 = -1;
@@ -195,8 +180,7 @@ void mdns_free(mdns_ctx_t *ctx) {
 
 int mdns_register_service(mdns_ctx_t *ctx, const char *instance_name, const char *service_type,
                           uint16_t port, const uint8_t *txt_data, size_t txt_len) {
-    if (ctx->num_services >= MDNS_MAX_SERVICES)
-        return -1;
+    if (ctx->num_services >= MDNS_MAX_SERVICES) return -1;
     mdns_service_t *svc = &ctx->services[ctx->num_services++];
     ZERO(svc, sizeof(mdns_service_t));
     size_t len = strlen(instance_name);
@@ -210,8 +194,7 @@ int mdns_register_service(mdns_ctx_t *ctx, const char *instance_name, const char
         size_t pos = 0;
         while (pos < txt_len && svc->txt.num_fields < 16) {
             uint8_t txt_len_byte = txt_data[pos++];
-            if (pos + txt_len_byte > txt_len)
-                break;
+            if (pos + txt_len_byte > txt_len) break;
             char txt_str[256];
             size_t copy_len = txt_len_byte < 255 ? txt_len_byte : 255;
             COPY(txt_str, txt_data + pos, copy_len);
@@ -239,8 +222,7 @@ int mdns_register_service(mdns_ctx_t *ctx, const char *instance_name, const char
 int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t *svc) {
     size_t pos = 0;
     size_t max = *out_len;
-    if (pos + 12 > max)
-        return -1;
+    if (pos + 12 > max) return -1;
     dns_header_t *hdr = (dns_header_t *)(out + pos);
     ZERO(hdr, sizeof(dns_header_t));
     hdr->flags = htons(DNS_FLAG_RESPONSE);
@@ -250,8 +232,7 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     snprintf(full_name, sizeof(full_name), "%s.%s.%s", svc->instance_name, svc->service_type,
              svc->domain);
     size_t name_len = encode_name(out + pos, svc->service_type);
-    if (pos + name_len + 10 > max)
-        return -1;
+    if (pos + name_len + 10 > max) return -1;
     pos += name_len;
     write_u16(out + pos, MDNS_TYPE_PTR);
     pos += 2;
@@ -263,8 +244,7 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     write_u16(out + pos, (uint16_t)ptr_len);
     pos += 2 + ptr_len;
     name_len = encode_name(out + pos, full_name);
-    if (pos + name_len + 10 + 6 > max)
-        return -1;
+    if (pos + name_len + 10 + 6 > max) return -1;
     pos += name_len;
     write_u16(out + pos, MDNS_TYPE_SRV);
     pos += 2;
@@ -282,8 +262,7 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     pos += 2;
     out[pos++] = 0;
     name_len = encode_name(out + pos, full_name);
-    if (pos + name_len + 10 > max)
-        return -1;
+    if (pos + name_len + 10 > max) return -1;
     pos += name_len;
     write_u16(out + pos, MDNS_TYPE_TXT);
     pos += 2;
@@ -297,14 +276,12 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
         char txt_field[256];
         int len = snprintf(txt_field, sizeof(txt_field), "%s=%s", svc->txt.fields[i].key,
                            svc->txt.fields[i].value);
-        if (len > 255)
-            len = 255;
+        if (len > 255) len = 255;
         out[pos++] = (uint8_t)len;
         COPY(out + pos, txt_field, len);
         pos += len;
     }
-    if (svc->txt.num_fields == 0)
-        out[pos++] = 0;
+    if (svc->txt.num_fields == 0) out[pos++] = 0;
     write_u16(out + txt_start, (uint16_t)(pos - txt_start - 2));
     *out_len = pos;
     return 0;
@@ -337,16 +314,13 @@ int mdns_poll(mdns_ctx_t *ctx, int timeout_ms) {
                          (struct sockaddr *)&from, &from_len);
         if (n < 0) {
 #if defined(_WIN32)
-            if (WSAGetLastError() == WSAEWOULDBLOCK)
-                break;
+            if (WSAGetLastError() == WSAEWOULDBLOCK) break;
 #else
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-                break;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
 #endif
             break;
         }
-        if (n < 12)
-            continue;
+        if (n < 12) continue;
         char peer_id[128];
         char multiaddr[256];
         if (mdns_parse_packet(ctx, ctx->recv_buffer, (size_t)n, peer_id, sizeof(peer_id), multiaddr,
@@ -366,8 +340,7 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
     (void)ctx;
     ZERO(out_peer_id, peer_id_cap);
     ZERO(out_multiaddr, multiaddr_cap);
-    if (len < 12)
-        return -1;
+    if (len < 12) return -1;
     dns_header_t hdr;
     hdr.id = read_u16(data);
     hdr.flags = read_u16(data + 2);
@@ -379,8 +352,7 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
     for (uint16_t i = 0; i < hdr.questions && pos < len; i++) {
         char name[MDNS_MAX_NAME_LENGTH];
         size_t name_len = decode_name(data, len, pos, name, sizeof(name), 0);
-        if (name_len == 0)
-            return -1;
+        if (name_len == 0) return -1;
         pos = name_len + 4;
     }
     char service_name[MDNS_MAX_NAME_LENGTH] = {0};
@@ -390,11 +362,9 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
     for (uint16_t i = 0; i < total_records && pos < len; i++) {
         char name[MDNS_MAX_NAME_LENGTH];
         size_t name_len = decode_name(data, len, pos, name, sizeof(name), 0);
-        if (name_len == 0 || name_len >= len)
-            break;
+        if (name_len == 0 || name_len >= len) break;
         pos = name_len;
-        if (pos + 10 > len)
-            break;
+        if (pos + 10 > len) break;
         uint16_t rtype = read_u16(data + pos);
         pos += 2;
         uint16_t rclass = read_u16(data + pos);
@@ -405,8 +375,7 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         (void)ttl;
         uint16_t rdlen = read_u16(data + pos);
         pos += 2;
-        if (pos + rdlen > len)
-            break;
+        if (pos + rdlen > len) break;
         if (rtype == MDNS_TYPE_SRV) {
             if (rdlen >= 6) {
                 port = ntohs(read_u16(data + pos + 4));
@@ -424,8 +393,7 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
             size_t txt_end = pos + rdlen;
             while (txt_pos < txt_end) {
                 uint8_t txt_len = data[txt_pos++];
-                if (txt_pos + txt_len > txt_end)
-                    break;
+                if (txt_pos + txt_len > txt_end) break;
                 char txt_field[256];
                 size_t copy_len = txt_len < 255 ? txt_len : 255;
                 COPY(txt_field, data + txt_pos, copy_len);
@@ -443,9 +411,7 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
     }
     if (port > 0 && service_name[0]) {
         size_t id_len = strlen(txt_peer_id);
-        if (id_len > 0 && id_len < peer_id_cap) {
-            COPY(out_peer_id, txt_peer_id, id_len + 1);
-        }
+        if (id_len > 0 && id_len < peer_id_cap) { COPY(out_peer_id, txt_peer_id, id_len + 1); }
         char host[16];
         mdns_format_ipv4(host, sender_ipv4_s_addr);
         snprintf(out_multiaddr, multiaddr_cap, "/ip4/%s/tcp/%u", host, port);
@@ -464,9 +430,7 @@ void mdns_set_discovery_callback(mdns_ctx_t *ctx,
 
 int mdns_build_libp2p_service_name(char *out, size_t cap, const uint8_t *peer_id) {
     char hex_id[65];
-    for (int i = 0; i < 32; i++) {
-        snprintf(hex_id + i * 2, 3, "%02x", peer_id[i]);
-    }
+    for (int i = 0; i < 32; i++) { snprintf(hex_id + i * 2, 3, "%02x", peer_id[i]); }
     snprintf(out, cap, "%s._p2p._tcp.local", hex_id);
     return 0;
 }

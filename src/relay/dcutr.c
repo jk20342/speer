@@ -128,10 +128,8 @@ static void try_connect(dcutr_ctx_t *ctx) {
 
     for (size_t i = 0; i < ctx->num_remote; i++) {
         dcutr_candidate_t *c = &ctx->remote[i];
-        if (c->attempts >= 5)
-            continue;
-        if (now - c->last_attempt_ms < (uint64_t)(c->attempts + 1) * 50)
-            continue;
+        if (c->attempts >= 5) continue;
+        if (now - c->last_attempt_ms < (uint64_t)(c->attempts + 1) * 50) continue;
 
         c->last_attempt_ms = now;
         c->attempts++;
@@ -146,17 +144,14 @@ static void try_connect(dcutr_ctx_t *ctx) {
             SPEER_LOG_DEBUG("dcutr", "attempting hole punch to %s (attempt %d)", addr_str,
                             c->attempts);
 
-            if (ctx->peer && ctx->peer->host) {
-                speer_peer_set_address(ctx->peer, addr_str);
-            }
+            if (ctx->peer && ctx->peer->host) { speer_peer_set_address(ctx->peer, addr_str); }
         }
     }
 }
 
 void speer_dcutr_poll(void) {
     dcutr_ctx_t *ctx = &g_dcutr_ctx;
-    if (!speer_dcutr_is_active())
-        return;
+    if (!speer_dcutr_is_active()) return;
 
     uint64_t now = speer_timestamp_ms();
 
@@ -235,9 +230,7 @@ int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
 
     case DCUTR_TYPE_SYNC:
         SPEER_LOG_DEBUG("dcutr", "received SYNC");
-        if (ctx->state == DCUTR_STATE_CONNECTING) {
-            try_connect(ctx);
-        }
+        if (ctx->state == DCUTR_STATE_CONNECTING) { try_connect(ctx); }
         break;
 
     default:
@@ -251,14 +244,11 @@ int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
 int speer_dcutr_encode(const speer_dcutr_msg_t *m, uint8_t *out, size_t cap, size_t *out_len) {
     speer_pb_writer_t w;
     speer_pb_writer_init(&w, out, cap);
-    if (speer_pb_write_int32_field(&w, 1, (int32_t)m->type) != 0)
-        return -1;
+    if (speer_pb_write_int32_field(&w, 1, (int32_t)m->type) != 0) return -1;
     for (size_t i = 0; i < m->num_addrs; i++) {
-        if (speer_pb_write_bytes_field(&w, 2, m->addrs[i].bytes, m->addrs[i].len) != 0)
-            return -1;
+        if (speer_pb_write_bytes_field(&w, 2, m->addrs[i].bytes, m->addrs[i].len) != 0) return -1;
     }
-    if (out_len)
-        *out_len = w.pos;
+    if (out_len) *out_len = w.pos;
     return 0;
 }
 
@@ -268,26 +258,22 @@ int speer_dcutr_decode(speer_dcutr_msg_t *m, const uint8_t *in, size_t in_len) {
     speer_pb_reader_init(&r, in, in_len);
     while (r.pos < r.len) {
         uint32_t f, wire;
-        if (speer_pb_read_tag(&r, &f, &wire) != 0)
-            return -1;
+        if (speer_pb_read_tag(&r, &f, &wire) != 0) return -1;
         if (f == 1 && wire == PB_WIRE_VARINT) {
             int32_t v;
-            if (speer_pb_read_int32(&r, &v) != 0)
-                return -1;
+            if (speer_pb_read_int32(&r, &v) != 0) return -1;
             m->type = (speer_dcutr_type_t)v;
         } else if (f == 2 && wire == PB_WIRE_LEN) {
             const uint8_t *d;
             size_t l;
-            if (speer_pb_read_bytes(&r, &d, &l) != 0)
-                return -1;
+            if (speer_pb_read_bytes(&r, &d, &l) != 0) return -1;
             if (m->num_addrs < DCUTR_MAX_ADDRS && l <= sizeof(m->addrs[0].bytes)) {
                 COPY(m->addrs[m->num_addrs].bytes, d, l);
                 m->addrs[m->num_addrs].len = l;
                 m->num_addrs++;
             }
         } else {
-            if (speer_pb_skip(&r, wire) != 0)
-                return -1;
+            if (speer_pb_skip(&r, wire) != 0) return -1;
         }
     }
     return 0;

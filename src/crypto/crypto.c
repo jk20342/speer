@@ -52,8 +52,7 @@ void speer_chacha_block(speer_chacha_ctx_t *ctx, uint8_t out[64]) {
     uint32_t x[16];
     uint32_t *s = ctx->state;
 
-    for (int i = 0; i < 16; i++)
-        x[i] = s[i];
+    for (int i = 0; i < 16; i++) x[i] = s[i];
 
     for (int i = 0; i < ROUNDS; i += 2) {
         QR(x[0], x[4], x[8], x[12]);
@@ -66,15 +65,12 @@ void speer_chacha_block(speer_chacha_ctx_t *ctx, uint8_t out[64]) {
         QR(x[3], x[4], x[9], x[14]);
     }
 
-    for (int i = 0; i < 16; i++)
-        x[i] += s[i];
+    for (int i = 0; i < 16; i++) x[i] += s[i];
 
-    for (int i = 0; i < 16; i++)
-        store32(out + 4 * i, x[i]);
+    for (int i = 0; i < 16; i++) store32(out + 4 * i, x[i]);
 
     s[12]++;
-    if (UNLIKELY(s[12] == 0))
-        s[13]++;
+    if (UNLIKELY(s[12] == 0)) s[13]++;
 }
 
 void speer_chacha_crypt(speer_chacha_ctx_t *ctx, uint8_t *out, const uint8_t *in, size_t len) {
@@ -87,9 +83,7 @@ void speer_chacha_crypt(speer_chacha_ctx_t *ctx, uint8_t *out, const uint8_t *in
         }
 
         size_t n = MIN(len, 64 - ctx->idx);
-        for (size_t i = 0; i < n; i++) {
-            out[i] = in[i] ^ buf[ctx->idx + i];
-        }
+        for (size_t i = 0; i < n; i++) { out[i] = in[i] ^ buf[ctx->idx + i]; }
 
         out += n;
         in += n;
@@ -268,15 +262,13 @@ static void sel25519(gf p, gf q, int b) {
 }
 
 static void unpack25519(gf o, const uint8_t n[32]) {
-    for (int i = 0; i < 16; i++)
-        o[i] = n[2 * i] + ((i64)n[2 * i + 1] << 8);
+    for (int i = 0; i < 16; i++) o[i] = n[2 * i] + ((i64)n[2 * i + 1] << 8);
     o[15] &= 0x7fff;
 }
 
 static void pack25519(uint8_t o[32], const gf n) {
     gf m, t;
-    for (int i = 0; i < 16; i++)
-        t[i] = n[i];
+    for (int i = 0; i < 16; i++) t[i] = n[i];
     car25519(t);
     car25519(t);
     car25519(t);
@@ -298,25 +290,20 @@ static void pack25519(uint8_t o[32], const gf n) {
 }
 
 static void fe_add(gf o, const gf a, const gf b) {
-    for (int i = 0; i < 16; i++)
-        o[i] = a[i] + b[i];
+    for (int i = 0; i < 16; i++) o[i] = a[i] + b[i];
 }
 
 static void fe_sub(gf o, const gf a, const gf b) {
-    for (int i = 0; i < 16; i++)
-        o[i] = a[i] - b[i];
+    for (int i = 0; i < 16; i++) o[i] = a[i] - b[i];
 }
 
 static void fe_mul(gf o, const gf a, const gf b) {
     i64 t[31] = {0};
     for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 16; j++)
-            t[i + j] += a[i] * b[j];
+        for (int j = 0; j < 16; j++) t[i + j] += a[i] * b[j];
     }
-    for (int i = 30; i >= 16; i--)
-        t[i - 16] += 38 * t[i];
-    for (int i = 0; i < 16; i++)
-        o[i] = t[i];
+    for (int i = 30; i >= 16; i--) t[i - 16] += 38 * t[i];
+    for (int i = 0; i < 16; i++) o[i] = t[i];
     car25519(o);
     car25519(o);
 }
@@ -327,15 +314,12 @@ static void fe_sqr(gf o, const gf a) {
 
 static void inv25519(gf o, const gf i) {
     gf c;
-    for (int a = 0; a < 16; a++)
-        c[a] = i[a];
+    for (int a = 0; a < 16; a++) c[a] = i[a];
     for (int a = 253; a >= 0; a--) {
         fe_sqr(c, c);
-        if (a != 2 && a != 4)
-            fe_mul(c, c, i);
+        if (a != 2 && a != 4) fe_mul(c, c, i);
     }
-    for (int a = 0; a < 16; a++)
-        o[a] = c[a];
+    for (int a = 0; a < 16; a++) o[a] = c[a];
 }
 
 static void x25519_scalar_mult(uint8_t out[32], const uint8_t scalar[32], const uint8_t point[32]) {

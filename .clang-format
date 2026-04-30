@@ -49,11 +49,11 @@ PointerAlignment: Right
 DerivePointerAlignment: false
 
 # Function definitions
-AllowShortFunctionsOnASingleLine: Empty
-AllowShortEnumsOnASingleLine: false
-AllowShortBlocksOnASingleLine: Empty
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortEnumsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Always
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
 
 # Function declarations/definitions
 AlwaysBreakAfterReturnType: None
@@ -73,10 +73,10 @@ IncludeCategories:
     SortPriority: 2
   - Regex: '^<windows\.h>'
     Priority: 3
-    SortPriority: 3
+    SortPriority: 4
   - Regex: '^<winsock'
     Priority: 3
-    SortPriority: 4
+    SortPriority: 3
   - Regex: '^<sys/'
     Priority: 3
     SortPriority: 5
@@ -111,8 +111,8 @@ SpacesInSquareBrackets: false
 
 # Line breaks
 KeepEmptyLinesAtTheStartOfBlocks: false
-MaxEmptyLinesToKeep: 2
-SeparateDefinitionBlocks: Always
+MaxEmptyLinesToKeep: 1
+SeparateDefinitionBlocks: Leave
 
 # Comments
 FixNamespaceComments: false
