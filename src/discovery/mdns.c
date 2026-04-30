@@ -232,7 +232,7 @@ int mdns_build_announcement(uint8_t* out, size_t* out_len, const mdns_service_t*
     hdr->flags = htons(DNS_FLAG_RESPONSE);
     hdr->answers = htons(3);
     pos += 12;
-    char full_name[MDNS_MAX_NAME_LENGTH];
+    char full_name[MDNS_MAX_NAME_LENGTH * 3 + 2];
     snprintf(full_name, sizeof(full_name), "%s.%s.%s",
              svc->instance_name, svc->service_type, svc->domain);
     size_t name_len = encode_name(out + pos, svc->service_type);
