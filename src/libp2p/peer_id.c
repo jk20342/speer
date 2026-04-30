@@ -2,6 +2,8 @@
 
 #include "speer_internal.h"
 
+#include <string.h>
+
 #include "protobuf.h"
 
 int speer_libp2p_pubkey_proto_encode(uint8_t *out, size_t cap, speer_libp2p_keytype_t kt,
@@ -19,26 +21,44 @@ int speer_libp2p_pubkey_proto_decode(const uint8_t *in, size_t in_len, speer_lib
     speer_pb_reader_t r;
     speer_pb_reader_init(&r, in, in_len);
     int got_type = 0, got_data = 0;
+    speer_libp2p_keytype_t local_kt = (speer_libp2p_keytype_t)0;
+    const uint8_t *local_key = NULL;
+    size_t local_key_len = 0;
     while (r.pos < r.len) {
         uint32_t f, wire;
         if (speer_pb_read_tag(&r, &f, &wire) != 0) return -1;
         if (f == 1 && wire == PB_WIRE_VARINT) {
+            if (got_type) return -1;
             int32_t v;
             if (speer_pb_read_int32(&r, &v) != 0) return -1;
-            if (kt) *kt = (speer_libp2p_keytype_t)v;
+            if (v < 0 || v > 3) return -1;
+            local_kt = (speer_libp2p_keytype_t)v;
             got_type = 1;
         } else if (f == 2 && wire == PB_WIRE_LEN) {
+            if (got_data) return -1;
             const uint8_t *d;
             size_t l;
             if (speer_pb_read_bytes(&r, &d, &l) != 0) return -1;
-            if (key) *key = d;
-            if (key_len) *key_len = l;
+            local_key = d;
+            local_key_len = l;
             got_data = 1;
         } else {
-            if (speer_pb_skip(&r, wire) != 0) return -1;
+            return -1;
         }
     }
-    return (got_type && got_data) ? 0 : -1;
+    if (!got_type || !got_data) return -1;
+
+    uint8_t reenc[1024];
+    size_t reenc_len = 0;
+    if (speer_libp2p_pubkey_proto_encode(reenc, sizeof(reenc), local_kt, local_key, local_key_len,
+                                         &reenc_len) != 0)
+        return -1;
+    if (reenc_len != in_len || memcmp(reenc, in, in_len) != 0) return -1;
+
+    if (kt) *kt = local_kt;
+    if (key) *key = local_key;
+    if (key_len) *key_len = local_key_len;
+    return 0;
 }
 
 int speer_peer_id_from_pubkey_bytes(uint8_t *out, size_t out_cap, const uint8_t *pubkey_proto,

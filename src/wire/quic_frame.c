@@ -110,11 +110,12 @@ int speer_qf_encode_crypto(speer_qf_writer_t *w, uint64_t offset, const uint8_t 
 
 int speer_qf_encode_ack(speer_qf_writer_t *w, uint64_t largest, uint64_t delay,
                         const uint64_t *gaps_lengths, size_t pairs) {
+    if (pairs == 0) return -1;
     if (speer_qf_w_u8(w, QF_ACK) != 0) return -1;
     if (speer_qf_w_varint(w, largest) != 0) return -1;
     if (speer_qf_w_varint(w, delay) != 0) return -1;
-    if (speer_qf_w_varint(w, pairs) != 0) return -1;
-    if (speer_qf_w_varint(w, pairs > 0 ? gaps_lengths[1] : 0) != 0) return -1;
+    if (speer_qf_w_varint(w, (uint64_t)(pairs - 1)) != 0) return -1;
+    if (speer_qf_w_varint(w, gaps_lengths[1]) != 0) return -1;
     for (size_t i = 1; i < pairs; i++) {
         if (speer_qf_w_varint(w, gaps_lengths[i * 2]) != 0) return -1;
         if (speer_qf_w_varint(w, gaps_lengths[i * 2 + 1]) != 0) return -1;

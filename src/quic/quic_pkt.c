@@ -69,6 +69,30 @@ static void make_nonce(uint8_t out[12], const uint8_t iv[12], uint64_t pn) {
     for (int i = 0; i < 8; i++) out[11 - i] ^= (uint8_t)(pn >> (8 * i));
 }
 
+static int recv_replay_check(uint64_t pn, uint64_t top, uint64_t bits) {
+    if (pn > top) return 0;
+    uint64_t diff = top - pn;
+    if (diff >= QUIC_REPLAY_WINDOW) return -1;
+    if (bits & (UINT64_C(1) << diff)) return -1;
+    return 0;
+}
+
+static void recv_replay_record(speer_quic_keys_t *keys, uint64_t pn) {
+    if (pn > keys->recv_window_top) {
+        uint64_t shift = pn - keys->recv_window_top;
+        if (shift >= QUIC_REPLAY_WINDOW) {
+            keys->recv_window_bits = 0;
+        } else {
+            keys->recv_window_bits <<= shift;
+        }
+        keys->recv_window_top = pn;
+        keys->recv_window_bits |= UINT64_C(1);
+    } else {
+        uint64_t diff = keys->recv_window_top - pn;
+        keys->recv_window_bits |= (UINT64_C(1) << diff);
+    }
+}
+
 static size_t encoded_pn_length(uint64_t pn) {
     if (pn < 0x100) return 1;
     if (pn < 0x10000) return 2;
@@ -195,6 +219,9 @@ int speer_quic_pkt_decode_long(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_len
     for (size_t i = 0; i < pn_length; i++) pn = (pn << 8) | pkt[pn_offset + i];
     p->pkt_num = speer_quic_decode_pn(keys->largest_acked, pn, pn_length * 8);
 
+    if (recv_replay_check(p->pkt_num, keys->recv_window_top, keys->recv_window_bits) != 0)
+        return -1;
+
     size_t hdr_len = pn_offset + pn_length;
     size_t ct_len = (size_t)length_field - pn_length - 16;
     if (hdr_len + ct_len + 16 > pkt_len) return -1;
@@ -205,6 +232,7 @@ int speer_quic_pkt_decode_long(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_len
                          pkt + hdr_len + ct_len, pkt + hdr_len) != 0)
         return -1;
 
+    recv_replay_record(keys, p->pkt_num);
     if (p->pkt_num > keys->largest_acked) keys->largest_acked = p->pkt_num;
     p->payload = pkt + hdr_len;
     p->payload_len = ct_len;
@@ -267,6 +295,9 @@ int speer_quic_pkt_decode_short(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_le
     for (size_t i = 0; i < pn_length; i++) pn = (pn << 8) | pkt[pn_offset + i];
     p->pkt_num = speer_quic_decode_pn(keys->largest_acked, pn, pn_length * 8);
 
+    if (recv_replay_check(p->pkt_num, keys->recv_window_top, keys->recv_window_bits) != 0)
+        return -1;
+
     size_t hdr_len = pn_offset + pn_length;
     if (hdr_len + 16 > pkt_len) return -1;
     size_t ct_len = pkt_len - hdr_len - 16;
@@ -277,6 +308,7 @@ int speer_quic_pkt_decode_short(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_le
                          pkt + hdr_len + ct_len, pkt + hdr_len) != 0)
         return -1;
 
+    recv_replay_record(keys, p->pkt_num);
     if (p->pkt_num > keys->largest_acked) keys->largest_acked = p->pkt_num;
     p->payload = pkt + hdr_len;
     p->payload_len = ct_len;

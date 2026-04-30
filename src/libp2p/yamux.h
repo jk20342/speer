@@ -16,6 +16,8 @@
 #define YAMUX_FLAG_RST           0x0008
 
 #define YAMUX_INITIAL_WINDOW     262144
+#define YAMUX_MAX_STREAMS        256
+#define YAMUX_MAX_RECV_BUF       (4u * 1024u * 1024u)
 
 typedef struct {
     uint8_t version;
@@ -45,6 +47,9 @@ typedef struct speer_yamux_session_s {
     int is_initiator;
     uint32_t next_stream_id;
     speer_yamux_stream_t *streams;
+    uint32_t stream_count;
+    uint32_t max_streams;
+    size_t max_recv_buf;
 
     int (*send_raw)(void *user, const uint8_t *data, size_t len);
     int (*recv_raw)(void *user, uint8_t *buf, size_t cap, size_t *out_n);

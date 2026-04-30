@@ -21,6 +21,8 @@
 #define QUIC_MAX_CID_LEN   20
 #define QUIC_MAX_PKT_LEN   1500
 
+#define QUIC_REPLAY_WINDOW 64
+
 typedef struct {
     const speer_aead_iface_t *aead;
     speer_hp_ctx_t hp;
@@ -29,6 +31,8 @@ typedef struct {
     uint8_t iv[12];
     uint64_t next_send_pn;
     uint64_t largest_acked;
+    uint64_t recv_window_top;
+    uint64_t recv_window_bits;
 } speer_quic_keys_t;
 
 typedef struct {

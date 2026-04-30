@@ -17,26 +17,43 @@
 static uint8_t g_dht_token_secret[32];
 static int g_dht_token_secret_initialized = 0;
 
-static void dht_token_init_if_needed(void) {
-    if (g_dht_token_secret_initialized) return;
+static int dht_token_init_if_needed(void) {
+    if (g_dht_token_secret_initialized) return 0;
     if (speer_random_bytes_or_fail(g_dht_token_secret, sizeof(g_dht_token_secret)) != 0) {
-        ZERO(g_dht_token_secret, sizeof(g_dht_token_secret));
+        return -1;
     }
     g_dht_token_secret_initialized = 1;
+    return 0;
 }
 
 int dht_compute_store_token(dht_t *dht, const char *sender_addr, uint8_t token[16]) {
     (void)dht;
     if (!sender_addr || !token) return -1;
-    dht_token_init_if_needed();
+    if (dht_token_init_if_needed() != 0) return -1;
+    uint8_t k_ipad[64], k_opad[64];
+    ZERO(k_ipad, sizeof(k_ipad));
+    ZERO(k_opad, sizeof(k_opad));
+    COPY(k_ipad, g_dht_token_secret, sizeof(g_dht_token_secret));
+    COPY(k_opad, g_dht_token_secret, sizeof(g_dht_token_secret));
+    for (size_t i = 0; i < sizeof(k_ipad); i++) {
+        k_ipad[i] ^= 0x36;
+        k_opad[i] ^= 0x5c;
+    }
     sha256_ctx_t ctx;
+    uint8_t inner[32];
     speer_sha256_init(&ctx);
-    speer_sha256_update(&ctx, g_dht_token_secret, sizeof(g_dht_token_secret));
+    speer_sha256_update(&ctx, k_ipad, sizeof(k_ipad));
     speer_sha256_update(&ctx, (const uint8_t *)sender_addr, strlen(sender_addr));
-    speer_sha256_update(&ctx, g_dht_token_secret, sizeof(g_dht_token_secret));
+    speer_sha256_final(&ctx, inner);
     uint8_t mac[32];
+    speer_sha256_init(&ctx);
+    speer_sha256_update(&ctx, k_opad, sizeof(k_opad));
+    speer_sha256_update(&ctx, inner, sizeof(inner));
     speer_sha256_final(&ctx, mac);
     COPY(token, mac, 16);
+    ZERO(k_ipad, sizeof(k_ipad));
+    ZERO(k_opad, sizeof(k_opad));
+    ZERO(inner, sizeof(inner));
     return 0;
 }
 

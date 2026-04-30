@@ -151,13 +151,20 @@ static int parse_extensions(speer_x509_t *x, const speer_asn1_t *exts) {
             while (sc < se && x->num_san_dns < SPEER_X509_MAX_DNS) {
                 speer_asn1_t name;
                 if (speer_asn1_seq_next(&sc, se, &name) != 0) break;
-                if (name.tag == 0x82) {
-                    size_t l = name.value_len < SPEER_X509_NAME_MAX - 1 ? name.value_len
-                                                                        : SPEER_X509_NAME_MAX - 1;
-                    COPY(x->san_dns[x->num_san_dns], name.value, l);
-                    x->san_dns[x->num_san_dns][l] = 0;
-                    x->num_san_dns++;
+                if (name.tag != 0x82) continue;
+                if (name.value_len == 0 || name.value_len >= SPEER_X509_NAME_MAX) continue;
+                int bad = 0;
+                for (size_t k = 0; k < name.value_len; k++) {
+                    uint8_t b = name.value[k];
+                    if (b < 0x21 || b > 0x7e) {
+                        bad = 1;
+                        break;
+                    }
                 }
+                if (bad) return -1;
+                COPY(x->san_dns[x->num_san_dns], name.value, name.value_len);
+                x->san_dns[x->num_san_dns][name.value_len] = 0;
+                x->num_san_dns++;
             }
         }
     }
@@ -207,7 +214,18 @@ int speer_x509_parse(speer_x509_t *x, const uint8_t *der, size_t der_len) {
     if (node.tag == 0xa0) {
         if (speer_asn1_seq_next(&tc, te, &node) != 0) return -1;
     }
-    if (speer_asn1_seq_next(&tc, te, &node) != 0) return -1;
+    speer_asn1_t tbs_sig_alg;
+    if (speer_asn1_seq_next(&tc, te, &tbs_sig_alg) != 0) return -1;
+    if (tbs_sig_alg.tag == ASN1_SEQUENCE) {
+        const uint8_t *ts_c;
+        const uint8_t *ts_e;
+        speer_asn1_seq_iter_init(&tbs_sig_alg, &ts_c, &ts_e);
+        speer_asn1_t inner_oid;
+        if (speer_asn1_seq_next(&ts_c, ts_e, &inner_oid) == 0) {
+            x->tbs_sig_alg_oid = inner_oid.value;
+            x->tbs_sig_alg_oid_len = inner_oid.value_len;
+        }
+    }
 
     speer_asn1_t issuer;
     if (speer_asn1_seq_next(&tc, te, &issuer) != 0) return -1;
@@ -262,16 +280,24 @@ int speer_x509_parse(speer_x509_t *x, const uint8_t *der, size_t der_len) {
     while (tc < te) {
         speer_asn1_t opt;
         if (speer_asn1_seq_next(&tc, te, &opt) != 0) break;
-        if (opt.tag == 0xa3) { parse_extensions(x, &opt); }
+        if (opt.tag == 0xa3) {
+            if (parse_extensions(x, &opt) != 0) return -1;
+        }
     }
     return 0;
 }
 
 static int hostname_match(const char *pattern, const char *host) {
     if (pattern[0] == '*' && pattern[1] == '.') {
+        const char *rest = pattern + 2;
+        int rest_dots = 0;
+        for (const char *p = rest; *p; p++)
+            if (*p == '.') rest_dots++;
+        if (rest_dots < 1) return 0;
         const char *dot = host;
         while (*dot && *dot != '.') dot++;
         if (*dot != '.') return 0;
+        if (dot == host) return 0;
         dot++;
         size_t lp = 0;
         while (pattern[2 + lp]) lp++;
@@ -353,8 +379,15 @@ static int dn_eq(const uint8_t *a, size_t al, const uint8_t *b, size_t bl) {
     return al == bl && memcmp(a, b, al) == 0;
 }
 
+static int sig_alg_consistent(const speer_x509_t *c) {
+    if (!c->sig_alg_oid || !c->tbs_sig_alg_oid) return 0;
+    if (c->sig_alg_oid_len != c->tbs_sig_alg_oid_len) return 0;
+    return memcmp(c->sig_alg_oid, c->tbs_sig_alg_oid, c->sig_alg_oid_len) == 0;
+}
+
 static int verify_signed_by(const speer_x509_t *child, const uint8_t *parent_spki_pubkey,
                             size_t parent_spki_pubkey_len) {
+    if (!sig_alg_consistent(child)) return -1;
     uint16_t sig_id;
     if (sig_alg_to_tls_id(child->sig_alg_oid, child->sig_alg_oid_len, &sig_id) != 0) return -1;
     return speer_sig_verify(sig_id, parent_spki_pubkey, parent_spki_pubkey_len, child->tbs,
@@ -365,6 +398,7 @@ int speer_x509_verify_chain(const speer_ca_store_t *store, const speer_x509_t *l
                             const speer_x509_t *intermediates, size_t num_intermediates,
                             const char *hostname, int64_t now_utc) {
     if (leaf->unknown_critical_ext) return -1;
+    if (leaf->is_ca) return -1;
     if (now_utc < leaf->not_before_utc || now_utc > leaf->not_after_utc) return -1;
     if (hostname && speer_x509_match_hostname(leaf, hostname) != 0) return -1;
     if (leaf->has_ext_key_usage && !(leaf->ext_key_usage & X509_EKU_SERVER_AUTH)) return -1;

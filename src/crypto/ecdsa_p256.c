@@ -163,11 +163,6 @@ int speer_ecdsa_p256_verify(const uint8_t pubkey[64], const uint8_t *msg_hash, s
     if (speer_bn_is_zero(&r) || speer_bn_cmp(&r, &bn_n) >= 0) return -1;
     if (speer_bn_is_zero(&s) || speer_bn_cmp(&s, &bn_n) >= 0) return -1;
 
-    speer_bn_t half_n;
-    speer_bn_copy(&half_n, &bn_n);
-    speer_bn_shr1(&half_n);
-    if (speer_bn_cmp(&s, &half_n) > 0) return -1;
-
     speer_bn_t e;
     if (msg_hash_len > 32) msg_hash_len = 32;
     speer_bn_from_bytes_be(&e, msg_hash, msg_hash_len);

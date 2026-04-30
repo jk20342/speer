@@ -62,7 +62,7 @@ int main(void) {
     uint64_t largest, delay, count, first_ack_range;
     if (speer_qf_r_varint(&r, &largest) != 0 || largest != 12) FAIL("ack largest\n");
     if (speer_qf_r_varint(&r, &delay) != 0 || delay != 5000) FAIL("ack delay\n");
-    if (speer_qf_r_varint(&r, &count) != 0 || count != 2) FAIL("ack count\n");
+    if (speer_qf_r_varint(&r, &count) != 0 || count != 1) FAIL("ack count\n");
     if (speer_qf_r_varint(&r, &first_ack_range) != 0 || first_ack_range != ack_pairs[1])
         FAIL("ack first range\n");
     uint64_t gap, block;

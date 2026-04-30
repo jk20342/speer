@@ -22,26 +22,34 @@ static int parse_ecdsa_der(const uint8_t *sig, size_t sig_len, const uint8_t **r
         total_len = sig[pos];
         pos += 1;
     }
-    if (pos + total_len > sig_len) return -1;
+    if (pos + total_len != sig_len) return -1;
 
-    if (sig[pos] != 0x02) return -1;
+    if (pos + 2 > sig_len || sig[pos] != 0x02) return -1;
     size_t r_l = sig[pos + 1];
+    if (r_l == 0 || r_l > 0x7f) return -1;
     if (pos + 2 + r_l > sig_len) return -1;
     const uint8_t *rp = sig + pos + 2;
-    while (r_l > 0 && *rp == 0) {
+    if (r_l > 1 && rp[0] == 0 && (rp[1] & 0x80) == 0) return -1;
+    if (rp[0] == 0 && r_l > 0) {
         rp++;
         r_l--;
     }
 
     pos += 2 + sig[pos + 1];
-    if (sig[pos] != 0x02) return -1;
+
+    if (pos + 2 > sig_len || sig[pos] != 0x02) return -1;
     size_t s_l = sig[pos + 1];
+    if (s_l == 0 || s_l > 0x7f) return -1;
     if (pos + 2 + s_l > sig_len) return -1;
     const uint8_t *sp = sig + pos + 2;
-    while (s_l > 0 && *sp == 0) {
+    if (s_l > 1 && sp[0] == 0 && (sp[1] & 0x80) == 0) return -1;
+    if (sp[0] == 0 && s_l > 0) {
         sp++;
         s_l--;
     }
+
+    pos += 2 + sig[pos + 1];
+    if (pos != sig_len) return -1;
 
     *r_out = rp;
     *r_len = r_l;
@@ -110,7 +118,7 @@ static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t 
         seq_len = spki[pos];
         pos += 1;
     }
-    if (seq_len > spki_len - pos) return -1;
+    if (seq_len != spki_len - pos) return -1;
 
     if (pos >= spki_len || spki[pos] != 0x02) return -1;
     pos++;
@@ -127,7 +135,7 @@ static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t 
         nl = spki[pos];
         pos++;
     }
-    if (nl > spki_len - pos) return -1;
+    if (nl == 0 || nl > spki_len - pos) return -1;
     *n = spki + pos;
     *n_len = nl;
     pos += nl;
@@ -147,9 +155,11 @@ static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t 
         el = spki[pos];
         pos++;
     }
-    if (el > spki_len - pos) return -1;
+    if (el == 0 || el > spki_len - pos) return -1;
     *e = spki + pos;
     *e_len = el;
+    pos += el;
+    if (pos != spki_len) return -1;
     return 0;
 }
 

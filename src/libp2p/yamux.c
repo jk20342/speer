@@ -27,6 +27,8 @@ void speer_yamux_init(speer_yamux_session_t *s, int is_initiator,
     ZERO(s, sizeof(*s));
     s->is_initiator = is_initiator;
     s->next_stream_id = is_initiator ? 1 : 2;
+    s->max_streams = YAMUX_MAX_STREAMS;
+    s->max_recv_buf = YAMUX_MAX_RECV_BUF;
     s->send_raw = send_raw;
     s->recv_raw = recv_raw;
     s->user = user;
@@ -40,6 +42,7 @@ static speer_yamux_stream_t *find_stream(speer_yamux_session_t *s, uint32_t id) 
 }
 
 static speer_yamux_stream_t *alloc_stream(speer_yamux_session_t *s, uint32_t id) {
+    if (s->max_streams && s->stream_count >= s->max_streams) return NULL;
     speer_yamux_stream_t *st = (speer_yamux_stream_t *)calloc(1, sizeof(*st));
     if (!st) return NULL;
     st->id = id;
@@ -47,6 +50,7 @@ static speer_yamux_stream_t *alloc_stream(speer_yamux_session_t *s, uint32_t id)
     st->send_window = YAMUX_INITIAL_WINDOW;
     st->next = s->streams;
     s->streams = st;
+    s->stream_count++;
     return st;
 }
 
@@ -59,6 +63,7 @@ void speer_yamux_close(speer_yamux_session_t *s) {
         st = n;
     }
     s->streams = NULL;
+    s->stream_count = 0;
 }
 
 static int send_frame(speer_yamux_session_t *s, const speer_yamux_hdr_t *h, const uint8_t *body,
@@ -153,10 +158,15 @@ int speer_yamux_send_go_away(speer_yamux_session_t *s, uint32_t code) {
     return send_frame(s, &h, NULL, 0);
 }
 
-static int append_recv(speer_yamux_stream_t *st, const uint8_t *data, size_t len) {
+static int append_recv(speer_yamux_session_t *s, speer_yamux_stream_t *st, const uint8_t *data,
+                       size_t len) {
+    size_t cap_limit = s->max_recv_buf ? s->max_recv_buf : YAMUX_MAX_RECV_BUF;
+    if (st->recv_buf_len + len > cap_limit) return -1;
     if (st->recv_buf_len + len > st->recv_buf_cap) {
         size_t newcap = st->recv_buf_cap ? st->recv_buf_cap * 2 : 4096;
         while (newcap < st->recv_buf_len + len) newcap *= 2;
+        if (newcap > cap_limit) newcap = cap_limit;
+        if (newcap < st->recv_buf_len + len) return -1;
         uint8_t *nb = (uint8_t *)realloc(st->recv_buf, newcap);
         if (!nb) return -1;
         st->recv_buf = nb;
@@ -180,7 +190,10 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
         speer_yamux_stream_t *st = find_stream(s, h.stream_id);
         if (!st && (h.flags & YAMUX_FLAG_SYN)) {
             st = alloc_stream(s, h.stream_id);
-            if (!st) return -1;
+            if (!st) {
+                speer_yamux_send_go_away(s, 1);
+                return -1;
+            }
         }
         if (h.length > 0 && st) {
             if (h.length > st->recv_window) return -1;
@@ -190,7 +203,10 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
                 free(tmp);
                 return -1;
             }
-            append_recv(st, tmp, h.length);
+            if (append_recv(s, st, tmp, h.length) != 0) {
+                free(tmp);
+                return -1;
+            }
             free(tmp);
             st->recv_window -= h.length;
             if (st->recv_window < YAMUX_INITIAL_WINDOW / 2) {
@@ -213,7 +229,13 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
         }
     } else if (h.type == YAMUX_TYPE_WINDOW_UPDATE) {
         speer_yamux_stream_t *st = find_stream(s, h.stream_id);
-        if (!st && (h.flags & YAMUX_FLAG_SYN)) { st = alloc_stream(s, h.stream_id); }
+        if (!st && (h.flags & YAMUX_FLAG_SYN)) {
+            st = alloc_stream(s, h.stream_id);
+            if (!st) {
+                speer_yamux_send_go_away(s, 1);
+                return -1;
+            }
+        }
         if (st) {
             uint64_t nw = (uint64_t)st->send_window + (uint64_t)h.length;
             if (nw > UINT32_MAX) nw = UINT32_MAX;

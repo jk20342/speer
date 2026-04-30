@@ -210,7 +210,10 @@ int speer_stun_get_mapped_addr(const char *stun_server, struct sockaddr_storage 
     if (sock < 0) return -1;
 
     uint8_t tid[12];
-    speer_random_bytes(tid, 12);
+    if (speer_random_bytes_or_fail(tid, 12) != 0) {
+        CLOSESOCKET(sock);
+        return -1;
+    }
 
     uint8_t req[20];
     STORE16_BE(req, STUN_BINDING_REQUEST);
@@ -368,7 +371,7 @@ int speer_generate_keypair(uint8_t public_key[SPEER_PUBLIC_KEY_SIZE],
     if (seed) {
         COPY(private_key, seed, 32);
     } else {
-        speer_random_bytes(private_key, 32);
+        if (speer_random_bytes_or_fail(private_key, 32) != 0) return -1;
     }
 
     private_key[0] &= 0xf8;

@@ -193,6 +193,7 @@ typedef struct {
     uint8_t send_key[32];
     uint8_t recv_key[32];
     uint8_t nonce[12];
+    uint64_t cipher_n;
     uint32_t state;
     uint32_t step;
 } speer_handshake_t;
@@ -341,7 +342,7 @@ int speer_packet_decode(uint8_t *out, size_t *out_len, const uint8_t *in, size_t
                         const uint8_t key[32]);
 
 size_t speer_varint_encode(uint8_t *out, uint64_t val);
-size_t speer_varint_decode(const uint8_t *in, uint64_t *val);
+size_t speer_varint_decode(const uint8_t *in, size_t avail, uint64_t *val);
 
 void speer_conn_init(speer_conn_t *conn);
 void speer_conn_update_rtt(speer_conn_t *conn, uint32_t rtt_sample);
@@ -371,13 +372,6 @@ int speer_stun_get_mapped_addr(const char *stun_server, struct sockaddr_storage 
 
 int speer_relay_connect(const char *relay_server, const uint8_t local_pubkey[SPEER_PUBLIC_KEY_SIZE],
                         const uint8_t remote_pubkey[SPEER_PUBLIC_KEY_SIZE]);
-
-int speer_noise_xx_initiator_handshake(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
-                                       uint8_t *out, size_t *out_len,
-                                       const uint8_t local_privkey[32]);
-int speer_noise_xx_responder_handshake(speer_handshake_t *hs, const uint8_t *in, size_t in_len,
-                                       uint8_t *out, size_t *out_len,
-                                       const uint8_t local_privkey[32]);
 
 size_t speer_frame_encode_ack(uint8_t *out, uint64_t largest_acked, uint64_t ack_delay,
                               const uint8_t *ranges, size_t num_ranges);

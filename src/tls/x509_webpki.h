@@ -21,6 +21,8 @@ typedef struct {
     size_t sig_len;
     const uint8_t *sig_alg_oid;
     size_t sig_alg_oid_len;
+    const uint8_t *tbs_sig_alg_oid;
+    size_t tbs_sig_alg_oid_len;
     const uint8_t *spki;
     size_t spki_len;
     const uint8_t *spki_alg_oid;

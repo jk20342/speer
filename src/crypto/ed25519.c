@@ -244,9 +244,24 @@ void speer_ed25519_sign(uint8_t sig[64], const uint8_t *msg, size_t msg_len, con
     WIPE(&hctx, sizeof(hctx));
 }
 
+/* RFC 8032 §5.1.7: reject any s >= L, where
+   L = 2^252 + 27742317777372353535851937790883648493. */
+static const uint8_t ED25519_L_LE[32] = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+                                         0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0x4d, 0x14,
+                                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10};
+
+static int s_lt_L(const uint8_t s[32]) {
+    for (int i = 31; i >= 0; i--) {
+        if (s[i] < ED25519_L_LE[i]) return 1;
+        if (s[i] > ED25519_L_LE[i]) return 0;
+    }
+    return 0;
+}
+
 int speer_ed25519_verify(const uint8_t sig[64], const uint8_t *msg, size_t msg_len,
                          const uint8_t pk[32]) {
-    if (sig[63] & 0xe0) return -1;
+    if (!s_lt_L(sig + 32)) return -1;
 
     ge_p3 A;
     if (ge_frombytes_negate_vartime(&A, pk) != 0) return -1;

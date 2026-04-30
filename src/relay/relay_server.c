@@ -70,26 +70,31 @@ static void free_circuit(relay_server_t *srv, relay_circuit_t *circ) {
     srv->num_circuits--;
 }
 
-int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
-                        const struct sockaddr_storage *from, socklen_t from_len, uint8_t *response,
-                        size_t *response_len) {
+int relay_server_on_hop(relay_server_t *srv, const uint8_t *auth_peer_id, size_t auth_peer_id_len,
+                        const uint8_t *data, size_t len, const struct sockaddr_storage *from,
+                        socklen_t from_len, uint8_t *response, size_t *response_len) {
     speer_relay_msg_type_t type;
     int status;
     speer_relay_reservation_t res;
     uint8_t peer_id[64];
-    size_t peer_id_len = sizeof(peer_id);
+    size_t peer_id_len = 0;
 
-    if (speer_relay_decode(data, len, &type, &status, &res, peer_id, &peer_id_len) != 0) {
+    if (auth_peer_id_len == 0 || auth_peer_id_len > sizeof(peer_id)) {
+        return speer_relay_encode_hop_status(response, *response_len, response_len,
+                                             RELAY_STATUS_PERMISSION_DENIED, NULL);
+    }
+    size_t protobuf_peer_cap = sizeof(peer_id);
+    if (speer_relay_decode(data, len, &type, &status, &res, peer_id, &protobuf_peer_cap) != 0) {
         return speer_relay_encode_hop_status(response, *response_len, response_len,
                                              RELAY_STATUS_MALFORMED_MESSAGE, NULL);
     }
-    if (peer_id_len == 0 || peer_id_len > sizeof(peer_id)) {
-        return speer_relay_encode_hop_status(response, *response_len, response_len,
-                                             RELAY_STATUS_MALFORMED_MESSAGE, NULL);
+    if (protobuf_peer_cap > 0 && protobuf_peer_cap <= sizeof(peer_id)) {
+        peer_id_len = protobuf_peer_cap;
     }
 
     if (type == HOP_TYPE_RESERVE) {
-        if (!srv->auth_fn || srv->auth_fn(srv->user, peer_id, peer_id_len, from, from_len) != 0) {
+        if (!srv->auth_fn ||
+            srv->auth_fn(srv->user, auth_peer_id, auth_peer_id_len, from, from_len) != 0) {
             return speer_relay_encode_hop_status(response, *response_len, response_len,
                                                  RELAY_STATUS_PERMISSION_DENIED, NULL);
         }
@@ -98,7 +103,7 @@ int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
                                                  RELAY_STATUS_RESOURCE_LIMIT_EXCEEDED, NULL);
         }
 
-        relay_reservation_t *existing = find_reservation(srv, peer_id, peer_id_len);
+        relay_reservation_t *existing = find_reservation(srv, auth_peer_id, auth_peer_id_len);
         if (existing) {
             existing->expires_ms = speer_timestamp_ms() + RELAY_SERVER_RESERVATION_TTL_MS;
             COPY(&existing->addr, from, from_len);
@@ -113,8 +118,8 @@ int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
                                                  RELAY_STATUS_RESOURCE_LIMIT_EXCEEDED, NULL);
         }
 
-        COPY(new_res->peer_id, peer_id, peer_id_len);
-        new_res->peer_id_len = peer_id_len;
+        COPY(new_res->peer_id, auth_peer_id, auth_peer_id_len);
+        new_res->peer_id_len = auth_peer_id_len;
         new_res->expires_ms = speer_timestamp_ms() + RELAY_SERVER_RESERVATION_TTL_MS;
         COPY(&new_res->addr, from, from_len);
         new_res->addr_len = from_len;
@@ -126,6 +131,10 @@ int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
     }
 
     if (type == HOP_TYPE_CONNECT) {
+        if (peer_id_len == 0) {
+            return speer_relay_encode_hop_status(response, *response_len, response_len,
+                                                 RELAY_STATUS_MALFORMED_MESSAGE, NULL);
+        }
         relay_reservation_t *target = find_reservation(srv, peer_id, peer_id_len);
         if (!target || target->expires_ms < speer_timestamp_ms()) {
             return speer_relay_encode_hop_status(response, *response_len, response_len,
@@ -145,11 +154,13 @@ int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
 
         COPY(&circ->src_addr, from, from_len);
         circ->src_addr_len = from_len;
+        COPY(circ->src_peer, auth_peer_id, auth_peer_id_len);
+        circ->src_len = auth_peer_id_len;
         COPY(&circ->dst_addr, &target->addr, target->addr_len);
         circ->dst_addr_len = target->addr_len;
         COPY(circ->dst_peer, peer_id, peer_id_len);
         circ->dst_len = peer_id_len;
-        circ->hop_limit = RELAY_HOP_LIMIT;
+        circ->packet_quota_remaining = RELAY_CIRCUIT_PACKET_QUOTA;
         circ->created_ms = speer_timestamp_ms();
         circ->last_activity_ms = circ->created_ms;
 
@@ -163,32 +174,27 @@ int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
                                          RELAY_STATUS_UNEXPECTED_MESSAGE, NULL);
 }
 
-int relay_server_on_stop(relay_server_t *srv, const uint8_t *data, size_t len,
-                         const struct sockaddr_storage *from, socklen_t from_len, uint8_t *response,
-                         size_t *response_len) {
+int relay_server_on_stop(relay_server_t *srv, const uint8_t *auth_peer_id, size_t auth_peer_id_len,
+                         const uint8_t *data, size_t len, uint8_t *response, size_t *response_len) {
     speer_relay_msg_type_t type;
     int status;
     speer_relay_reservation_t res;
     uint8_t peer_id[64];
-    size_t peer_id_len = sizeof(peer_id);
+    size_t protobuf_peer_cap = sizeof(peer_id);
 
-    if (speer_relay_decode(data, len, &type, &status, &res, peer_id, &peer_id_len) != 0) {
+    if (auth_peer_id_len == 0 || auth_peer_id_len > sizeof(peer_id)) {
+        return speer_relay_encode_stop_status(response, *response_len, response_len,
+                                              RELAY_STATUS_PERMISSION_DENIED);
+    }
+    if (speer_relay_decode(data, len, &type, &status, &res, peer_id, &protobuf_peer_cap) != 0) {
         return speer_relay_encode_stop_status(response, *response_len, response_len,
                                               RELAY_STATUS_MALFORMED_MESSAGE);
     }
-    if (peer_id_len == 0 || peer_id_len > sizeof(peer_id)) {
-        return speer_relay_encode_stop_status(response, *response_len, response_len,
-                                              RELAY_STATUS_MALFORMED_MESSAGE);
-    }
 
-    relay_reservation_t *target = find_reservation(srv, peer_id, peer_id_len);
+    relay_reservation_t *target = find_reservation(srv, auth_peer_id, auth_peer_id_len);
     if (!target || target->expires_ms < speer_timestamp_ms()) {
         return speer_relay_encode_stop_status(response, *response_len, response_len,
                                               RELAY_STATUS_NO_RESERVATION);
-    }
-    if (target->addr_len != from_len || memcmp(&target->addr, from, from_len) != 0) {
-        return speer_relay_encode_stop_status(response, *response_len, response_len,
-                                              RELAY_STATUS_PERMISSION_DENIED);
     }
 
     return speer_relay_encode_stop_status(response, *response_len, response_len, RELAY_STATUS_OK);
@@ -200,13 +206,12 @@ int relay_server_relay_data(relay_server_t *srv, uint32_t circuit_id, const uint
     if (!circ || !circ->active) { return -1; }
 
     circ->last_activity_ms = speer_timestamp_ms();
-    circ->hop_limit--;
-
-    if (circ->hop_limit == 0) {
-        SPEER_LOG_WARN("relay", "circuit %d hop limit exceeded", circuit_id);
+    if (circ->packet_quota_remaining == 0) {
+        SPEER_LOG_WARN("relay", "circuit %d packet quota exceeded", circuit_id);
         free_circuit(srv, circ);
         return -1;
     }
+    circ->packet_quota_remaining--;
 
     const struct sockaddr_storage *target;
     socklen_t target_len;

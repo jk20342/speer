@@ -50,8 +50,11 @@ size_t speer_varint_encode(uint8_t *out, uint64_t val) {
     }
 }
 
-size_t speer_varint_decode(const uint8_t *in, uint64_t *val) {
+size_t speer_varint_decode(const uint8_t *in, size_t avail, uint64_t *val) {
+    if (avail < 1) return 0;
     uint8_t type = in[0] >> 6;
+    static const size_t need[4] = {1, 2, 4, 8};
+    if (avail < need[type]) return 0;
 
     switch (type) {
     case 0:
@@ -71,14 +74,6 @@ size_t speer_varint_decode(const uint8_t *in, uint64_t *val) {
         return 8;
     }
     return 0;
-}
-
-static size_t varint_decode_bounded(const uint8_t *in, size_t avail, uint64_t *val) {
-    if (avail < 1) return 0;
-    uint8_t type = in[0] >> 6;
-    static const size_t need[4] = {1, 2, 4, 8};
-    if (avail < need[type]) return 0;
-    return speer_varint_decode(in, val);
 }
 
 static size_t encode_cid(uint8_t *out, const uint8_t cid[SPEER_MAX_CID_LEN], uint8_t cid_len) {
@@ -119,7 +114,7 @@ static size_t decode_header(const uint8_t *in, size_t in_len, uint8_t *type,
     if (d == 0) return 0;
     n += d;
 
-    size_t pn_n = varint_decode_bounded(in + n, in_len - n, pkt_num);
+    size_t pn_n = speer_varint_decode(in + n, in_len - n, pkt_num);
     if (pn_n == 0) return 0;
     n += pn_n;
     return n;
@@ -294,12 +289,14 @@ typedef struct {
     const uint8_t *buf;
     size_t len;
     size_t pos;
+    int err;
 } frame_parser_t;
 
 static INLINE void parser_init(frame_parser_t *p, const uint8_t *buf, size_t len) {
     p->buf = buf;
     p->len = len;
     p->pos = 0;
+    p->err = 0;
 }
 
 static INLINE size_t parser_avail(const frame_parser_t *p) {
@@ -307,20 +304,30 @@ static INLINE size_t parser_avail(const frame_parser_t *p) {
 }
 
 static INLINE uint8_t parser_read_u8(frame_parser_t *p) {
-    if (p->pos >= p->len) return 0;
+    if (p->err || p->pos >= p->len) {
+        p->err = 1;
+        return 0;
+    }
     return p->buf[p->pos++];
 }
 
 static INLINE uint64_t parser_read_varint(frame_parser_t *p) {
-    if (p->pos >= p->len) return 0;
-    uint64_t val;
-    size_t n = speer_varint_decode(p->buf + p->pos, &val);
+    if (p->err) return 0;
+    uint64_t val = 0;
+    size_t n = speer_varint_decode(p->buf + p->pos, p->len - p->pos, &val);
+    if (n == 0) {
+        p->err = 1;
+        return 0;
+    }
     p->pos += n;
     return val;
 }
 
 static INLINE const uint8_t *parser_read_bytes(frame_parser_t *p, size_t len) {
-    if (p->pos + len > p->len) return NULL;
+    if (p->err || p->pos + len > p->len || p->pos + len < p->pos) {
+        p->err = 1;
+        return NULL;
+    }
     const uint8_t *ptr = p->buf + p->pos;
     p->pos += len;
     return ptr;
@@ -348,9 +355,12 @@ int speer_frame_parse(const uint8_t *in, size_t in_len,
             parser_read_varint(&p);
             parser_read_varint(&p);
             uint64_t num_ranges = parser_read_varint(&p);
+            if (p.err) return -1;
+            if (num_ranges > p.len) return -1;
             for (uint64_t i = 0; i < num_ranges; i++) {
                 parser_read_varint(&p);
                 parser_read_varint(&p);
+                if (p.err) return -1;
             }
             break;
         }
@@ -360,14 +370,16 @@ int speer_frame_parse(const uint8_t *in, size_t in_len,
             if (type & 0x04) parser_read_varint(&p);
             uint64_t len = 0;
             if (type & 0x02) len = parser_read_varint(&p);
-            parser_read_bytes(&p, len);
+            if (len > parser_avail(&p)) return -1;
+            parser_read_bytes(&p, (size_t)len);
             break;
         }
 
         case FRAME_CRYPTO: {
             parser_read_varint(&p);
             uint64_t len = parser_read_varint(&p);
-            parser_read_bytes(&p, len);
+            if (len > parser_avail(&p)) return -1;
+            parser_read_bytes(&p, (size_t)len);
             break;
         }
 
@@ -375,7 +387,8 @@ int speer_frame_parse(const uint8_t *in, size_t in_len,
             parser_read_varint(&p);
             parser_read_varint(&p);
             uint64_t len = parser_read_varint(&p);
-            parser_read_bytes(&p, len);
+            if (len > parser_avail(&p)) return -1;
+            parser_read_bytes(&p, (size_t)len);
             break;
         }
 
@@ -392,6 +405,7 @@ int speer_frame_parse(const uint8_t *in, size_t in_len,
             return -1;
         }
 
+        if (p.err) return -1;
         if (on_frame(type, p.buf + start, p.pos - start, user) != 0) { return -1; }
     }
 

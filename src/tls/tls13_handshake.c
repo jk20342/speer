@@ -995,7 +995,9 @@ static int handle_key_update(speer_tls13_t *h, const uint8_t *body, size_t body_
     if (body[0] > 1) return -1;
     int from_server = (h->role == SPEER_TLS_ROLE_CLIENT);
     if (apply_key_update(h, from_server) != 0) return -1;
-    if (body[0] == 1) return speer_tls13_send_key_update(h, 0);
+    if (body[0] == 1) {
+        if (speer_tls13_send_key_update(h, 0) != SPEER_TLS_NEED_OUT) return -1;
+    }
     return 0;
 }
 

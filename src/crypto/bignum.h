@@ -4,7 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define SPEER_BN_MAX_LIMBS 64
+/* This bignum is intended for PUBLIC-data verification only (RSA-PKCS1/PSS
+   verify, ECDSA verify, EC point validation). The control flow of bn_mod,
+   bn_modinv, bn_modexp via bn_mulmod->bn_mod, and pt_scalar_mul is
+   data-dependent on the input. Do not use for signing or any operation
+   involving private keys. */
+
+#define SPEER_BN_MAX_LIMBS 128
 
 typedef struct {
     uint32_t limbs[SPEER_BN_MAX_LIMBS];

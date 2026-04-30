@@ -16,7 +16,7 @@ int speer_migration_emit_challenge(speer_migration_t *m, uint64_t now_ms, uint8_
         }
     }
     if (slot < 0) return -1;
-    speer_random_bytes(out_data, 8);
+    if (speer_random_bytes_or_fail(out_data, 8) != 0) return -1;
     COPY(m->challenges[slot].data, out_data, 8);
     m->challenges[slot].sent_ms = now_ms;
     m->challenges[slot].active = 1;

@@ -57,6 +57,12 @@ int speer_ms_negotiate_initiator(void *user, speer_ms_send_fn send_fn, speer_ms_
     return 0;
 }
 
+/* Maximum number of listener negotiation rounds before we close the stream.
+   Each round is one received protocol name; bound prevents an authenticated
+   peer from pinning the listener via an endless stream of unknown
+   protocols. ls and unknown both count toward the cap. */
+#define MULTISTREAM_LISTENER_MAX_ROUNDS 10
+
 int speer_ms_negotiate_listener(void *user, speer_ms_send_fn send_fn, speer_ms_recv_fn recv_fn,
                                 const char *const *protocols, size_t num_protocols,
                                 size_t *selected_idx) {
@@ -65,7 +71,8 @@ int speer_ms_negotiate_listener(void *user, speer_ms_send_fn send_fn, speer_ms_r
     if (strcmp(buf, MULTISTREAM_PROTO) != 0) return -1;
     if (write_lp_string(user, send_fn, MULTISTREAM_PROTO) != 0) return -1;
 
-    while (1) {
+    int rounds = 0;
+    while (rounds++ < MULTISTREAM_LISTENER_MAX_ROUNDS) {
         if (read_lp_string(user, recv_fn, buf, sizeof(buf)) != 0) return -1;
         if (strcmp(buf, MULTISTREAM_LS) == 0) {
             for (size_t i = 0; i < num_protocols; i++) write_lp_string(user, send_fn, protocols[i]);
@@ -80,4 +87,5 @@ int speer_ms_negotiate_listener(void *user, speer_ms_send_fn send_fn, speer_ms_r
         }
         write_lp_string(user, send_fn, MULTISTREAM_NA);
     }
+    return -1;
 }

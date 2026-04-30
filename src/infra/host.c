@@ -134,14 +134,14 @@ static void emit_stream_frames(speer_host_t *host, speer_peer_t *peer, const uin
         if (type != 0x06 && type != 0x07) return;
         uint64_t stream_id = 0, offset = 0, data_len = 0;
         if (pos >= len) return;
-        size_t n = speer_varint_decode(data + pos, &stream_id);
-        if (n == 0 || pos + n > len) return;
+        size_t n = speer_varint_decode(data + pos, len - pos, &stream_id);
+        if (n == 0) return;
         pos += n;
         if (pos >= len) return;
-        n = speer_varint_decode(data + pos, &data_len);
-        if (n == 0 || pos + n > len) return;
+        n = speer_varint_decode(data + pos, len - pos, &data_len);
+        if (n == 0) return;
         pos += n;
-        if (pos + data_len > len) return;
+        if (data_len > len - pos) return;
         (void)offset;
 #if SPEER_RELAY
         if (stream_id == DCUTR_STREAM_ID) {
@@ -182,7 +182,10 @@ static int process_packet(speer_host_t *host, const uint8_t *data, size_t len,
     COPY(cid, data + hdr_len, cid_len);
     hdr_len += cid_len;
 
-    hdr_len += speer_varint_decode(data + hdr_len, &pkt_num);
+    if (hdr_len >= len) return -1;
+    size_t pn_n = speer_varint_decode(data + hdr_len, len - hdr_len, &pkt_num);
+    if (pn_n == 0) return -1;
+    hdr_len += pn_n;
 
     speer_peer_t *peer = speer_peer_lookup(host, cid, cid_len);
 
@@ -241,8 +244,14 @@ speer_host_t *speer_host_new(const uint8_t seed_key[SPEER_PRIVATE_KEY_SIZE],
     }
     host->max_peers = host->config.max_peers ? host->config.max_peers : SPEER_MAX_PEERS;
 
-    speer_generate_keypair(host->pubkey, host->privkey, seed_key);
-    speer_random_bytes((uint8_t *)host->next_cid, sizeof(host->next_cid));
+    if (speer_generate_keypair(host->pubkey, host->privkey, seed_key) != 0) {
+        free(host);
+        return NULL;
+    }
+    if (speer_random_bytes_or_fail((uint8_t *)host->next_cid, sizeof(host->next_cid)) != 0) {
+        free(host);
+        return NULL;
+    }
 
     host->socket = speer_socket_create(host->config.bind_port, host->config.bind_address);
     if (host->socket < 0) {

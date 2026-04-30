@@ -100,10 +100,12 @@ static int append_name(uint8_t *out, size_t *pos, size_t max, const char *name) 
 
 static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, char *out,
                           size_t out_cap, int depth) {
-    if (depth > 10) return 0;
+    (void)depth;
     size_t out_pos = 0;
     int jumped = 0;
     size_t jump_target = 0;
+    int pointer_follows = 0;
+    size_t total_label_bytes = 0;
     while (offset < pkt_len) {
         uint8_t len = pkt[offset];
         if (len == 0) {
@@ -112,16 +114,20 @@ static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, cha
         }
         if ((len & 0xC0) == 0xC0) {
             if (offset + 1 >= pkt_len) return 0;
+            if (++pointer_follows > 10) return 0;
+            size_t new_offset = ((size_t)(len & 0x3F) << 8) | pkt[offset + 1];
             if (!jumped) {
                 jump_target = offset + 2;
                 jumped = 1;
             }
-            offset = ((len & 0x3F) << 8) | pkt[offset + 1];
-            if (offset >= pkt_len) return 0;
+            if (new_offset >= offset) return 0;
+            offset = new_offset;
             continue;
         }
         offset++;
         if (offset + len > pkt_len) return 0;
+        total_label_bytes += (size_t)len + 1;
+        if (total_label_bytes > 255) return 0;
         if (out_cap > 0) {
             if (out_pos > 0 && out_pos + 1 < out_cap) out[out_pos++] = '.';
             size_t to_copy = len;

@@ -85,7 +85,8 @@ foreach ($src in $sources) {
 }
 Write-Host "Compiled $built / $($sources.Count) source files"
 
-# Static library
+# Static library: always rebuild fresh so stale members can't leak in
+if (Test-Path $LIBNAME) { Remove-Item -Force $LIBNAME }
 & llvm-ar rcs $LIBNAME @objects
 if ($LASTEXITCODE -ne 0) { Write-Error "ar failed"; exit 1 }
 Write-Host "Built $LIBNAME"

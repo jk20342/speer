@@ -14,7 +14,11 @@
 #define RELAY_SERVER_MAX_CIRCUITS_PER_CONN 4
 #define RELAY_SERVER_RESERVATION_TTL_MS    7200000
 
-#define RELAY_HOP_LIMIT                    32
+/* Per-circuit packet quota. The relay decrements this once per relayed
+   packet, then tears the circuit down when it reaches zero. This is a
+   resource-limit safeguard, not a path "hop count" -- the value is
+   intentionally generous. */
+#define RELAY_CIRCUIT_PACKET_QUOTA (1u << 20)
 
 typedef struct {
     uint8_t peer_id[64];
@@ -34,7 +38,7 @@ typedef struct {
     struct sockaddr_storage dst_addr;
     socklen_t src_addr_len;
     socklen_t dst_addr_len;
-    uint8_t hop_limit;
+    uint32_t packet_quota_remaining;
     uint64_t created_ms;
     uint64_t last_activity_ms;
     bool active;
@@ -58,12 +62,11 @@ typedef struct {
 int relay_server_init(relay_server_t *srv);
 void relay_server_free(relay_server_t *srv);
 
-int relay_server_on_hop(relay_server_t *srv, const uint8_t *data, size_t len,
-                        const struct sockaddr_storage *from, socklen_t from_len, uint8_t *response,
-                        size_t *response_len);
-int relay_server_on_stop(relay_server_t *srv, const uint8_t *data, size_t len,
-                         const struct sockaddr_storage *from, socklen_t from_len, uint8_t *response,
-                         size_t *response_len);
+int relay_server_on_hop(relay_server_t *srv, const uint8_t *auth_peer_id, size_t auth_peer_id_len,
+                        const uint8_t *data, size_t len, const struct sockaddr_storage *from,
+                        socklen_t from_len, uint8_t *response, size_t *response_len);
+int relay_server_on_stop(relay_server_t *srv, const uint8_t *auth_peer_id, size_t auth_peer_id_len,
+                         const uint8_t *data, size_t len, uint8_t *response, size_t *response_len);
 int relay_server_relay_data(relay_server_t *srv, uint32_t circuit_id, const uint8_t *data,
                             size_t len, const struct sockaddr_storage *from, socklen_t from_len);
 

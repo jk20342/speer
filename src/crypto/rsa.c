@@ -143,7 +143,10 @@ int speer_rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t *e, size_
     for (size_t i = 0; i < db_len; i++) em[i] ^= db_mask[i];
     free(db_mask);
 
-    em[0] &= 0x7f;
+    if (em[0] & 0x80) {
+        free(em);
+        return -1;
+    }
 
     for (size_t i = 0; i < db_len - salt_len - 1; i++) {
         if (em[i] != 0) {
