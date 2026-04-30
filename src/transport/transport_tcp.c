@@ -77,7 +77,7 @@ int speer_tcp_accept(int listen_fd, int* out_fd, char* peer_out, size_t peer_cap
         DWORD len = (DWORD)peer_cap;
         WSAAddressToStringA((struct sockaddr*)&sin, sizeof(sin), NULL, peer_out, &len);
 #else
-        char abuf[64];
+        char abuf[46];
         if (inet_ntop(AF_INET, &sin.sin_addr, abuf, sizeof(abuf))) {
             snprintf(peer_out, peer_cap, "%s:%u", abuf, (unsigned)ntohs(sin.sin_port));
         } else {
@@ -174,7 +174,7 @@ static int tcp_listen_op(speer_transport_endpoint_t** out_ep, const char* addr, 
 static int tcp_dial_op(speer_transport_conn_t** out_conn, const char* addr, void* cfg) {
     (void)cfg;
     if (!addr) return SPEER_TR_INVALID;
-    char host[64] = {0};
+    char host[46] = {0};
     const char* colon = NULL;
     for (const char* p = addr; *p; p++) if (*p == ':') colon = p;
     if (!colon) return SPEER_TR_INVALID;

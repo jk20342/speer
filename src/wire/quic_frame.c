@@ -134,3 +134,37 @@ int speer_qf_encode_new_connection_id(speer_qf_writer_t* w, uint64_t seq, uint64
     if (speer_qf_w_bytes(w, cid, cid_len) != 0) return -1;
     return speer_qf_w_bytes(w, reset_token, 16);
 }
+
+int speer_qf_encode_max_data(speer_qf_writer_t* w, uint64_t max_data) {
+    if (speer_qf_w_u8(w, QF_MAX_DATA) != 0) return -1;
+    return speer_qf_w_varint(w, max_data);
+}
+
+int speer_qf_encode_max_stream_data(speer_qf_writer_t* w, uint64_t stream_id, uint64_t max_data) {
+    if (speer_qf_w_u8(w, QF_MAX_STREAM_DATA) != 0) return -1;
+    if (speer_qf_w_varint(w, stream_id) != 0) return -1;
+    return speer_qf_w_varint(w, max_data);
+}
+
+int speer_qf_encode_max_streams(speer_qf_writer_t* w, uint64_t max_streams, int uni) {
+    uint8_t type = uni ? QF_MAX_STREAMS_UNI : QF_MAX_STREAMS_BIDI;
+    if (speer_qf_w_u8(w, type) != 0) return -1;
+    return speer_qf_w_varint(w, max_streams);
+}
+
+int speer_qf_encode_data_blocked(speer_qf_writer_t* w, uint64_t limit) {
+    if (speer_qf_w_u8(w, QF_DATA_BLOCKED) != 0) return -1;
+    return speer_qf_w_varint(w, limit);
+}
+
+int speer_qf_encode_stream_data_blocked(speer_qf_writer_t* w, uint64_t stream_id, uint64_t limit) {
+    if (speer_qf_w_u8(w, QF_STREAM_DATA_BLOCKED) != 0) return -1;
+    if (speer_qf_w_varint(w, stream_id) != 0) return -1;
+    return speer_qf_w_varint(w, limit);
+}
+
+int speer_qf_encode_streams_blocked(speer_qf_writer_t* w, uint64_t limit, int uni) {
+    uint8_t type = uni ? QF_STREAMS_BLOCKED_UNI : QF_STREAMS_BLOCKED_BIDI;
+    if (speer_qf_w_u8(w, type) != 0) return -1;
+    return speer_qf_w_varint(w, limit);
+}
