@@ -5,7 +5,6 @@
 #include "mdns.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 
 #include <string.h>
 
@@ -35,10 +34,6 @@ static void mdns_ensure_wsa(void) {
     }
 }
 #endif
-
-#define MIN(a, b)           ((a) < (b) ? (a) : (b))
-#define COPY(dst, src, len) memcpy((dst), (src), (len))
-#define ZERO(p, len)        memset((p), 0, (len))
 
 typedef struct {
     uint16_t id;
@@ -79,21 +74,28 @@ static void write_u32(uint8_t *p, uint32_t v) {
     p[3] = v & 0xFF;
 }
 
-static size_t encode_name(uint8_t *out, const char *name) {
-    size_t pos = 0;
+static int append_name(uint8_t *out, size_t *pos, size_t max, const char *name) {
+    size_t start = *pos;
     const char *p = name;
     while (*p) {
         const char *dot = strchr(p, '.');
         size_t len = dot ? (size_t)(dot - p) : strlen(p);
-        if (len > 63) len = 63;
-        out[pos++] = (uint8_t)len;
-        COPY(out + pos, p, len);
-        pos += len;
+        if (len > 63 || *pos + 1 + len > max) {
+            *pos = start;
+            return -1;
+        }
+        out[(*pos)++] = (uint8_t)len;
+        memcpy(out + *pos, p, len);
+        *pos += len;
         if (!dot) break;
         p = dot + 1;
     }
-    out[pos++] = 0;
-    return pos;
+    if (*pos + 1 > max) {
+        *pos = start;
+        return -1;
+    }
+    out[(*pos)++] = 0;
+    return 0;
 }
 
 static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, char *out,
@@ -120,11 +122,14 @@ static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, cha
         }
         offset++;
         if (offset + len > pkt_len) return 0;
-        if (out_pos > 0 && out_pos < out_cap) out[out_pos++] = '.';
-        size_t to_copy = len;
-        if (out_pos + to_copy > out_cap - 1) to_copy = out_cap - out_pos - 1;
-        COPY(out + out_pos, pkt + offset, to_copy);
-        out_pos += to_copy;
+        if (out_cap > 0) {
+            if (out_pos > 0 && out_pos + 1 < out_cap) out[out_pos++] = '.';
+            size_t to_copy = len;
+            size_t room = out_cap - out_pos - 1;
+            if (to_copy > room) to_copy = room;
+            if (to_copy > 0) memcpy(out + out_pos, pkt + offset, to_copy);
+            out_pos += to_copy;
+        }
         offset += len;
     }
     if (out_pos < out_cap) out[out_pos] = 0;
@@ -135,7 +140,7 @@ int mdns_init(mdns_ctx_t *ctx) {
 #if defined(_WIN32)
     mdns_ensure_wsa();
 #endif
-    ZERO(ctx, sizeof(mdns_ctx_t));
+    memset(ctx, 0, sizeof(mdns_ctx_t));
     ctx->socket_ipv4 = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (ctx->socket_ipv4 < 0) return -1;
     int reuse = 1;
@@ -150,7 +155,7 @@ int mdns_init(mdns_ctx_t *ctx) {
     mreq.imr_interface.s_addr = INADDR_ANY;
     setsockopt(ctx->socket_ipv4, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char *)&mreq, sizeof(mreq));
     struct sockaddr_in sin;
-    ZERO(&sin, sizeof(sin));
+    memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_port = htons(MDNS_PORT);
     sin.sin_addr.s_addr = INADDR_ANY;
@@ -173,7 +178,7 @@ int mdns_init(mdns_ctx_t *ctx) {
 void mdns_free(mdns_ctx_t *ctx) {
     if (ctx->socket_ipv4 >= 0) { CLOSESOCKET(ctx->socket_ipv4); }
     if (ctx->socket_ipv6 >= 0) { CLOSESOCKET(ctx->socket_ipv6); }
-    ZERO(ctx, sizeof(mdns_ctx_t));
+    memset(ctx, 0, sizeof(mdns_ctx_t));
     ctx->socket_ipv4 = -1;
     ctx->socket_ipv6 = -1;
 }
@@ -182,12 +187,14 @@ int mdns_register_service(mdns_ctx_t *ctx, const char *instance_name, const char
                           uint16_t port, const uint8_t *txt_data, size_t txt_len) {
     if (ctx->num_services >= MDNS_MAX_SERVICES) return -1;
     mdns_service_t *svc = &ctx->services[ctx->num_services++];
-    ZERO(svc, sizeof(mdns_service_t));
+    memset(svc, 0, sizeof(mdns_service_t));
     size_t len = strlen(instance_name);
-    COPY(svc->instance_name, instance_name, MIN(len, MDNS_MAX_NAME_LENGTH - 1));
+    size_t name_copy_len = len < MDNS_MAX_NAME_LENGTH - 1 ? len : MDNS_MAX_NAME_LENGTH - 1;
+    memcpy(svc->instance_name, instance_name, name_copy_len);
     len = strlen(service_type);
-    COPY(svc->service_type, service_type, MIN(len, MDNS_MAX_NAME_LENGTH - 1));
-    COPY(svc->domain, "local", 6);
+    name_copy_len = len < MDNS_MAX_NAME_LENGTH - 1 ? len : MDNS_MAX_NAME_LENGTH - 1;
+    memcpy(svc->service_type, service_type, name_copy_len);
+    memcpy(svc->domain, "local", 6);
     svc->srv.port = port;
     svc->ttl = MDNS_TTL;
     if (txt_data && txt_len > 0) {
@@ -197,21 +204,22 @@ int mdns_register_service(mdns_ctx_t *ctx, const char *instance_name, const char
             if (pos + txt_len_byte > txt_len) break;
             char txt_str[256];
             size_t copy_len = txt_len_byte < 255 ? txt_len_byte : 255;
-            COPY(txt_str, txt_data + pos, copy_len);
+            memcpy(txt_str, txt_data + pos, copy_len);
             txt_str[copy_len] = 0;
-            char *eq = strchr(txt_str, '=');
-            if (eq) {
-                size_t key_len = (size_t)(eq - txt_str);
-                if (key_len < 64) {
-                    COPY(svc->txt.fields[svc->txt.num_fields].key, txt_str, key_len);
-                    svc->txt.fields[svc->txt.num_fields].key[key_len] = 0;
+            char *eq = memchr(txt_str, '=', copy_len);
+            size_t key_len = eq ? (size_t)(eq - txt_str) : copy_len;
+            if (key_len > 0 && key_len < sizeof(svc->txt.fields[0].key)) {
+                mdns_txt_field_t *field = &svc->txt.fields[svc->txt.num_fields];
+                memcpy(field->key, txt_str, key_len);
+                field->key[key_len] = 0;
+                field->has_value = eq != NULL;
+                if (eq) {
                     size_t val_len = (txt_str + copy_len) - (eq + 1);
-                    if (val_len > sizeof(svc->txt.fields[0].value) - 1)
-                        val_len = sizeof(svc->txt.fields[0].value) - 1;
-                    COPY(svc->txt.fields[svc->txt.num_fields].value, eq + 1, val_len);
-                    svc->txt.fields[svc->txt.num_fields].value[val_len] = 0;
-                    svc->txt.num_fields++;
+                    if (val_len > sizeof(field->value) - 1) val_len = sizeof(field->value) - 1;
+                    memcpy(field->value, eq + 1, val_len);
+                    field->value[val_len] = 0;
                 }
+                svc->txt.num_fields++;
             }
             pos += txt_len_byte;
         }
@@ -223,29 +231,37 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     size_t pos = 0;
     size_t max = *out_len;
     if (pos + 12 > max) return -1;
-    dns_header_t *hdr = (dns_header_t *)(out + pos);
-    ZERO(hdr, sizeof(dns_header_t));
-    hdr->flags = htons(DNS_FLAG_RESPONSE);
-    hdr->answers = htons(3);
+    memset(out + pos, 0, 12);
+    write_u16(out + 2, DNS_FLAG_RESPONSE);
+    write_u16(out + 6, 3);
     pos += 12;
     char full_name[MDNS_MAX_NAME_LENGTH * 3 + 2];
-    snprintf(full_name, sizeof(full_name), "%s.%s.%s", svc->instance_name, svc->service_type,
-             svc->domain);
-    size_t name_len = encode_name(out + pos, svc->service_type);
-    if (pos + name_len + 10 > max) return -1;
-    pos += name_len;
+    char service_name[MDNS_MAX_NAME_LENGTH * 2 + 2];
+    size_t type_len = strlen(svc->service_type);
+    int n;
+    if (type_len >= 6 && strcmp(svc->service_type + type_len - 6, ".local") == 0) {
+        n = snprintf(service_name, sizeof(service_name), "%s", svc->service_type);
+    } else {
+        n = snprintf(service_name, sizeof(service_name), "%s.%s", svc->service_type, svc->domain);
+    }
+    if (n < 0 || (size_t)n >= sizeof(service_name)) return -1;
+    n = snprintf(full_name, sizeof(full_name), "%s.%s", svc->instance_name, service_name);
+    if (n < 0 || (size_t)n >= sizeof(full_name)) return -1;
+    if (append_name(out, &pos, max, service_name) != 0) return -1;
+    if (pos + 10 > max) return -1;
     write_u16(out + pos, MDNS_TYPE_PTR);
     pos += 2;
     write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
     pos += 2;
     write_u32(out + pos, svc->ttl);
     pos += 4;
-    size_t ptr_len = encode_name(out + pos + 2, full_name);
-    write_u16(out + pos, (uint16_t)ptr_len);
-    pos += 2 + ptr_len;
-    name_len = encode_name(out + pos, full_name);
-    if (pos + name_len + 10 + 7 > max) return -1;
-    pos += name_len;
+    size_t rdlen_pos = pos;
+    pos += 2;
+    size_t rdata_start = pos;
+    if (append_name(out, &pos, max, full_name) != 0) return -1;
+    write_u16(out + rdlen_pos, (uint16_t)(pos - rdata_start));
+    if (append_name(out, &pos, max, full_name) != 0) return -1;
+    if (pos + 10 + 7 > max) return -1;
     write_u16(out + pos, MDNS_TYPE_SRV);
     pos += 2;
     write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
@@ -261,9 +277,8 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     write_u16(out + pos, svc->srv.port);
     pos += 2;
     out[pos++] = 0;
-    name_len = encode_name(out + pos, full_name);
-    if (pos + name_len + 10 > max) return -1;
-    pos += name_len;
+    if (append_name(out, &pos, max, full_name) != 0) return -1;
+    if (pos + 10 > max) return -1;
     write_u16(out + pos, MDNS_TYPE_TXT);
     pos += 2;
     write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
@@ -274,14 +289,24 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     pos += 2;
     for (uint32_t i = 0; i < svc->txt.num_fields; i++) {
         char txt_field[256];
-        int len = snprintf(txt_field, sizeof(txt_field), "%s=%s", svc->txt.fields[i].key,
+        int len;
+        if (svc->txt.fields[i].has_value) {
+            len = snprintf(txt_field, sizeof(txt_field), "%s=%s", svc->txt.fields[i].key,
                            svc->txt.fields[i].value);
+        } else {
+            len = snprintf(txt_field, sizeof(txt_field), "%s", svc->txt.fields[i].key);
+        }
+        if (len < 0) return -1;
         if (len > 255) len = 255;
+        if (pos + 1 + (size_t)len > max) return -1;
         out[pos++] = (uint8_t)len;
-        COPY(out + pos, txt_field, len);
-        pos += len;
+        memcpy(out + pos, txt_field, (size_t)len);
+        pos += (size_t)len;
     }
-    if (svc->txt.num_fields == 0) out[pos++] = 0;
+    if (svc->txt.num_fields == 0) {
+        if (pos + 1 > max) return -1;
+        out[pos++] = 0;
+    }
     write_u16(out + txt_start, (uint16_t)(pos - txt_start - 2));
     *out_len = pos;
     return 0;
@@ -293,7 +318,7 @@ int mdns_announce(mdns_ctx_t *ctx) {
         size_t len = sizeof(packet);
         if (mdns_build_announcement(packet, &len, &ctx->services[i]) == 0) {
             struct sockaddr_in dest;
-            ZERO(&dest, sizeof(dest));
+            memset(&dest, 0, sizeof(dest));
             dest.sin_family = AF_INET;
             dest.sin_port = htons(MDNS_PORT);
             dest.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR_IPV4);
@@ -338,8 +363,8 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
                       size_t peer_id_cap, char *out_multiaddr, size_t multiaddr_cap,
                       uint32_t sender_ipv4_s_addr) {
     (void)ctx;
-    ZERO(out_peer_id, peer_id_cap);
-    ZERO(out_multiaddr, multiaddr_cap);
+    memset(out_peer_id, 0, peer_id_cap);
+    memset(out_multiaddr, 0, multiaddr_cap);
     if (len < 12) return -1;
     dns_header_t hdr;
     hdr.id = read_u16(data);
@@ -353,11 +378,13 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         char name[MDNS_MAX_NAME_LENGTH];
         size_t name_len = decode_name(data, len, pos, name, sizeof(name), 0);
         if (name_len == 0) return -1;
+        if (name_len + 4 > len) return -1;
         pos = name_len + 4;
     }
     char service_name[MDNS_MAX_NAME_LENGTH] = {0};
     uint16_t port = 0;
     char txt_peer_id[MDNS_MAX_NAME_LENGTH] = {0};
+    char txt_dnsaddr[256] = {0};
     uint16_t total_records = hdr.answers + hdr.authority + hdr.additional;
     for (uint16_t i = 0; i < total_records && pos < len; i++) {
         char name[MDNS_MAX_NAME_LENGTH];
@@ -383,7 +410,7 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
                 if (dot) {
                     size_t svc_len = dot - name;
                     if (svc_len < MDNS_MAX_NAME_LENGTH) {
-                        COPY(service_name, name, svc_len);
+                        memcpy(service_name, name, svc_len);
                         service_name[svc_len] = 0;
                     }
                 }
@@ -396,12 +423,30 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
                 if (txt_pos + txt_len > txt_end) break;
                 char txt_field[256];
                 size_t copy_len = txt_len < 255 ? txt_len : 255;
-                COPY(txt_field, data + txt_pos, copy_len);
+                memcpy(txt_field, data + txt_pos, copy_len);
                 txt_field[copy_len] = 0;
                 if (strncmp(txt_field, "id=", 3) == 0) {
                     size_t id_len = strlen(txt_field + 3);
                     if (id_len < MDNS_MAX_NAME_LENGTH) {
-                        COPY(txt_peer_id, txt_field + 3, id_len + 1);
+                        memcpy(txt_peer_id, txt_field + 3, id_len + 1);
+                    }
+                } else if (strncmp(txt_field, "dnsaddr=", 8) == 0) {
+                    const char *addr = txt_field + 8;
+                    size_t addr_len = strlen(addr);
+                    if (addr_len < sizeof(txt_dnsaddr)) memcpy(txt_dnsaddr, addr, addr_len + 1);
+                    const char *p2p = strstr(addr, "/p2p/");
+                    size_t p2p_prefix = 5;
+                    if (!p2p) {
+                        p2p = strstr(addr, "/ipfs/");
+                        p2p_prefix = 6;
+                    }
+                    if (p2p) {
+                        p2p += p2p_prefix;
+                        size_t id_len = strcspn(p2p, "/");
+                        if (id_len > 0 && id_len < sizeof(txt_peer_id)) {
+                            memcpy(txt_peer_id, p2p, id_len);
+                            txt_peer_id[id_len] = 0;
+                        }
                     }
                 }
                 txt_pos += txt_len;
@@ -409,9 +454,16 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         }
         pos += rdlen;
     }
+    if (txt_dnsaddr[0]) {
+        size_t id_len = strlen(txt_peer_id);
+        size_t addr_len = strlen(txt_dnsaddr);
+        if (id_len > 0 && id_len < peer_id_cap) memcpy(out_peer_id, txt_peer_id, id_len + 1);
+        if (addr_len < multiaddr_cap) memcpy(out_multiaddr, txt_dnsaddr, addr_len + 1);
+        return 0;
+    }
     if (port > 0 && service_name[0]) {
         size_t id_len = strlen(txt_peer_id);
-        if (id_len > 0 && id_len < peer_id_cap) { COPY(out_peer_id, txt_peer_id, id_len + 1); }
+        if (id_len > 0 && id_len < peer_id_cap) { memcpy(out_peer_id, txt_peer_id, id_len + 1); }
         char host[16];
         mdns_format_ipv4(host, sender_ipv4_s_addr);
         snprintf(out_multiaddr, multiaddr_cap, "/ip4/%s/tcp/%u", host, port);
@@ -429,21 +481,40 @@ void mdns_set_discovery_callback(mdns_ctx_t *ctx,
 }
 
 int mdns_build_libp2p_service_name(char *out, size_t cap, const uint8_t *peer_id) {
-    char hex_id[65];
-    for (int i = 0; i < 32; i++) { snprintf(hex_id + i * 2, 3, "%02x", peer_id[i]); }
-    snprintf(out, cap, "%s._p2p._tcp.local", hex_id);
-    return 0;
+    (void)peer_id;
+    if (cap == 0) return -1;
+    int n = snprintf(out, cap, "_p2p._udp.local");
+    return (n >= 0 && (size_t)n < cap) ? 0 : -1;
 }
 
 int mdns_unregister_service(mdns_ctx_t *ctx, const char *instance_name) {
-    (void)ctx;
-    (void)instance_name;
-    return 0;
+    for (uint32_t i = 0; i < ctx->num_services; i++) {
+        if (strcmp(ctx->services[i].instance_name, instance_name) == 0) {
+            if (i + 1 < ctx->num_services) {
+                memmove(&ctx->services[i], &ctx->services[i + 1],
+                        (ctx->num_services - i - 1) * sizeof(ctx->services[0]));
+            }
+            ctx->num_services--;
+            memset(&ctx->services[ctx->num_services], 0, sizeof(ctx->services[0]));
+            return 0;
+        }
+    }
+    return -1;
 }
 
 int mdns_build_probe(uint8_t *out, size_t *out_len, const char *service_name) {
-    (void)out;
-    (void)out_len;
-    (void)service_name;
+    size_t pos = 0;
+    size_t max = *out_len;
+    if (max < 12) return -1;
+    memset(out, 0, 12);
+    write_u16(out + 4, 1);
+    pos = 12;
+    if (append_name(out, &pos, max, service_name) != 0) return -1;
+    if (pos + 4 > max) return -1;
+    write_u16(out + pos, MDNS_TYPE_ANY);
+    pos += 2;
+    write_u16(out + pos, DNS_CLASS_IN);
+    pos += 2;
+    *out_len = pos;
     return 0;
 }

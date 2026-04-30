@@ -2,15 +2,6 @@
 
 #include "hash_iface.h"
 
-typedef struct {
-    uint64_t state[8];
-    uint64_t bit_count_lo;
-    uint64_t bit_count_hi;
-    uint8_t buffer[128];
-    size_t buffer_used;
-    size_t digest_size;
-} sha512_ctx_t;
-
 static const uint64_t k512[80] = {
     0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL, 0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL,
     0x3956c25bf348b538ULL, 0x59f111f1b605d019ULL, 0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL,
@@ -147,6 +138,22 @@ static void sha512_final_impl(sha512_ctx_t *ctx, uint8_t *out) {
 
     size_t words = ctx->digest_size / 8;
     for (size_t i = 0; i < words; i++) store64_be(out + i * 8, ctx->state[i]);
+}
+
+void speer_sha512_init(sha512_ctx_t *ctx) {
+    sha512_init_common(ctx, sha512_iv, 64);
+}
+
+void speer_sha384_init(sha512_ctx_t *ctx) {
+    sha512_init_common(ctx, sha384_iv, 48);
+}
+
+void speer_sha512_update(sha512_ctx_t *ctx, const uint8_t *in, size_t len) {
+    sha512_update_impl(ctx, in, len);
+}
+
+void speer_sha512_final(sha512_ctx_t *ctx, uint8_t *out) {
+    sha512_final_impl(ctx, out);
 }
 
 void speer_sha512(uint8_t out[64], const uint8_t *in, size_t len) {

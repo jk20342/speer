@@ -114,10 +114,6 @@ else()
         -fvisibility=hidden
     )
 
-    # Architecture-specific options
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|i[3456]86")
-        list(APPEND SPEER_COMPILE_OPTIONS -msse2 -maes)
-    endif()
 endif()
 
 # Feature defines

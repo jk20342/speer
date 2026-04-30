@@ -1,5 +1,7 @@
 #include "speer_internal.h"
 
+#include "ct_helpers.h"
+
 static const uint8_t noise_protocol_name[] = "Noise_XX_25519_ChaChaPoly_SHA256";
 
 static void mix_hash(uint8_t hash[32], const uint8_t *data, size_t len) {
@@ -56,7 +58,7 @@ static int decrypt_and_hash(speer_handshake_t *hs, uint8_t *out, const uint8_t *
     uint8_t computed_mac[16];
     speer_poly1305(computed_mac, ciphertext, plaintext_len, poly_block);
 
-    if (!EQUAL(mac, computed_mac, 16)) return -1;
+    if (!speer_ct_memeq(mac, computed_mac, 16)) return -1;
 
     speer_chacha_crypt(&ctx, out, ciphertext, plaintext_len);
 

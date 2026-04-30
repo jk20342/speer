@@ -287,6 +287,20 @@ void speer_sha256_init(void *state);
 void speer_sha256_update(void *state, const uint8_t *in, size_t len);
 void speer_sha256_final(void *state, uint8_t out[32]);
 
+typedef struct {
+    uint64_t state[8];
+    uint64_t bit_count_lo;
+    uint64_t bit_count_hi;
+    uint8_t buffer[128];
+    size_t buffer_used;
+    size_t digest_size;
+} sha512_ctx_t;
+
+void speer_sha512_init(sha512_ctx_t *ctx);
+void speer_sha384_init(sha512_ctx_t *ctx);
+void speer_sha512_update(sha512_ctx_t *ctx, const uint8_t *in, size_t len);
+void speer_sha512_final(sha512_ctx_t *ctx, uint8_t *out);
+
 void speer_hkdf(uint8_t *okm, size_t okm_len, const uint8_t *salt, size_t salt_len,
                 const uint8_t *ikm, size_t ikm_len, const uint8_t *info, size_t info_len);
 

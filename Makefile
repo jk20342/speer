@@ -6,8 +6,7 @@ CFLAGS = -std=c99 -Wall -Wextra -Werror -O3 -fPIC \
          -fno-exceptions -fno-unwind-tables \
          -ffunction-sections -fdata-sections \
          -fvisibility=hidden \
-         -DNDEBUG \
-         -msse2 -maes
+         -DNDEBUG
 
 # Platform detection
 UNAME_S := $(shell uname -s)
@@ -55,7 +54,8 @@ UNIT_TESTS = \
 	mdns_check \
 	dcutr_check \
 	dcutr_relay_integration_check \
-	relay_client_check
+	relay_client_check \
+	cpu_features_check
 
 TEST_PROGS = $(patsubst %,tests/%$(EXEEXT),$(UNIT_TESTS))
 
@@ -156,5 +156,6 @@ check: $(STATIC) $(TEST_PROGS)
 	tests/dcutr_check$(EXEEXT)
 	tests/dcutr_relay_integration_check$(EXEEXT)
 	tests/relay_client_check$(EXEEXT)
+	tests/cpu_features_check$(EXEEXT)
 
 .PHONY: all clean install debug release amalgamate examples check

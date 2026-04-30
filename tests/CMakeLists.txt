@@ -23,6 +23,7 @@ set(SPEER_UNIT_TESTS
     dcutr_check
     dcutr_relay_integration_check
     relay_client_check
+    cpu_features_check
 )
 
 if(SPEER_ENABLE_WEBPKI)

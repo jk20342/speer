@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <string.h>
 
 #include "ed25519.h"
@@ -284,8 +285,8 @@ static int run_listen(uint16_t port) {
 
     ioctx_t io = {.fd = fd, .noise = &noise};
     const char *yamux_protos[] = {"/yamux/1.0.0"};
-    if (speer_ms_negotiate_listener(&io, io_crypt_send, io_crypt_recv, yamux_protos, 1, &selected) !=
-        0) {
+    if (speer_ms_negotiate_listener(&io, io_crypt_send, io_crypt_recv, yamux_protos, 1,
+                                    &selected) != 0) {
         fprintf(stderr, "encrypted multistream yamux (listener) failed\n");
         WIPE(spriv, sizeof(spriv));
         WIPE(edseed, sizeof(edseed));
@@ -318,9 +319,7 @@ int main(int argc, char **argv) {
                 argv[0], argv[0]);
         return 1;
     }
-    if (strcmp(argv[1], "listen") == 0 && argc >= 3) {
-        return run_listen((uint16_t)atoi(argv[2]));
-    }
+    if (strcmp(argv[1], "listen") == 0 && argc >= 3) { return run_listen((uint16_t)atoi(argv[2])); }
     if (strcmp(argv[1], "dial") == 0 && argc >= 4) {
         return run_dial(argv[2], (uint16_t)atoi(argv[3]));
     }

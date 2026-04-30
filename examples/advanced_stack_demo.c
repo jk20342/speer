@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <string.h>
 
 #include "ed25519.h"
@@ -43,7 +44,8 @@ static int tcp_recv_cb(void *user, uint8_t *b, size_t cap, size_t *out_n) {
 static int demo_tcp_noise_dial(const char *host, uint16_t port) {
     int fd = -1;
     if (speer_tcp_dial(&fd, host, port) != 0) {
-        fprintf(stderr, "TCP dial %s:%u failed (is a libp2p listener there?)\n", host, (unsigned)port);
+        fprintf(stderr, "TCP dial %s:%u failed (is a libp2p listener there?)\n", host,
+                (unsigned)port);
         return 1;
     }
     if (speer_ms_negotiate_initiator(&fd, tcp_send_cb, tcp_recv_cb, "/noise") != 0) {
@@ -69,14 +71,15 @@ static int demo_multiaddr_peerid(void) {
 
     uint8_t pubkey_proto[256];
     size_t pubkey_proto_len = 0;
-    if (speer_libp2p_pubkey_proto_encode(pubkey_proto, sizeof(pubkey_proto), SPEER_LIBP2P_KEY_ED25519,
-                                         ed_pub, 32, &pubkey_proto_len) != 0)
+    if (speer_libp2p_pubkey_proto_encode(pubkey_proto, sizeof(pubkey_proto),
+                                         SPEER_LIBP2P_KEY_ED25519, ed_pub, 32,
+                                         &pubkey_proto_len) != 0)
         return -1;
 
     uint8_t peer_id[64];
     size_t peer_id_len = 0;
     if (speer_peer_id_from_pubkey_bytes(peer_id, sizeof(peer_id), pubkey_proto, pubkey_proto_len,
-                                         &peer_id_len) != 0)
+                                        &peer_id_len) != 0)
         return -1;
     char b58[128];
     if (speer_peer_id_to_b58(b58, sizeof(b58), peer_id, peer_id_len) != 0) return -1;
@@ -93,10 +96,12 @@ static void demo_relay_client_structure(void) {
     printf("  2) relay_client_reserve()  HOP reserve\n");
     printf("  3) relay_client_poll()     until RELAY_STATE_RESERVED\n");
     printf("  4) relay_client_connect_to_peer(target_peer_id)  open circuit\n");
-    printf("  5) relay_client_poll()     until circuit CONNECTED; send app data via relay_client_send()\n");
+    printf("  5) relay_client_poll()     until circuit CONNECTED; send app data via "
+           "relay_client_send()\n");
     printf("  6) relay_client_start_dcutr(circuit_id, speer_peer, initiator)\n");
     printf("     Each loop: relay_client_poll(), speer_dcutr_poll(), speer_host_poll()\n");
-    printf("     DCUtR frames on the circuit are dispatched from relay_client_poll via speer_dcutr_on_msg.\n");
+    printf("     DCUtR frames on the circuit are dispatched from relay_client_poll via "
+           "speer_dcutr_on_msg.\n");
     relay_client_free(&relay);
 }
 #endif

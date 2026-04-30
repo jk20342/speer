@@ -1,5 +1,7 @@
 #include "speer_internal.h"
 
+#include "ct_helpers.h"
+
 #define PACKET_TYPE_INITIAL       0x00
 #define PACKET_TYPE_HANDSHAKE     0x01
 #define PACKET_TYPE_1RTT          0x02
@@ -160,7 +162,7 @@ int speer_packet_decode(uint8_t *out, size_t *out_len, const uint8_t *in, size_t
     uint8_t mac[16];
     speer_poly1305(mac, in, body_len, poly_block);
 
-    if (!EQUAL(mac, in + body_len, 16)) return -1;
+    if (!speer_ct_memeq(mac, in + body_len, 16)) return -1;
 
     uint8_t *ciphertext = (uint8_t *)in + hdr_len;
     size_t ciphertext_len = body_len - hdr_len;

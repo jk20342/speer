@@ -31,17 +31,23 @@ int main(void) {
     if (ctx.socket_ipv4 < 0) FAIL("mdns should create socket\n");
     if (ctx.num_services != 0) FAIL("mdns should start with no services\n");
 
-    uint8_t txt_data[] = "\x10id=test_peer_123";
-    if (mdns_register_service(&ctx, "MyNode", "_p2p._tcp", 4001, txt_data, sizeof(txt_data) - 1) !=
+    uint8_t txt_data[] = "\x10"
+                         "id=test_peer_123"
+                         "\x04"
+                         "flag";
+    if (mdns_register_service(&ctx, "MyNode", "_p2p._udp", 4001, txt_data, sizeof(txt_data) - 1) !=
         0)
         FAIL("mdns_register_service failed\n");
     if (ctx.num_services != 1) FAIL("should have 1 service\n");
     if (strcmp(ctx.services[0].instance_name, "MyNode") != 0) FAIL("instance name mismatch\n");
     if (ctx.services[0].srv.port != 4001) FAIL("port mismatch\n");
-    if (ctx.services[0].txt.num_fields != 1) FAIL("should have 1 txt field\n");
+    if (ctx.services[0].txt.num_fields != 2) FAIL("should have 2 txt fields\n");
     if (strcmp(ctx.services[0].txt.fields[0].key, "id") != 0) FAIL("txt key mismatch\n");
     if (strcmp(ctx.services[0].txt.fields[0].value, "test_peer_123") != 0)
         FAIL("txt value mismatch\n");
+    if (!ctx.services[0].txt.fields[0].has_value) FAIL("txt value marker mismatch\n");
+    if (strcmp(ctx.services[0].txt.fields[1].key, "flag") != 0) FAIL("txt flag mismatch\n");
+    if (ctx.services[0].txt.fields[1].has_value) FAIL("txt flag should be boolean\n");
 
     uint8_t packet[512];
     size_t len = sizeof(packet);
@@ -72,7 +78,14 @@ int main(void) {
     char svc_name[256];
     if (mdns_build_libp2p_service_name(svc_name, sizeof(svc_name), peer_pubkey) != 0)
         FAIL("mdns_build_libp2p_service_name failed\n");
-    if (strstr(svc_name, "_p2p._tcp.local") == NULL) FAIL("service name format wrong\n");
+    if (strcmp(svc_name, "_p2p._udp.local") != 0) FAIL("service name format wrong\n");
+
+    if (mdns_unregister_service(&ctx, "MyNode") != 0) FAIL("mdns_unregister_service failed\n");
+    if (ctx.num_services != 0) FAIL("unregister should remove service\n");
+
+    len = sizeof(packet);
+    if (mdns_build_probe(packet, &len, "_p2p._udp.local") != 0) FAIL("mdns_build_probe failed\n");
+    if (len <= 12) FAIL("probe too short\n");
 
     mdns_free(&ctx);
     if (ctx.socket_ipv4 != -1) FAIL("mdns_free should close socket\n");

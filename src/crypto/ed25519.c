@@ -2,6 +2,7 @@
 
 #include "speer_internal.h"
 
+#include "ct_helpers.h"
 #include "field25519.h"
 
 typedef struct {
@@ -67,23 +68,28 @@ static void ge_add(ge_p3 *r, const ge_p3 *p, const ge_p3 *q) {
     fe25519_mul(r->Z, f, g);
 }
 
+static void ge_cswap(ge_p3 *a, ge_p3 *b, int swap) {
+    fe25519_cswap(a->X, b->X, swap);
+    fe25519_cswap(a->Y, b->Y, swap);
+    fe25519_cswap(a->Z, b->Z, swap);
+    fe25519_cswap(a->T, b->T, swap);
+}
+
 static void ge_scalarmult(ge_p3 *r, const uint8_t *scalar, const ge_p3 *p) {
-    ge_p3 q;
-    ge_p3_0(&q);
-    int started = 0;
+    ge_p3 R0, R1;
+    ge_p3_0(&R0);
+    R1 = *p;
     for (int i = 255; i >= 0; i--) {
-        if (started) ge_double(&q, &q);
-        int b = (scalar[i / 8] >> (i & 7)) & 1;
-        if (b) {
-            if (!started) {
-                q = *p;
-                started = 1;
-            } else {
-                ge_add(&q, &q, p);
-            }
-        }
+        int bit = (scalar[i / 8] >> (i & 7)) & 1;
+        ge_cswap(&R0, &R1, bit);
+        ge_p3 sum, doubled;
+        ge_add(&sum, &R0, &R1);
+        ge_double(&doubled, &R0);
+        R1 = sum;
+        R0 = doubled;
+        ge_cswap(&R0, &R1, bit);
     }
-    *r = q;
+    *r = R0;
 }
 
 static void ge_p3_tobytes(uint8_t s[32], const ge_p3 *p) {
@@ -207,18 +213,12 @@ void speer_ed25519_sign(uint8_t sig[64], const uint8_t *msg, size_t msg_len, con
     h[31] &= 63;
     h[31] |= 64;
 
-    uint8_t prefix[32];
-    COPY(prefix, h + 32, 32);
-
+    sha512_ctx_t hctx;
     uint8_t r_hash[64];
-    {
-        uint8_t *buf = (uint8_t *)malloc(32 + msg_len);
-        if (!buf) return;
-        COPY(buf, prefix, 32);
-        if (msg_len > 0) COPY(buf + 32, msg, msg_len);
-        speer_sha512(r_hash, buf, 32 + msg_len);
-        free(buf);
-    }
+    speer_sha512_init(&hctx);
+    speer_sha512_update(&hctx, h + 32, 32);
+    if (msg_len > 0) speer_sha512_update(&hctx, msg, msg_len);
+    speer_sha512_final(&hctx, r_hash);
     sc_reduce(r_hash);
 
     ge_p3 base, R;
@@ -230,20 +230,19 @@ void speer_ed25519_sign(uint8_t sig[64], const uint8_t *msg, size_t msg_len, con
     ge_p3_tobytes(sig, &R);
 
     uint8_t k[64];
-    {
-        uint8_t *buf = (uint8_t *)malloc(64 + msg_len);
-        if (!buf) return;
-        COPY(buf, sig, 32);
-        COPY(buf + 32, pk, 32);
-        if (msg_len > 0) COPY(buf + 64, msg, msg_len);
-        speer_sha512(k, buf, 64 + msg_len);
-        free(buf);
-    }
+    speer_sha512_init(&hctx);
+    speer_sha512_update(&hctx, sig, 32);
+    speer_sha512_update(&hctx, pk, 32);
+    if (msg_len > 0) speer_sha512_update(&hctx, msg, msg_len);
+    speer_sha512_final(&hctx, k);
     sc_reduce(k);
 
     sc_muladd(sig + 32, k, h, r_hash);
 
-    for (int i = 0; i < 64; i++) h[i] = 0;
+    WIPE(h, 64);
+    WIPE(r_hash, 64);
+    WIPE(k, 64);
+    WIPE(&hctx, sizeof(hctx));
 }
 
 int speer_ed25519_verify(const uint8_t sig[64], const uint8_t *msg, size_t msg_len,
@@ -253,16 +252,13 @@ int speer_ed25519_verify(const uint8_t sig[64], const uint8_t *msg, size_t msg_l
     ge_p3 A;
     if (ge_frombytes_negate_vartime(&A, pk) != 0) return -1;
 
+    sha512_ctx_t hctx;
     uint8_t k[64];
-    {
-        uint8_t *buf = (uint8_t *)malloc(64 + msg_len);
-        if (!buf) return -1;
-        COPY(buf, sig, 32);
-        COPY(buf + 32, pk, 32);
-        if (msg_len > 0) COPY(buf + 64, msg, msg_len);
-        speer_sha512(k, buf, 64 + msg_len);
-        free(buf);
-    }
+    speer_sha512_init(&hctx);
+    speer_sha512_update(&hctx, sig, 32);
+    speer_sha512_update(&hctx, pk, 32);
+    if (msg_len > 0) speer_sha512_update(&hctx, msg, msg_len);
+    speer_sha512_final(&hctx, k);
     sc_reduce(k);
 
     ge_p3 base, sB, kA, R;
@@ -278,6 +274,6 @@ int speer_ed25519_verify(const uint8_t sig[64], const uint8_t *msg, size_t msg_l
     uint8_t check[32];
     ge_p3_tobytes(check, &R);
 
-    if (!EQUAL(check, sig, 32)) return -1;
+    if (!speer_ct_memeq(check, sig, 32)) return -1;
     return 0;
 }

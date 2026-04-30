@@ -1,6 +1,6 @@
 # speer
 
-A tiny libp2p in C. Full QUIC v1 + TLS 1.3 + Web PKI in ~17k LOC, zero dependencies.
+A tiny libp2p in C. Full QUIC v1 + TLS 1.3 + Web PKI in ~20k LOC, zero dependencies.
 
 ## Build
 

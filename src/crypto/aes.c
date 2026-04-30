@@ -2,6 +2,8 @@
 
 #include "speer_internal.h"
 
+#include "cpu_features.h"
+
 static const uint8_t sbox[256] = {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -22,16 +24,28 @@ static const uint8_t sbox[256] = {
 
 static const uint8_t rcon[11] = {0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36};
 
+static uint8_t ct_sbox(uint8_t x) {
+    uint8_t r = 0;
+    for (int i = 0; i < 256; i++) {
+        uint32_t d = (uint32_t)x ^ (uint32_t)i;
+        uint8_t eq = (uint8_t)(((d - 1u) >> 31) & 1u);
+        uint8_t mask = (uint8_t)(0u - (uint32_t)eq);
+        r |= mask & sbox[i];
+    }
+    return r;
+}
+
 static uint32_t sub_word(uint32_t x) {
-    return ((uint32_t)sbox[(x >> 24) & 0xff] << 24) | ((uint32_t)sbox[(x >> 16) & 0xff] << 16) |
-           ((uint32_t)sbox[(x >> 8) & 0xff] << 8) | ((uint32_t)sbox[x & 0xff]);
+    return ((uint32_t)ct_sbox((x >> 24) & 0xff) << 24) |
+           ((uint32_t)ct_sbox((x >> 16) & 0xff) << 16) | ((uint32_t)ct_sbox((x >> 8) & 0xff) << 8) |
+           ((uint32_t)ct_sbox(x & 0xff));
 }
 
 static uint32_t rot_word(uint32_t x) {
     return (x << 8) | (x >> 24);
 }
 
-void speer_aes_set_encrypt_key(speer_aes_key_t *k, const uint8_t *key, size_t key_bits) {
+void speer_aes_set_encrypt_key_sw(speer_aes_key_t *k, const uint8_t *key, size_t key_bits) {
     int nk;
     if (key_bits == 128) {
         nk = 4;
@@ -44,6 +58,7 @@ void speer_aes_set_encrypt_key(speer_aes_key_t *k, const uint8_t *key, size_t ke
         k->nr = 14;
     } else {
         k->nr = 0;
+        k->use_aesni = 0;
         return;
     }
 
@@ -58,98 +73,113 @@ void speer_aes_set_encrypt_key(speer_aes_key_t *k, const uint8_t *key, size_t ke
         }
         k->round_keys[i] = k->round_keys[i - nk] ^ temp;
     }
+    k->use_aesni = 0;
 }
 
-static const uint32_t te0[256] = {
-    0xc66363a5, 0xf87c7c84, 0xee777799, 0xf67b7b8d, 0xfff2f20d, 0xd66b6bbd, 0xde6f6fb1, 0x91c5c554,
-    0x60303050, 0x02010103, 0xce6767a9, 0x562b2b7d, 0xe7fefe19, 0xb5d7d762, 0x4dababe6, 0xec76769a,
-    0x8fcaca45, 0x1f82829d, 0x89c9c940, 0xfa7d7d87, 0xeffafa15, 0xb25959eb, 0x8e4747c9, 0xfbf0f00b,
-    0x41adadec, 0xb3d4d467, 0x5fa2a2fd, 0x45afafea, 0x239c9cbf, 0x53a4a4f7, 0xe4727296, 0x9bc0c05b,
-    0x75b7b7c2, 0xe1fdfd1c, 0x3d9393ae, 0x4c26266a, 0x6c36365a, 0x7e3f3f41, 0xf5f7f702, 0x83cccc4f,
-    0x6834345c, 0x51a5a5f4, 0xd1e5e534, 0xf9f1f108, 0xe2717193, 0xabd8d873, 0x62313153, 0x2a15153f,
-    0x0804040c, 0x95c7c752, 0x46232365, 0x9dc3c35e, 0x30181828, 0x379696a1, 0x0a05050f, 0x2f9a9ab5,
-    0x0e070709, 0x24121236, 0x1b80809b, 0xdfe2e23d, 0xcdebeb26, 0x4e272769, 0x7fb2b2cd, 0xea75759f,
-    0x1209091b, 0x1d83839e, 0x582c2c74, 0x341a1a2e, 0x361b1b2d, 0xdc6e6eb2, 0xb45a5aee, 0x5ba0a0fb,
-    0xa45252f6, 0x763b3b4d, 0xb7d6d661, 0x7db3b3ce, 0x5229297b, 0xdde3e33e, 0x5e2f2f71, 0x13848497,
-    0xa65353f5, 0xb9d1d168, 0x00000000, 0xc1eded2c, 0x40202060, 0xe3fcfc1f, 0x79b1b1c8, 0xb65b5bed,
-    0xd46a6abe, 0x8dcbcb46, 0x67bebed9, 0x7239394b, 0x944a4ade, 0x984c4cd4, 0xb05858e8, 0x85cfcf4a,
-    0xbbd0d06b, 0xc5efef2a, 0x4faaaae5, 0xedfbfb16, 0x864343c5, 0x9a4d4dd7, 0x66333355, 0x11858594,
-    0x8a4545cf, 0xe9f9f910, 0x04020206, 0xfe7f7f81, 0xa05050f0, 0x783c3c44, 0x259f9fba, 0x4ba8a8e3,
-    0xa25151f3, 0x5da3a3fe, 0x804040c0, 0x058f8f8a, 0x3f9292ad, 0x219d9dbc, 0x70383848, 0xf1f5f504,
-    0x63bcbcdf, 0x77b6b6c1, 0xafdada75, 0x42212163, 0x20101030, 0xe5ffff1a, 0xfdf3f30e, 0xbfd2d26d,
-    0x81cdcd4c, 0x180c0c14, 0x26131335, 0xc3ecec2f, 0xbe5f5fe1, 0x359797a2, 0x884444cc, 0x2e171739,
-    0x93c4c457, 0x55a7a7f2, 0xfc7e7e82, 0x7a3d3d47, 0xc86464ac, 0xba5d5de7, 0x3219192b, 0xe6737395,
-    0xc06060a0, 0x19818198, 0x9e4f4fd1, 0xa3dcdc7f, 0x44222266, 0x542a2a7e, 0x3b9090ab, 0x0b888883,
-    0x8c4646ca, 0xc7eeee29, 0x6bb8b8d3, 0x2814143c, 0xa7dede79, 0xbc5e5ee2, 0x160b0b1d, 0xaddbdb76,
-    0xdbe0e03b, 0x64323256, 0x743a3a4e, 0x140a0a1e, 0x924949db, 0x0c06060a, 0x4824246c, 0xb85c5ce4,
-    0x9fc2c25d, 0xbdd3d36e, 0x43acacef, 0xc46262a6, 0x399191a8, 0x319595a4, 0xd3e4e437, 0xf279798b,
-    0xd5e7e732, 0x8bc8c843, 0x6e373759, 0xda6d6db7, 0x018d8d8c, 0xb1d5d564, 0x9c4e4ed2, 0x49a9a9e0,
-    0xd86c6cb4, 0xac5656fa, 0xf3f4f407, 0xcfeaea25, 0xca6565af, 0xf47a7a8e, 0x47aeaee9, 0x10080818,
-    0x6fbabad5, 0xf0787888, 0x4a25256f, 0x5c2e2e72, 0x381c1c24, 0x57a6a6f1, 0x73b4b4c7, 0x97c6c651,
-    0xcbe8e823, 0xa1dddd7c, 0xe874749c, 0x3e1f1f21, 0x964b4bdd, 0x61bdbddc, 0x0d8b8b86, 0x0f8a8a85,
-    0xe0707090, 0x7c3e3e42, 0x71b5b5c4, 0xcc6666aa, 0x904848d8, 0x06030305, 0xf7f6f601, 0x1c0e0e12,
-    0xc26161a3, 0x6a35355f, 0xae5757f9, 0x69b9b9d0, 0x17868691, 0x99c1c158, 0x3a1d1d27, 0x279e9eb9,
-    0xd9e1e138, 0xebf8f813, 0x2b9898b3, 0x22111133, 0xd26969bb, 0xa9d9d970, 0x078e8e89, 0x339494a7,
-    0x2d9b9bb6, 0x3c1e1e22, 0x15878792, 0xc9e9e920, 0x87cece49, 0xaa5555ff, 0x50282878, 0xa5dfdf7a,
-    0x038c8c8f, 0x59a1a1f8, 0x09898980, 0x1a0d0d17, 0x65bfbfda, 0xd7e6e631, 0x844242c6, 0xd06868b8,
-    0x824141c3, 0x299999b0, 0x5a2d2d77, 0x1e0f0f11, 0x7bb0b0cb, 0xa85454fc, 0x6dbbbbd6, 0x2c16163a};
+static uint8_t xtime(uint8_t b) {
+    uint8_t hi = (uint8_t)((b >> 7) & 1u);
+    return (uint8_t)((b << 1) ^ ((uint8_t)(0u - (uint32_t)hi) & 0x1b));
+}
 
-#define TE1(x) ((te0[x] >> 8) | (te0[x] << 24))
-#define TE2(x) ((te0[x] >> 16) | (te0[x] << 16))
-#define TE3(x) ((te0[x] >> 24) | (te0[x] << 8))
+static void aes_round(uint8_t s[16], const uint32_t rk[4]) {
+    uint8_t t[16];
+    for (int i = 0; i < 16; i++) t[i] = ct_sbox(s[i]);
 
-void speer_aes_encrypt(const speer_aes_key_t *k, const uint8_t in[16], uint8_t out[16]) {
-    uint32_t s0, s1, s2, s3, t0, t1, t2, t3;
-    s0 = LOAD32_BE(in) ^ k->round_keys[0];
-    s1 = LOAD32_BE(in + 4) ^ k->round_keys[1];
-    s2 = LOAD32_BE(in + 8) ^ k->round_keys[2];
-    s3 = LOAD32_BE(in + 12) ^ k->round_keys[3];
+    s[0] = t[0];
+    s[1] = t[5];
+    s[2] = t[10];
+    s[3] = t[15];
+    s[4] = t[4];
+    s[5] = t[9];
+    s[6] = t[14];
+    s[7] = t[3];
+    s[8] = t[8];
+    s[9] = t[13];
+    s[10] = t[2];
+    s[11] = t[7];
+    s[12] = t[12];
+    s[13] = t[1];
+    s[14] = t[6];
+    s[15] = t[11];
 
-    int nr = k->nr;
-    const uint32_t *rk = k->round_keys;
-
-    for (int round = 1; round < nr; round++) {
-        t0 = te0[(s0 >> 24) & 0xff] ^ TE1((s1 >> 16) & 0xff) ^ TE2((s2 >> 8) & 0xff) ^
-             TE3(s3 & 0xff) ^ rk[4 * round];
-        t1 = te0[(s1 >> 24) & 0xff] ^ TE1((s2 >> 16) & 0xff) ^ TE2((s3 >> 8) & 0xff) ^
-             TE3(s0 & 0xff) ^ rk[4 * round + 1];
-        t2 = te0[(s2 >> 24) & 0xff] ^ TE1((s3 >> 16) & 0xff) ^ TE2((s0 >> 8) & 0xff) ^
-             TE3(s1 & 0xff) ^ rk[4 * round + 2];
-        t3 = te0[(s3 >> 24) & 0xff] ^ TE1((s0 >> 16) & 0xff) ^ TE2((s1 >> 8) & 0xff) ^
-             TE3(s2 & 0xff) ^ rk[4 * round + 3];
-        s0 = t0;
-        s1 = t1;
-        s2 = t2;
-        s3 = t3;
+    for (int c = 0; c < 4; c++) {
+        uint8_t b0 = s[4 * c + 0], b1 = s[4 * c + 1], b2 = s[4 * c + 2], b3 = s[4 * c + 3];
+        uint8_t tt = (uint8_t)(b0 ^ b1 ^ b2 ^ b3);
+        uint8_t r0 = (uint8_t)(b0 ^ tt ^ xtime((uint8_t)(b0 ^ b1)));
+        uint8_t r1 = (uint8_t)(b1 ^ tt ^ xtime((uint8_t)(b1 ^ b2)));
+        uint8_t r2 = (uint8_t)(b2 ^ tt ^ xtime((uint8_t)(b2 ^ b3)));
+        uint8_t r3 = (uint8_t)(b3 ^ tt ^ xtime((uint8_t)(b3 ^ b0)));
+        s[4 * c + 0] = r0;
+        s[4 * c + 1] = r1;
+        s[4 * c + 2] = r2;
+        s[4 * c + 3] = r3;
     }
 
-    t0 = ((uint32_t)sbox[(s0 >> 24) & 0xff] << 24) | ((uint32_t)sbox[(s1 >> 16) & 0xff] << 16) |
-         ((uint32_t)sbox[(s2 >> 8) & 0xff] << 8) | sbox[s3 & 0xff];
-    t1 = ((uint32_t)sbox[(s1 >> 24) & 0xff] << 24) | ((uint32_t)sbox[(s2 >> 16) & 0xff] << 16) |
-         ((uint32_t)sbox[(s3 >> 8) & 0xff] << 8) | sbox[s0 & 0xff];
-    t2 = ((uint32_t)sbox[(s2 >> 24) & 0xff] << 24) | ((uint32_t)sbox[(s3 >> 16) & 0xff] << 16) |
-         ((uint32_t)sbox[(s0 >> 8) & 0xff] << 8) | sbox[s1 & 0xff];
-    t3 = ((uint32_t)sbox[(s3 >> 24) & 0xff] << 24) | ((uint32_t)sbox[(s0 >> 16) & 0xff] << 16) |
-         ((uint32_t)sbox[(s1 >> 8) & 0xff] << 8) | sbox[s2 & 0xff];
-
-    s0 = t0 ^ rk[4 * nr];
-    s1 = t1 ^ rk[4 * nr + 1];
-    s2 = t2 ^ rk[4 * nr + 2];
-    s3 = t3 ^ rk[4 * nr + 3];
-
-    STORE32_BE(out, s0);
-    STORE32_BE(out + 4, s1);
-    STORE32_BE(out + 8, s2);
-    STORE32_BE(out + 12, s3);
+    for (int c = 0; c < 4; c++) {
+        uint32_t rkw = rk[c];
+        s[4 * c + 0] ^= (uint8_t)(rkw >> 24);
+        s[4 * c + 1] ^= (uint8_t)(rkw >> 16);
+        s[4 * c + 2] ^= (uint8_t)(rkw >> 8);
+        s[4 * c + 3] ^= (uint8_t)(rkw);
+    }
 }
 
-void speer_aes_ctr(const speer_aes_key_t *k, const uint8_t nonce[16], uint8_t *out,
-                   const uint8_t *in, size_t len) {
+static void aes_final_round(uint8_t s[16], const uint32_t rk[4]) {
+    uint8_t t[16];
+    for (int i = 0; i < 16; i++) t[i] = ct_sbox(s[i]);
+
+    s[0] = t[0];
+    s[1] = t[5];
+    s[2] = t[10];
+    s[3] = t[15];
+    s[4] = t[4];
+    s[5] = t[9];
+    s[6] = t[14];
+    s[7] = t[3];
+    s[8] = t[8];
+    s[9] = t[13];
+    s[10] = t[2];
+    s[11] = t[7];
+    s[12] = t[12];
+    s[13] = t[1];
+    s[14] = t[6];
+    s[15] = t[11];
+
+    for (int c = 0; c < 4; c++) {
+        uint32_t rkw = rk[c];
+        s[4 * c + 0] ^= (uint8_t)(rkw >> 24);
+        s[4 * c + 1] ^= (uint8_t)(rkw >> 16);
+        s[4 * c + 2] ^= (uint8_t)(rkw >> 8);
+        s[4 * c + 3] ^= (uint8_t)(rkw);
+    }
+}
+
+void speer_aes_encrypt_sw(const speer_aes_key_t *k, const uint8_t in[16], uint8_t out[16]) {
+    uint8_t s[16];
+    for (int i = 0; i < 16; i++) s[i] = in[i];
+
+    for (int c = 0; c < 4; c++) {
+        uint32_t rkw = k->round_keys[c];
+        s[4 * c + 0] ^= (uint8_t)(rkw >> 24);
+        s[4 * c + 1] ^= (uint8_t)(rkw >> 16);
+        s[4 * c + 2] ^= (uint8_t)(rkw >> 8);
+        s[4 * c + 3] ^= (uint8_t)(rkw);
+    }
+
+    int nr = k->nr;
+    for (int round = 1; round < nr; round++) { aes_round(s, &k->round_keys[4 * round]); }
+    aes_final_round(s, &k->round_keys[4 * nr]);
+
+    for (int i = 0; i < 16; i++) out[i] = s[i];
+}
+
+void speer_aes_ctr_sw(const speer_aes_key_t *k, const uint8_t nonce[16], uint8_t *out,
+                      const uint8_t *in, size_t len) {
     uint8_t ctr[16];
     COPY(ctr, nonce, 16);
     while (len > 0) {
         uint8_t ks[16];
-        speer_aes_encrypt(k, ctr, ks);
+        speer_aes_encrypt_sw(k, ctr, ks);
         size_t n = len < 16 ? len : 16;
         for (size_t i = 0; i < n; i++) out[i] = in[i] ^ ks[i];
         out += n;
@@ -160,4 +190,35 @@ void speer_aes_ctr(const speer_aes_key_t *k, const uint8_t nonce[16], uint8_t *o
             if (ctr[i] != 0) break;
         }
     }
+}
+
+void speer_aes_set_encrypt_key(speer_aes_key_t *k, const uint8_t *key, size_t key_bits) {
+#ifdef SPEER_AESNI_AVAILABLE
+    if (speer_cpu_has_aes_clmul()) {
+        speer_aes_set_encrypt_key_aesni(k, key, key_bits);
+        return;
+    }
+#endif
+    speer_aes_set_encrypt_key_sw(k, key, key_bits);
+}
+
+void speer_aes_encrypt(const speer_aes_key_t *k, const uint8_t in[16], uint8_t out[16]) {
+#ifdef SPEER_AESNI_AVAILABLE
+    if (k->use_aesni) {
+        speer_aes_encrypt_aesni(k, in, out);
+        return;
+    }
+#endif
+    speer_aes_encrypt_sw(k, in, out);
+}
+
+void speer_aes_ctr(const speer_aes_key_t *k, const uint8_t nonce[16], uint8_t *out,
+                   const uint8_t *in, size_t len) {
+#ifdef SPEER_AESNI_AVAILABLE
+    if (k->use_aesni) {
+        speer_aes_ctr_aesni(k, nonce, out, in, len);
+        return;
+    }
+#endif
+    speer_aes_ctr_sw(k, nonce, out, in, len);
 }

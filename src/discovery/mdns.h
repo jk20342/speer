@@ -33,6 +33,7 @@ typedef struct {
 typedef struct {
     char key[64];
     char value[256];
+    bool has_value;
 } mdns_txt_field_t;
 
 typedef struct {

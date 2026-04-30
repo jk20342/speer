@@ -3,6 +3,7 @@
 #include "speer_internal.h"
 
 #include "bignum.h"
+#include "ct_helpers.h"
 
 static int rsa_public_op(uint8_t *out, size_t out_len, const uint8_t *sig, size_t sig_len,
                          const uint8_t *n_be, size_t n_len, const uint8_t *e_be, size_t e_len) {
@@ -167,7 +168,7 @@ int speer_rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t *e, size_
     uint8_t check[SPEER_HASH_MAX_DIGEST];
     hash->oneshot(check, mprime, 8 + hash_len + salt_len);
 
-    int rc = EQUAL(check, em + db_len, hash_len) ? 0 : -1;
+    int rc = speer_ct_memeq(check, em + db_len, hash_len) ? 0 : -1;
     free(em);
     return rc;
 }
