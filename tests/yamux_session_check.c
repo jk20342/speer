@@ -1,9 +1,16 @@
 #include "speer_internal.h"
-#include "yamux.h"
+
 #include <stdio.h>
+
 #include <string.h>
 
-#define FAIL(...) do { fprintf(stderr, __VA_ARGS__); return 1; } while (0)
+#include "yamux.h"
+
+#define FAIL(...)                     \
+    do {                              \
+        fprintf(stderr, __VA_ARGS__); \
+        return 1;                     \
+    } while (0)
 
 #define MOCK_QCAP (384 * 1024)
 
@@ -14,10 +21,10 @@ typedef struct {
 
 typedef struct ymock_ep {
     byteq_t q;
-    struct ymock_ep* peer;
+    struct ymock_ep *peer;
 } ymock_ep_t;
 
-static int byteq_push(byteq_t* q, const uint8_t* d, size_t n) {
+static int byteq_push(byteq_t *q, const uint8_t *d, size_t n) {
     if (n == 0) return 0;
     if (q->len + n > sizeof(q->buf)) return -1;
     memcpy(q->buf + q->len, d, n);
@@ -25,7 +32,7 @@ static int byteq_push(byteq_t* q, const uint8_t* d, size_t n) {
     return 0;
 }
 
-static int byteq_pop_exact(byteq_t* q, uint8_t* dst, size_t n) {
+static int byteq_pop_exact(byteq_t *q, uint8_t *dst, size_t n) {
     if (q->len < n) return -1;
     memcpy(dst, q->buf, n);
     memmove(q->buf, q->buf + n, q->len - n);
@@ -33,31 +40,31 @@ static int byteq_pop_exact(byteq_t* q, uint8_t* dst, size_t n) {
     return 0;
 }
 
-static int ymock_send(void* user, const uint8_t* d, size_t n) {
-    ymock_ep_t* ep = (ymock_ep_t*)user;
+static int ymock_send(void *user, const uint8_t *d, size_t n) {
+    ymock_ep_t *ep = (ymock_ep_t *)user;
     return byteq_push(&ep->peer->q, d, n);
 }
 
-static int ymock_recv(void* user, uint8_t* buf, size_t cap, size_t* out_n) {
-    ymock_ep_t* ep = (ymock_ep_t*)user;
+static int ymock_recv(void *user, uint8_t *buf, size_t cap, size_t *out_n) {
+    ymock_ep_t *ep = (ymock_ep_t *)user;
     if (byteq_pop_exact(&ep->q, buf, cap) != 0) return -1;
     *out_n = cap;
     return 0;
 }
 
-static speer_yamux_stream_t* stream_by_id(speer_yamux_session_t* s, uint32_t id) {
-    for (speer_yamux_stream_t* st = s->streams; st; st = st->next) {
+static speer_yamux_stream_t *stream_by_id(speer_yamux_session_t *s, uint32_t id) {
+    for (speer_yamux_stream_t *st = s->streams; st; st = st->next) {
         if (st->id == id) return st;
     }
     return NULL;
 }
 
-static int peek_unpack(byteq_t* q, speer_yamux_hdr_t* h) {
+static int peek_unpack(byteq_t *q, speer_yamux_hdr_t *h) {
     if (q->len < 12) return -1;
     return speer_yamux_hdr_unpack(h, q->buf);
 }
 
-static void drain_hdr(byteq_t* q) {
+static void drain_hdr(byteq_t *q) {
     uint8_t tmp[12];
     byteq_pop_exact(q, tmp, 12);
 }
@@ -73,10 +80,10 @@ int main(void) {
     speer_yamux_init(&client, 1, ymock_send, ymock_recv, &ca);
     speer_yamux_init(&server, 0, ymock_send, ymock_recv, &cb);
 
-    speer_yamux_stream_t* cst = speer_yamux_open_stream(&client);
+    speer_yamux_stream_t *cst = speer_yamux_open_stream(&client);
     if (!cst || cst->id != 1) FAIL("client open_stream\n");
     if (speer_yamux_pump(&server) != 0) FAIL("server pump syn window\n");
-    speer_yamux_stream_t* sst = stream_by_id(&server, 1);
+    speer_yamux_stream_t *sst = stream_by_id(&server, 1);
     if (!sst) FAIL("server missing stream 1\n");
 
     static const uint8_t hello[] = "hello-yamux";

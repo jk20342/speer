@@ -3,6 +3,6 @@
 
 #include "x509_webpki.h"
 
-const speer_ca_store_t* speer_ca_bundle_default(void);
+const speer_ca_store_t *speer_ca_bundle_default(void);
 
 #endif

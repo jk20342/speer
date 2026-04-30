@@ -1,74 +1,73 @@
 #include "speer.h"
+
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
 
+#include <string.h>
+
 #if defined(_WIN32)
-    #include <windows.h>
-    #define THREAD_T HANDLE
-    #define THREAD_CREATE(t, fn, arg) (*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(fn), (arg), 0, NULL))
-    #define THREAD_JOIN(t) WaitForSingleObject((t), INFINITE)
+#include <windows.h>
+#define THREAD_T HANDLE
+#define THREAD_CREATE(t, fn, arg) \
+    (*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(fn), (arg), 0, NULL))
+#define THREAD_JOIN(t) WaitForSingleObject((t), INFINITE)
 #else
-    #include <pthread.h>
-    #define THREAD_T pthread_t
-    #define THREAD_CREATE(t, fn, arg) pthread_create((t), NULL, (fn), (arg))
-    #define THREAD_JOIN(t) pthread_join((t), NULL)
+#include <pthread.h>
+#define THREAD_T                  pthread_t
+#define THREAD_CREATE(t, fn, arg) pthread_create((t), NULL, (fn), (arg))
+#define THREAD_JOIN(t)            pthread_join((t), NULL)
 #endif
 
-static speer_host_t* g_host = NULL;
-static speer_peer_t* g_peer = NULL;
+static speer_host_t *g_host = NULL;
+static speer_peer_t *g_peer = NULL;
 static volatile int g_running = 1;
 
-static void on_event(speer_host_t* host, const speer_event_t* ev, void* user) {
+static void on_event(speer_host_t *host, const speer_event_t *ev, void *user) {
     (void)host;
     (void)user;
 
     switch (ev->type) {
-        case SPEER_EVENT_PEER_CONNECTED:
-            printf("\n[connected]\n");
-            g_peer = ev->peer;
-            break;
+    case SPEER_EVENT_PEER_CONNECTED:
+        printf("\n[connected]\n");
+        g_peer = ev->peer;
+        break;
 
-        case SPEER_EVENT_PEER_DISCONNECTED:
-            printf("\n[disconnected]\n");
-            g_peer = NULL;
-            break;
+    case SPEER_EVENT_PEER_DISCONNECTED:
+        printf("\n[disconnected]\n");
+        g_peer = NULL;
+        break;
 
-        case SPEER_EVENT_STREAM_DATA:
-            if (ev->len > 0) {
-                char buf[1024];
-                size_t n = ev->len < sizeof(buf) - 1 ? ev->len : sizeof(buf) - 1;
-                memcpy(buf, ev->data, n);
-                buf[n] = 0;
-                printf("\r[peer] %s\n> ", buf);
-                fflush(stdout);
-            }
-            break;
+    case SPEER_EVENT_STREAM_DATA:
+        if (ev->len > 0) {
+            char buf[1024];
+            size_t n = ev->len < sizeof(buf) - 1 ? ev->len : sizeof(buf) - 1;
+            memcpy(buf, ev->data, n);
+            buf[n] = 0;
+            printf("\r[peer] %s\n> ", buf);
+            fflush(stdout);
+        }
+        break;
 
-        default:
-            break;
+    default:
+        break;
     }
 }
 
 #if defined(_WIN32)
 static DWORD WINAPI poll_thread(LPVOID arg) {
     (void)arg;
-    while (g_host) {
-        speer_host_poll(g_host, 100);
-    }
+    while (g_host) { speer_host_poll(g_host, 100); }
     return 0;
 }
 #else
-static void* poll_thread(void* arg) {
+static void *poll_thread(void *arg) {
     (void)arg;
-    while (g_host) {
-        speer_host_poll(g_host, 100);
-    }
+    while (g_host) { speer_host_poll(g_host, 100); }
     return NULL;
 }
 #endif
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     if (argc < 2) {
         printf("usage: %s <connect_pubkey_hex> <host:port>\n", argv[0]);
         printf("       %s listen\n", argv[0]);
@@ -90,7 +89,7 @@ int main(int argc, char** argv) {
 
     printf("speer chat\n");
     printf("my public key: ");
-    const uint8_t* pk = speer_host_get_public_key(g_host);
+    const uint8_t *pk = speer_host_get_public_key(g_host);
     for (int i = 0; i < 32; i++) printf("%02x", pk[i]);
     printf("\n");
 
@@ -127,12 +126,13 @@ int main(int argc, char** argv) {
         if (strcmp(line, "/quit") == 0) break;
 
         if (g_peer) {
-            speer_stream_t* s = speer_stream_open(g_peer, 0);
+            speer_stream_t *s = speer_stream_open(g_peer, 0);
             if (s) {
-                int written = speer_stream_write(s, (uint8_t*)line, len);
+                int written = speer_stream_write(s, (uint8_t *)line, len);
                 if (written < 0) printf("write failed: %d\n", written);
                 speer_stream_close(s);
-            } else printf("open stream failed\n");
+            } else
+                printf("open stream failed\n");
         } else {
             printf("not connected\n");
         }
@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
         fflush(stdout);
     }
 
-    speer_host_t* tmp = g_host;
+    speer_host_t *tmp = g_host;
     g_host = NULL;
     speer_host_free(tmp);
 

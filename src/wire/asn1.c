@@ -1,7 +1,8 @@
-#include "speer_internal.h"
 #include "asn1.h"
 
-int speer_asn1_parse(const uint8_t* in, size_t in_len, speer_asn1_t* out) {
+#include "speer_internal.h"
+
+int speer_asn1_parse(const uint8_t *in, size_t in_len, speer_asn1_t *out) {
     if (in_len < 2) return -1;
     out->tlv_start = in;
     out->tag = in[0];
@@ -24,7 +25,7 @@ int speer_asn1_parse(const uint8_t* in, size_t in_len, speer_asn1_t* out) {
     return 0;
 }
 
-int speer_asn1_seq_iter_init(const speer_asn1_t* seq, const uint8_t** cursor, const uint8_t** end) {
+int speer_asn1_seq_iter_init(const speer_asn1_t *seq, const uint8_t **cursor, const uint8_t **end) {
     if ((seq->tag & 0x1f) != 0x10 && seq->tag != ASN1_SEQUENCE && seq->tag != ASN1_SET) {
         return -1;
     }
@@ -33,14 +34,14 @@ int speer_asn1_seq_iter_init(const speer_asn1_t* seq, const uint8_t** cursor, co
     return 0;
 }
 
-int speer_asn1_seq_next(const uint8_t** cursor, const uint8_t* end, speer_asn1_t* out) {
+int speer_asn1_seq_next(const uint8_t **cursor, const uint8_t *end, speer_asn1_t *out) {
     if (*cursor >= end) return -1;
     if (speer_asn1_parse(*cursor, (size_t)(end - *cursor), out) != 0) return -1;
     *cursor += out->tlv_total_len;
     return 0;
 }
 
-int speer_asn1_oid_eq(const speer_asn1_t* node, const uint8_t* oid_bytes, size_t oid_len) {
+int speer_asn1_oid_eq(const speer_asn1_t *node, const uint8_t *oid_bytes, size_t oid_len) {
     if (node->tag != ASN1_OID) return 0;
     if (node->value_len != oid_len) return 0;
     for (size_t i = 0; i < oid_len; i++) {
@@ -49,7 +50,7 @@ int speer_asn1_oid_eq(const speer_asn1_t* node, const uint8_t* oid_bytes, size_t
     return 1;
 }
 
-int speer_asn1_get_int_u32(const speer_asn1_t* node, uint32_t* out) {
+int speer_asn1_get_int_u32(const speer_asn1_t *node, uint32_t *out) {
     if (node->tag != ASN1_INTEGER) return -1;
     if (node->value_len == 0 || node->value_len > 5) return -1;
     size_t off = 0;
@@ -63,7 +64,8 @@ int speer_asn1_get_int_u32(const speer_asn1_t* node, uint32_t* out) {
     return 0;
 }
 
-int speer_asn1_get_bit_string(const speer_asn1_t* node, const uint8_t** bits, size_t* bit_count, uint8_t* unused_bits) {
+int speer_asn1_get_bit_string(const speer_asn1_t *node, const uint8_t **bits, size_t *bit_count,
+                              uint8_t *unused_bits) {
     if (node->tag != ASN1_BIT_STRING) return -1;
     if (node->value_len < 1) return -1;
     if (unused_bits) *unused_bits = node->value[0];

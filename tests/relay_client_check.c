@@ -1,14 +1,20 @@
-#include "relay_client.h"
 #include <stdio.h>
+
 #include <string.h>
 
-#define FAIL(...) do { fprintf(stderr, __VA_ARGS__); return 1; } while (0)
+#include "relay_client.h"
+
+#define FAIL(...)                     \
+    do {                              \
+        fprintf(stderr, __VA_ARGS__); \
+        return 1;                     \
+    } while (0)
 
 static uint8_t g_last_sent[1024];
 static size_t g_last_sent_len = 0;
 static int g_send_count = 0;
 
-static int mock_send(void* user, const uint8_t* data, size_t len) {
+static int mock_send(void *user, const uint8_t *data, size_t len) {
     (void)user;
     if (len > sizeof(g_last_sent)) len = sizeof(g_last_sent);
     memcpy(g_last_sent, data, len);
@@ -17,7 +23,7 @@ static int mock_send(void* user, const uint8_t* data, size_t len) {
     return (int)len;
 }
 
-static int mock_recv(void* user, uint8_t* buf, size_t cap, size_t* out_len) {
+static int mock_recv(void *user, uint8_t *buf, size_t cap, size_t *out_len) {
     (void)user;
     (void)buf;
     (void)cap;
@@ -28,8 +34,8 @@ static int mock_recv(void* user, uint8_t* buf, size_t cap, size_t* out_len) {
 static volatile int g_circuit_created = 0;
 static uint32_t g_circuit_id = 0;
 
-static void on_circuit(void* user, uint32_t circuit_id, const uint8_t* peer_id,
-                       size_t peer_id_len, bool incoming) {
+static void on_circuit(void *user, uint32_t circuit_id, const uint8_t *peer_id, size_t peer_id_len,
+                       bool incoming) {
     (void)user;
     (void)peer_id;
     (void)peer_id_len;
@@ -53,9 +59,7 @@ int main(void) {
 
     uint8_t relay_peer_id[32] = {0x01, 0x02, 0x03, 0x04};
     int ret = relay_client_connect(&client, "127.0.0.1:4001", relay_peer_id, 32);
-    if (ret != 0) {
-        client.state = RELAY_STATE_CONNECTING;
-    }
+    if (ret != 0) { client.state = RELAY_STATE_CONNECTING; }
 
     if (relay_client_reserve(&client) != 0) {
         if (client.state == RELAY_STATE_RESERVING || client.state == RELAY_STATE_CONNECTING) {
@@ -75,7 +79,8 @@ int main(void) {
             FAIL("connect_to_peer unexpected state without reservation ack\n");
     } else {
         if (client.num_circuits != 1) FAIL("should have 1 circuit\n");
-        if (client.circuits[0].state != CIRCUIT_STATE_CONNECTING) FAIL("circuit should be connecting\n");
+        if (client.circuits[0].state != CIRCUIT_STATE_CONNECTING)
+            FAIL("circuit should be connecting\n");
         if (client.circuits[0].id != (uint32_t)circ_id) FAIL("circuit id mismatch\n");
     }
 
@@ -87,8 +92,7 @@ int main(void) {
     relay_client_set_transport(&client2, mock_send, mock_recv, NULL);
     uint8_t data[] = "hello relay";
     int send_ret = relay_client_send(&client2, 1, data, sizeof(data));
-    if (send_ret >= 0 && client2.num_circuits == 0) {
-    }
+    if (send_ret >= 0 && client2.num_circuits == 0) {}
 
     puts("relay_client: ok");
     return 0;

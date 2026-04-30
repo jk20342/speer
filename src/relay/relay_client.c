@@ -1,94 +1,95 @@
 #include "relay_client.h"
-#include "circuit_relay.h"
-#include "dcutr.h"
-#include <string.h>
+
 #include <stdlib.h>
 
+#include <string.h>
+
+#include "circuit_relay.h"
+#include "dcutr.h"
+
 #if defined(_WIN32)
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    typedef int socklen_t;
-    #define CLOSESOCKET closesocket
+#include <winsock2.h>
+
+#include <ws2tcpip.h>
+typedef int socklen_t;
+#define CLOSESOCKET closesocket
 #else
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <unistd.h>
-    #include <fcntl.h>
-    #include <errno.h>
-    #define CLOSESOCKET close
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#define CLOSESOCKET close
 #endif
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b)           ((a) < (b) ? (a) : (b))
+#define MAX(a, b)           ((a) > (b) ? (a) : (b))
 #define COPY(dst, src, len) memcpy((dst), (src), (len))
-#define ZERO(p, len) memset((p), 0, (len))
-#define EQUAL(a, b, len) (memcmp((a), (b), (len)) == 0)
+#define ZERO(p, len)        memset((p), 0, (len))
+#define EQUAL(a, b, len)    (memcmp((a), (b), (len)) == 0)
 
 extern uint64_t speer_timestamp_ms(void);
 
-static uint16_t read_be16(const uint8_t* p) {
+static uint16_t read_be16(const uint8_t *p) {
     return ((uint16_t)p[0] << 8) | p[1];
 }
 
-static void write_be16(uint8_t* p, uint16_t v) {
+static void write_be16(uint8_t *p, uint16_t v) {
     p[0] = (v >> 8) & 0xFF;
     p[1] = v & 0xFF;
 }
 
-static int relay_frame_encode(uint8_t* out, size_t out_cap, relay_frame_type_t type,
-                               uint32_t circuit_id, const uint8_t* payload, size_t payload_len) {
+static int relay_frame_encode(uint8_t *out, size_t out_cap, relay_frame_type_t type,
+                              uint32_t circuit_id, const uint8_t *payload, size_t payload_len) {
     (void)circuit_id;
     if (payload_len + RELAY_FRAME_HEADER_SIZE > out_cap) return -1;
     if (payload_len > RELAY_MAX_FRAME_SIZE) return -1;
     out[0] = (uint8_t)type;
     out[1] = 0;
     write_be16(out + 2, (uint16_t)payload_len);
-    if (payload_len > 0 && payload) {
-        COPY(out + RELAY_FRAME_HEADER_SIZE, payload, payload_len);
-    }
+    if (payload_len > 0 && payload) { COPY(out + RELAY_FRAME_HEADER_SIZE, payload, payload_len); }
     return RELAY_FRAME_HEADER_SIZE + (int)payload_len;
 }
 
-int relay_client_init(relay_client_t* client) {
+int relay_client_init(relay_client_t *client) {
     ZERO(client, sizeof(relay_client_t));
     client->socket = -1;
     client->state = RELAY_STATE_DISCONNECTED;
     return 0;
 }
 
-void relay_client_free(relay_client_t* client) {
+void relay_client_free(relay_client_t *client) {
     relay_client_disconnect(client);
     ZERO(client, sizeof(relay_client_t));
     client->socket = -1;
 }
 
-void relay_client_set_transport(relay_client_t* client,
-                                 int (*send_fn)(void*, const uint8_t*, size_t),
-                                 int (*recv_fn)(void*, uint8_t*, size_t, size_t*),
-                                 void* user) {
+void relay_client_set_transport(relay_client_t *client,
+                                int (*send_fn)(void *, const uint8_t *, size_t),
+                                int (*recv_fn)(void *, uint8_t *, size_t, size_t *), void *user) {
     client->send_fn = send_fn;
     client->recv_fn = recv_fn;
     client->user = user;
 }
 
-void relay_client_set_callbacks(relay_client_t* client,
-                                 void (*on_circuit)(void*, uint32_t, const uint8_t*, size_t, bool),
-                                 void (*on_data)(void*, uint32_t, const uint8_t*, size_t),
-                                 void (*on_circuit_closed)(void*, uint32_t),
-                                 void* user) {
+void relay_client_set_callbacks(relay_client_t *client,
+                                void (*on_circuit)(void *, uint32_t, const uint8_t *, size_t, bool),
+                                void (*on_data)(void *, uint32_t, const uint8_t *, size_t),
+                                void (*on_circuit_closed)(void *, uint32_t), void *user) {
     client->on_circuit = on_circuit;
     client->on_data = on_data;
     client->on_circuit_closed = on_circuit_closed;
     client->user = user;
 }
 
-int relay_client_connect(relay_client_t* client, const char* relay_addr,
-                         const uint8_t* relay_peer_id, size_t relay_peer_id_len) {
+int relay_client_connect(relay_client_t *client, const char *relay_addr,
+                         const uint8_t *relay_peer_id, size_t relay_peer_id_len) {
     if (client->state != RELAY_STATE_DISCONNECTED) relay_client_disconnect(client);
     char host[64];
     uint16_t port = 4001;
-    const char* colon = strrchr(relay_addr, ':');
+    const char *colon = strrchr(relay_addr, ':');
     if (colon) {
         size_t host_len = colon - relay_addr;
         COPY(host, relay_addr, host_len);
@@ -109,7 +110,7 @@ int relay_client_connect(relay_client_t* client, const char* relay_addr,
 #if defined(_WIN32)
     sin.sin_addr.s_addr = inet_addr(host);
     if (sin.sin_addr.s_addr == INADDR_NONE) {
-        struct hostent* he = gethostbyname(host);
+        struct hostent *he = gethostbyname(host);
         if (he && he->h_addrtype == AF_INET) COPY(&sin.sin_addr, he->h_addr, 4);
     }
 #else
@@ -117,7 +118,7 @@ int relay_client_connect(relay_client_t* client, const char* relay_addr,
 #endif
     client->socket = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (client->socket < 0) return -1;
-    if (connect(client->socket, (struct sockaddr*)&sin, sizeof(sin)) < 0) {
+    if (connect(client->socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
         CLOSESOCKET(client->socket);
         client->socket = -1;
         return -1;
@@ -138,7 +139,7 @@ int relay_client_connect(relay_client_t* client, const char* relay_addr,
     return 0;
 }
 
-void relay_client_disconnect(relay_client_t* client) {
+void relay_client_disconnect(relay_client_t *client) {
     for (uint32_t i = 0; i < client->num_circuits; i++) {
         if (client->circuits[i].state != CIRCUIT_STATE_NONE && client->on_circuit_closed) {
             client->on_circuit_closed(client->user, client->circuits[i].id);
@@ -154,26 +155,24 @@ void relay_client_disconnect(relay_client_t* client) {
     client->state = RELAY_STATE_DISCONNECTED;
 }
 
-bool relay_client_is_connected(const relay_client_t* client) {
-    return client->state == RELAY_STATE_RESERVED ||
-           client->state == RELAY_STATE_ACTIVE ||
+bool relay_client_is_connected(const relay_client_t *client) {
+    return client->state == RELAY_STATE_RESERVED || client->state == RELAY_STATE_ACTIVE ||
            client->state == RELAY_STATE_CONNECTING_TO_PEER;
 }
 
-bool relay_client_has_reservation(const relay_client_t* client) {
+bool relay_client_has_reservation(const relay_client_t *client) {
     return client->state == RELAY_STATE_RESERVED || client->state == RELAY_STATE_ACTIVE;
 }
 
-int relay_client_reserve(relay_client_t* client) {
-    if (client->state != RELAY_STATE_CONNECTING && client->state != RELAY_STATE_RESERVED)
-        return -1;
+int relay_client_reserve(relay_client_t *client) {
+    if (client->state != RELAY_STATE_CONNECTING && client->state != RELAY_STATE_RESERVED) return -1;
     client->state = RELAY_STATE_RESERVING;
     uint8_t payload[256];
     size_t payload_len = 0;
     if (speer_relay_encode_hop_reserve(payload, sizeof(payload), &payload_len) != 0) return -1;
     uint8_t frame[RELAY_MAX_FRAME_SIZE];
-    int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_HOP, 0,
-                                       payload, payload_len);
+    int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_HOP, 0, payload,
+                                       payload_len);
     if (frame_len < 0) return -1;
     if (client->send_fn) {
         int ret = client->send_fn(client->user, frame, (size_t)frame_len);
@@ -183,18 +182,18 @@ int relay_client_reserve(relay_client_t* client) {
     return 0;
 }
 
-int relay_client_connect_to_peer(relay_client_t* client, const uint8_t* target_peer_id,
-                                  size_t target_peer_id_len) {
-    if (client->state != RELAY_STATE_RESERVED && client->state != RELAY_STATE_ACTIVE)
-        return -1;
+int relay_client_connect_to_peer(relay_client_t *client, const uint8_t *target_peer_id,
+                                 size_t target_peer_id_len) {
+    if (client->state != RELAY_STATE_RESERVED && client->state != RELAY_STATE_ACTIVE) return -1;
     if (client->num_circuits >= RELAY_MAX_CIRCUITS) return -1;
     uint8_t payload[512];
     size_t payload_len = 0;
-    if (speer_relay_encode_hop_connect(payload, sizeof(payload), &payload_len,
-                                        target_peer_id, target_peer_id_len) != 0) return -1;
+    if (speer_relay_encode_hop_connect(payload, sizeof(payload), &payload_len, target_peer_id,
+                                       target_peer_id_len) != 0)
+        return -1;
     uint8_t frame[RELAY_MAX_FRAME_SIZE];
-    int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_HOP, 0,
-                                       payload, payload_len);
+    int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_HOP, 0, payload,
+                                       payload_len);
     if (frame_len < 0) return -1;
     if (client->send_fn) {
         int ret = client->send_fn(client->user, frame, (size_t)frame_len);
@@ -202,7 +201,7 @@ int relay_client_connect_to_peer(relay_client_t* client, const uint8_t* target_p
     }
     client->state = RELAY_STATE_CONNECTING_TO_PEER;
     client->last_send_ms = speer_timestamp_ms();
-    relay_circuit_t* circ = &client->circuits[client->num_circuits];
+    relay_circuit_t *circ = &client->circuits[client->num_circuits];
     circ->id = ++client->next_circuit_id;
     circ->state = CIRCUIT_STATE_CONNECTING;
     circ->created_ms = speer_timestamp_ms();
@@ -215,14 +214,14 @@ int relay_client_connect_to_peer(relay_client_t* client, const uint8_t* target_p
     return (int)circ->id;
 }
 
-static relay_circuit_t* find_circuit(relay_client_t* client, uint32_t circuit_id) {
+static relay_circuit_t *find_circuit(relay_client_t *client, uint32_t circuit_id) {
     for (uint32_t i = 0; i < client->num_circuits; i++) {
         if (client->circuits[i].id == circuit_id) return &client->circuits[i];
     }
     return NULL;
 }
 
-void relay_client_close_circuit(relay_client_t* client, uint32_t circuit_id) {
+void relay_client_close_circuit(relay_client_t *client, uint32_t circuit_id) {
     for (uint32_t i = 0; i < client->num_circuits; i++) {
         if (client->circuits[i].id == circuit_id) {
             client->circuits[i].state = CIRCUIT_STATE_CLOSED;
@@ -236,13 +235,15 @@ void relay_client_close_circuit(relay_client_t* client, uint32_t circuit_id) {
     }
 }
 
-int relay_client_send(relay_client_t* client, uint32_t circuit_id, const uint8_t* data,
+int relay_client_send(relay_client_t *client, uint32_t circuit_id, const uint8_t *data,
                       size_t len) {
-    relay_circuit_t* circ = find_circuit(client, circuit_id);
+    relay_circuit_t *circ = find_circuit(client, circuit_id);
     if (!circ || circ->state != CIRCUIT_STATE_CONNECTED) return -1;
     uint8_t frame[RELAY_MAX_FRAME_SIZE];
-    if (len > RELAY_MAX_FRAME_SIZE - RELAY_FRAME_HEADER_SIZE) len = RELAY_MAX_FRAME_SIZE - RELAY_FRAME_HEADER_SIZE;
-    int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_DATA, circuit_id, data, len);
+    if (len > RELAY_MAX_FRAME_SIZE - RELAY_FRAME_HEADER_SIZE)
+        len = RELAY_MAX_FRAME_SIZE - RELAY_FRAME_HEADER_SIZE;
+    int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_DATA, circuit_id, data,
+                                       len);
     if (frame_len < 0) return -1;
     if (client->send_fn) {
         int ret = client->send_fn(client->user, frame, (size_t)frame_len);
@@ -255,7 +256,7 @@ int relay_client_send(relay_client_t* client, uint32_t circuit_id, const uint8_t
     return -1;
 }
 
-static void handle_hop_status(relay_client_t* client, const uint8_t* payload, size_t payload_len) {
+static void handle_hop_status(relay_client_t *client, const uint8_t *payload, size_t payload_len) {
     speer_relay_msg_type_t type;
     int status;
     speer_relay_reservation_t res;
@@ -279,8 +280,8 @@ static void handle_hop_status(relay_client_t* client, const uint8_t* payload, si
                     client->circuits[i].state = CIRCUIT_STATE_CONNECTED;
                     client->state = RELAY_STATE_ACTIVE;
                     if (client->on_circuit) {
-                        client->on_circuit(client->user, client->circuits[i].id,
-                                          peer_id, peer_id_len, false);
+                        client->on_circuit(client->user, client->circuits[i].id, peer_id,
+                                           peer_id_len, false);
                     }
                 } else {
                     client->circuits[i].state = CIRCUIT_STATE_CLOSED;
@@ -291,7 +292,8 @@ static void handle_hop_status(relay_client_t* client, const uint8_t* payload, si
     }
 }
 
-static void handle_stop_connect(relay_client_t* client, const uint8_t* payload, size_t payload_len) {
+static void handle_stop_connect(relay_client_t *client, const uint8_t *payload,
+                                size_t payload_len) {
     if (client->num_circuits >= RELAY_MAX_CIRCUITS) return;
     speer_relay_msg_type_t type;
     int status;
@@ -300,7 +302,7 @@ static void handle_stop_connect(relay_client_t* client, const uint8_t* payload, 
     ZERO(&type, sizeof(type));
     if (speer_relay_decode(payload, payload_len, &type, &status, NULL, peer_id, &peer_id_len) != 0)
         return;
-    relay_circuit_t* circ = &client->circuits[client->num_circuits];
+    relay_circuit_t *circ = &client->circuits[client->num_circuits];
     circ->id = ++client->next_circuit_id;
     circ->state = CIRCUIT_STATE_CONNECTED;
     circ->created_ms = speer_timestamp_ms();
@@ -316,46 +318,47 @@ static void handle_stop_connect(relay_client_t* client, const uint8_t* payload, 
     }
 }
 
-static void process_frame(relay_client_t* client, relay_frame_type_t type, uint32_t circuit_id,
-                          const uint8_t* payload, size_t payload_len) {
+static void process_frame(relay_client_t *client, relay_frame_type_t type, uint32_t circuit_id,
+                          const uint8_t *payload, size_t payload_len) {
     switch (type) {
-        case RELAY_FRAME_HOP:
-            handle_hop_status(client, payload, payload_len);
-            break;
-        case RELAY_FRAME_STOP:
-            handle_stop_connect(client, payload, payload_len);
-            break;
-        case RELAY_FRAME_DATA:
-            if (client->on_data && circuit_id > 0) {
-                client->on_data(client->user, circuit_id, payload, payload_len);
-            }
-            break;
-        case RELAY_FRAME_KEEPALIVE:
-            break;
-        default:
-            break;
+    case RELAY_FRAME_HOP:
+        handle_hop_status(client, payload, payload_len);
+        break;
+    case RELAY_FRAME_STOP:
+        handle_stop_connect(client, payload, payload_len);
+        break;
+    case RELAY_FRAME_DATA:
+        if (client->on_data && circuit_id > 0) {
+            client->on_data(client->user, circuit_id, payload, payload_len);
+        }
+        break;
+    case RELAY_FRAME_KEEPALIVE:
+        break;
+    default:
+        break;
     }
 }
 
-static void consume_recv_buf(relay_client_t* client) {
+static void consume_recv_buf(relay_client_t *client) {
     while (client->recv_len >= RELAY_FRAME_HEADER_SIZE) {
         size_t payload_len = read_be16(client->recv_buf + 2);
         size_t frame_total = RELAY_FRAME_HEADER_SIZE + payload_len;
         if (client->recv_len < frame_total) break;
         relay_frame_type_t type = (relay_frame_type_t)client->recv_buf[0];
         uint32_t circuit_id = 0;
-        process_frame(client, type, circuit_id, client->recv_buf + RELAY_FRAME_HEADER_SIZE, payload_len);
+        process_frame(client, type, circuit_id, client->recv_buf + RELAY_FRAME_HEADER_SIZE,
+                      payload_len);
         if (client->recv_len > frame_total) {
-            memmove(client->recv_buf, client->recv_buf + frame_total, client->recv_len - frame_total);
+            memmove(client->recv_buf, client->recv_buf + frame_total,
+                    client->recv_len - frame_total);
         }
         client->recv_len -= frame_total;
     }
 }
 
-int relay_client_poll(relay_client_t* client, uint64_t now_ms) {
+int relay_client_poll(relay_client_t *client, uint64_t now_ms) {
     if (client->state == RELAY_STATE_DISCONNECTED) return 0;
-    if (client->state == RELAY_STATE_CONNECTING ||
-        client->state == RELAY_STATE_RESERVING ||
+    if (client->state == RELAY_STATE_CONNECTING || client->state == RELAY_STATE_RESERVING ||
         client->state == RELAY_STATE_CONNECTING_TO_PEER) {
         if (now_ms - client->connected_ms > RELAY_CONNECT_TIMEOUT_MS) {
             client->state = RELAY_STATE_ERROR;
@@ -402,7 +405,7 @@ int relay_client_poll(relay_client_t* client, uint64_t now_ms) {
     return 0;
 }
 
-int speer_relay_connect(const char* relay_server, const uint8_t local_pubkey[32],
+int speer_relay_connect(const char *relay_server, const uint8_t local_pubkey[32],
                         const uint8_t remote_pubkey[32]) {
     (void)relay_server;
     (void)local_pubkey;

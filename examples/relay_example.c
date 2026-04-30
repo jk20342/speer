@@ -1,9 +1,11 @@
+#include "speer.h"
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <signal.h>
 
-#include "speer.h"
+#include <signal.h>
+#include <string.h>
+
 #include "relay_client.h"
 
 static volatile int running = 1;
@@ -13,38 +15,38 @@ static void on_signal(int sig) {
     running = 0;
 }
 
-static void on_event(speer_host_t* host, const speer_event_t* ev, void* user) {
+static void on_event(speer_host_t *host, const speer_event_t *ev, void *user) {
     (void)host;
     (void)user;
 
     switch (ev->type) {
-        case SPEER_EVENT_PEER_CONNECTED:
-            printf("[+] Peer connected via relay\n");
-            break;
-        case SPEER_EVENT_PEER_DISCONNECTED:
-            printf("[-] Peer disconnected\n");
-            break;
-        case SPEER_EVENT_STREAM_DATA:
-            printf("[<] Received %zu bytes\n", ev->len);
-            break;
-        default:
-            break;
+    case SPEER_EVENT_PEER_CONNECTED:
+        printf("[+] Peer connected via relay\n");
+        break;
+    case SPEER_EVENT_PEER_DISCONNECTED:
+        printf("[-] Peer disconnected\n");
+        break;
+    case SPEER_EVENT_STREAM_DATA:
+        printf("[<] Received %zu bytes\n", ev->len);
+        break;
+    default:
+        break;
     }
     fflush(stdout);
 }
 
-static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
+static int hex_to_bytes(const char *hex, uint8_t *out, size_t out_len) {
     size_t hex_len = strlen(hex);
     if (hex_len != out_len * 2) return -1;
     for (size_t i = 0; i < out_len; i++) {
         unsigned int b;
-        if (sscanf(hex + 2*i, "%2x", &b) != 1) return -1;
+        if (sscanf(hex + 2 * i, "%2x", &b) != 1) return -1;
         out[i] = (uint8_t)b;
     }
     return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     if (argc < 3) {
         printf("Usage: %s <relay_addr> <target_pubkey>\n", argv[0]);
         printf("\nExample:\n");
@@ -71,7 +73,7 @@ int main(int argc, char** argv) {
     speer_config_default(&cfg);
     cfg.relay_server = argv[1];
 
-    speer_host_t* host = speer_host_new(seed, &cfg);
+    speer_host_t *host = speer_host_new(seed, &cfg);
     if (!host) {
         fprintf(stderr, "Failed to create host\n");
         return 1;
@@ -79,12 +81,12 @@ int main(int argc, char** argv) {
 
     printf("Host created, port=%d\n", speer_host_get_port(host));
     printf("Public key: ");
-    const uint8_t* pk = speer_host_get_public_key(host);
+    const uint8_t *pk = speer_host_get_public_key(host);
     for (int i = 0; i < 32; i++) printf("%02x", pk[i]);
     printf("\n");
 
     printf("Connecting to target through relay...\n");
-    speer_peer_t* peer = speer_connect(host, target_key, NULL);
+    speer_peer_t *peer = speer_connect(host, target_key, NULL);
     if (!peer) {
         fprintf(stderr, "Failed to initiate connection\n");
         speer_host_free(host);
@@ -108,7 +110,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    speer_stream_t* stream = speer_stream_open(peer, 1);
+    speer_stream_t *stream = speer_stream_open(peer, 1);
     if (!stream) {
         fprintf(stderr, "Failed to open stream\n");
         speer_host_free(host);
@@ -121,11 +123,11 @@ int main(int argc, char** argv) {
     char line[1024];
     while (running && fgets(line, sizeof(line), stdin)) {
         size_t len = strlen(line);
-        if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
+        if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
 
         if (len > 0) {
             printf("[>] Sending %zu bytes\n", len);
-            speer_stream_write(stream, (uint8_t*)line, len);
+            speer_stream_write(stream, (uint8_t *)line, len);
         }
 
         speer_host_poll(host, 10);

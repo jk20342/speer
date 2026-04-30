@@ -1,16 +1,17 @@
 #ifndef SPEER_IDENTIFY_H
 #define SPEER_IDENTIFY_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+
 #include "multiaddr.h"
 
-#define IDENTIFY_PROTO "/ipfs/id/1.0.0"
-#define IDENTIFY_PUSH_PROTO "/ipfs/id/push/1.0.0"
+#define IDENTIFY_PROTO                "/ipfs/id/1.0.0"
+#define IDENTIFY_PUSH_PROTO           "/ipfs/id/push/1.0.0"
 
-#define IDENTIFY_MAX_PROTOCOLS 32
-#define IDENTIFY_MAX_LISTEN_ADDRS 8
-#define IDENTIFY_AGENT_VERSION_MAX 64
+#define IDENTIFY_MAX_PROTOCOLS        32
+#define IDENTIFY_MAX_LISTEN_ADDRS     8
+#define IDENTIFY_AGENT_VERSION_MAX    64
 #define IDENTIFY_PROTOCOL_VERSION_MAX 32
 
 typedef struct {
@@ -26,7 +27,7 @@ typedef struct {
     int has_observed;
 } speer_identify_t;
 
-int speer_identify_encode(const speer_identify_t* id, uint8_t* out, size_t cap, size_t* out_len);
-int speer_identify_decode(speer_identify_t* id, const uint8_t* in, size_t in_len);
+int speer_identify_encode(const speer_identify_t *id, uint8_t *out, size_t cap, size_t *out_len);
+int speer_identify_decode(speer_identify_t *id, const uint8_t *in, size_t in_len);
 
 #endif

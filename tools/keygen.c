@@ -1,11 +1,12 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "speer.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <string.h>
+
 #define PROGRAM_NAME "speer-keygen"
-#define VERSION "0.1.0"
+#define VERSION      "0.1.0"
 
 typedef enum {
     FORMAT_HEX,
@@ -14,7 +15,7 @@ typedef enum {
     FORMAT_DOTENV,
 } output_format_t;
 
-static void print_usage(const char* prog) {
+static void print_usage(const char *prog) {
     printf("Usage: %s [options]\n", prog);
     printf("\nGenerate Ed25519 keypairs for speer.\n\n");
     printf("Options:\n");
@@ -29,7 +30,7 @@ static void print_version(void) {
     printf("%s version %s\n", PROGRAM_NAME, VERSION);
 }
 
-static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
+static int hex_to_bytes(const char *hex, uint8_t *out, size_t out_len) {
     size_t hex_len = strlen(hex);
     if (hex_len != out_len * 2) return -1;
 
@@ -41,16 +42,14 @@ static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
     return 0;
 }
 
-static void print_hex(FILE* f, const uint8_t* data, size_t len) {
-    for (size_t i = 0; i < len; i++) {
-        fprintf(f, "%02x", data[i]);
-    }
+static void print_hex(FILE *f, const uint8_t *data, size_t len) {
+    for (size_t i = 0; i < len; i++) { fprintf(f, "%02x", data[i]); }
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     output_format_t format = FORMAT_HEX;
-    const char* output_file = NULL;
-    const char* seed_hex = NULL;
+    const char *output_file = NULL;
+    const char *seed_hex = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -66,31 +65,32 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "Error: -f requires an argument\n");
                 return 1;
             }
-            const char* fmt = argv[++i];
-            if (strcmp(fmt, "hex") == 0) format = FORMAT_HEX;
-            else if (strcmp(fmt, "binary") == 0) format = FORMAT_BINARY;
-            else if (strcmp(fmt, "header") == 0) format = FORMAT_HEADER;
-            else if (strcmp(fmt, "dotenv") == 0) format = FORMAT_DOTENV;
+            const char *fmt = argv[++i];
+            if (strcmp(fmt, "hex") == 0)
+                format = FORMAT_HEX;
+            else if (strcmp(fmt, "binary") == 0)
+                format = FORMAT_BINARY;
+            else if (strcmp(fmt, "header") == 0)
+                format = FORMAT_HEADER;
+            else if (strcmp(fmt, "dotenv") == 0)
+                format = FORMAT_DOTENV;
             else {
                 fprintf(stderr, "Error: Unknown format '%s'\n", fmt);
                 return 1;
             }
-        }
-        else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) {
+        } else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: -o requires an argument\n");
                 return 1;
             }
             output_file = argv[++i];
-        }
-        else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
+        } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: -s requires an argument\n");
                 return 1;
             }
             seed_hex = argv[++i];
-        }
-        else {
+        } else {
             fprintf(stderr, "Error: Unknown option '%s'\n", argv[i]);
             return 1;
         }
@@ -116,9 +116,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    FILE* out = stdout;
+    FILE *out = stdout;
     if (output_file) {
-        const char* mode = (format == FORMAT_BINARY) ? "wb" : "w";
+        const char *mode = (format == FORMAT_BINARY) ? "wb" : "w";
         out = fopen(output_file, mode);
         if (!out) {
             fprintf(stderr, "Error: Cannot open '%s'\n", output_file);
@@ -127,42 +127,42 @@ int main(int argc, char** argv) {
     }
 
     switch (format) {
-        case FORMAT_HEX:
-            fprintf(out, "PUBLIC_KEY=");
-            print_hex(out, public_key, SPEER_PUBLIC_KEY_SIZE);
-            fprintf(out, "\nPRIVATE_KEY=");
-            print_hex(out, private_key, SPEER_PRIVATE_KEY_SIZE);
-            fprintf(out, "\n");
-            break;
+    case FORMAT_HEX:
+        fprintf(out, "PUBLIC_KEY=");
+        print_hex(out, public_key, SPEER_PUBLIC_KEY_SIZE);
+        fprintf(out, "\nPRIVATE_KEY=");
+        print_hex(out, private_key, SPEER_PRIVATE_KEY_SIZE);
+        fprintf(out, "\n");
+        break;
 
-        case FORMAT_BINARY:
-            fwrite(public_key, 1, SPEER_PUBLIC_KEY_SIZE, out);
-            fwrite(private_key, 1, SPEER_PRIVATE_KEY_SIZE, out);
-            break;
+    case FORMAT_BINARY:
+        fwrite(public_key, 1, SPEER_PUBLIC_KEY_SIZE, out);
+        fwrite(private_key, 1, SPEER_PRIVATE_KEY_SIZE, out);
+        break;
 
-        case FORMAT_HEADER:
-            fprintf(out, "#ifndef SPEER_KEYS_H\n#define SPEER_KEYS_H\n\n");
-            fprintf(out, "static const uint8_t SPEER_PUBLIC_KEY[32] = {\n    ");
-            for (int i = 0; i < 32; i++) {
-                fprintf(out, "0x%02x%s", public_key[i], (i < 31) ? ", " : "");
-                if ((i + 1) % 8 == 0 && i < 31) fprintf(out, "\n    ");
-            }
-            fprintf(out, "\n};\n\n");
-            fprintf(out, "static const uint8_t SPEER_PRIVATE_KEY[32] = {\n    ");
-            for (int i = 0; i < 32; i++) {
-                fprintf(out, "0x%02x%s", private_key[i], (i < 31) ? ", " : "");
-                if ((i + 1) % 8 == 0 && i < 31) fprintf(out, "\n    ");
-            }
-            fprintf(out, "\n};\n\n#endif\n");
-            break;
+    case FORMAT_HEADER:
+        fprintf(out, "#ifndef SPEER_KEYS_H\n#define SPEER_KEYS_H\n\n");
+        fprintf(out, "static const uint8_t SPEER_PUBLIC_KEY[32] = {\n    ");
+        for (int i = 0; i < 32; i++) {
+            fprintf(out, "0x%02x%s", public_key[i], (i < 31) ? ", " : "");
+            if ((i + 1) % 8 == 0 && i < 31) fprintf(out, "\n    ");
+        }
+        fprintf(out, "\n};\n\n");
+        fprintf(out, "static const uint8_t SPEER_PRIVATE_KEY[32] = {\n    ");
+        for (int i = 0; i < 32; i++) {
+            fprintf(out, "0x%02x%s", private_key[i], (i < 31) ? ", " : "");
+            if ((i + 1) % 8 == 0 && i < 31) fprintf(out, "\n    ");
+        }
+        fprintf(out, "\n};\n\n#endif\n");
+        break;
 
-        case FORMAT_DOTENV:
-            fprintf(out, "SPEER_PUBLIC_KEY=");
-            print_hex(out, public_key, SPEER_PUBLIC_KEY_SIZE);
-            fprintf(out, "\nSPEER_PRIVATE_KEY=");
-            print_hex(out, private_key, SPEER_PRIVATE_KEY_SIZE);
-            fprintf(out, "\n");
-            break;
+    case FORMAT_DOTENV:
+        fprintf(out, "SPEER_PUBLIC_KEY=");
+        print_hex(out, public_key, SPEER_PUBLIC_KEY_SIZE);
+        fprintf(out, "\nSPEER_PRIVATE_KEY=");
+        print_hex(out, private_key, SPEER_PRIVATE_KEY_SIZE);
+        fprintf(out, "\n");
+        break;
     }
 
     if (out != stdout) fclose(out);

@@ -1,9 +1,16 @@
 #include "speer_internal.h"
-#include "yamux.h"
+
 #include <stdio.h>
+
 #include <string.h>
 
-#define FAIL(...) do { fprintf(stderr, __VA_ARGS__); return 1; } while (0)
+#include "yamux.h"
+
+#define FAIL(...)                     \
+    do {                              \
+        fprintf(stderr, __VA_ARGS__); \
+        return 1;                     \
+    } while (0)
 
 int main(void) {
     speer_yamux_hdr_t h = {

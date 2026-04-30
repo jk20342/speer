@@ -1,11 +1,11 @@
-#include "speer_internal.h"
 #include "peer_id.h"
+
+#include "speer_internal.h"
+
 #include "protobuf.h"
 
-int speer_libp2p_pubkey_proto_encode(uint8_t* out, size_t cap,
-                                       speer_libp2p_keytype_t kt,
-                                       const uint8_t* key, size_t key_len,
-                                       size_t* out_len) {
+int speer_libp2p_pubkey_proto_encode(uint8_t *out, size_t cap, speer_libp2p_keytype_t kt,
+                                     const uint8_t *key, size_t key_len, size_t *out_len) {
     speer_pb_writer_t w;
     speer_pb_writer_init(&w, out, cap);
     if (speer_pb_write_int32_field(&w, 1, (int32_t)kt) != 0) return -1;
@@ -14,9 +14,8 @@ int speer_libp2p_pubkey_proto_encode(uint8_t* out, size_t cap,
     return 0;
 }
 
-int speer_libp2p_pubkey_proto_decode(const uint8_t* in, size_t in_len,
-                                       speer_libp2p_keytype_t* kt,
-                                       const uint8_t** key, size_t* key_len) {
+int speer_libp2p_pubkey_proto_decode(const uint8_t *in, size_t in_len, speer_libp2p_keytype_t *kt,
+                                     const uint8_t **key, size_t *key_len) {
     speer_pb_reader_t r;
     speer_pb_reader_init(&r, in, in_len);
     int got_type = 0, got_data = 0;
@@ -29,7 +28,8 @@ int speer_libp2p_pubkey_proto_decode(const uint8_t* in, size_t in_len,
             if (kt) *kt = (speer_libp2p_keytype_t)v;
             got_type = 1;
         } else if (f == 2 && wire == PB_WIRE_LEN) {
-            const uint8_t* d; size_t l;
+            const uint8_t *d;
+            size_t l;
             if (speer_pb_read_bytes(&r, &d, &l) != 0) return -1;
             if (key) *key = d;
             if (key_len) *key_len = l;
@@ -41,9 +41,8 @@ int speer_libp2p_pubkey_proto_decode(const uint8_t* in, size_t in_len,
     return (got_type && got_data) ? 0 : -1;
 }
 
-int speer_peer_id_from_pubkey_bytes(uint8_t* out, size_t out_cap,
-                                      const uint8_t* pubkey_proto, size_t pubkey_proto_len,
-                                      size_t* out_len) {
+int speer_peer_id_from_pubkey_bytes(uint8_t *out, size_t out_cap, const uint8_t *pubkey_proto,
+                                    size_t pubkey_proto_len, size_t *out_len) {
     if (pubkey_proto_len <= 42) {
         if (out_cap < 2 + pubkey_proto_len) return -1;
         out[0] = 0x00;
@@ -62,12 +61,12 @@ int speer_peer_id_from_pubkey_bytes(uint8_t* out, size_t out_cap,
 
 static const char b58alpha[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-int speer_peer_id_to_b58(char* out, size_t out_cap, const uint8_t* peer_id, size_t peer_id_len) {
+int speer_peer_id_to_b58(char *out, size_t out_cap, const uint8_t *peer_id, size_t peer_id_len) {
     if (peer_id_len == 0 || out_cap == 0) return -1;
     size_t zeroes = 0;
     while (zeroes < peer_id_len && peer_id[zeroes] == 0) zeroes++;
     size_t buflen = peer_id_len * 138 / 100 + 1;
-    uint8_t* buf = (uint8_t*)calloc(buflen, 1);
+    uint8_t *buf = (uint8_t *)calloc(buflen, 1);
     if (!buf) return -1;
     size_t length = 0;
     for (size_t i = zeroes; i < peer_id_len; i++) {
@@ -87,7 +86,10 @@ int speer_peer_id_to_b58(char* out, size_t out_cap, const uint8_t* peer_id, size
     size_t offset = buflen - length;
     while (offset < buflen && buf[offset] == 0) offset++;
     size_t total = zeroes + (buflen - offset);
-    if (total + 1 > out_cap) { free(buf); return -1; }
+    if (total + 1 > out_cap) {
+        free(buf);
+        return -1;
+    }
     size_t pos = 0;
     for (size_t i = 0; i < zeroes; i++) out[pos++] = '1';
     for (size_t i = offset; i < buflen; i++) out[pos++] = b58alpha[buf[i]];

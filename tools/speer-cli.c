@@ -1,9 +1,10 @@
+#include "speer.h"
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <signal.h>
 
-#include "speer.h"
+#include <signal.h>
+#include <string.h>
 
 static volatile int running = 1;
 
@@ -12,55 +13,51 @@ static void on_signal(int sig) {
     running = 0;
 }
 
-static void print_event(const speer_event_t* ev) {
+static void print_event(const speer_event_t *ev) {
     switch (ev->type) {
-        case SPEER_EVENT_PEER_CONNECTED:
-            printf("[CONNECTED] peer=%p\n", (void*)ev->peer);
-            break;
-        case SPEER_EVENT_PEER_DISCONNECTED:
-            printf("[DISCONNECTED] peer=%p reason=%d\n",
-                   (void*)ev->peer, ev->disconnect_reason);
-            break;
-        case SPEER_EVENT_STREAM_OPENED:
-            printf("[STREAM_OPENED] peer=%p stream=%u\n",
-                   (void*)ev->peer, ev->stream_id);
-            break;
-        case SPEER_EVENT_STREAM_DATA:
-            printf("[STREAM_DATA] peer=%p stream=%u len=%zu\n",
-                   (void*)ev->peer, ev->stream_id, ev->len);
-            break;
-        case SPEER_EVENT_STREAM_CLOSED:
-            printf("[STREAM_CLOSED] peer=%p stream=%u\n",
-                   (void*)ev->peer, ev->stream_id);
-            break;
-        case SPEER_EVENT_ERROR:
-            printf("[ERROR] peer=%p code=%d\n",
-                   (void*)ev->peer, ev->error_code);
-            break;
-        default:
-            break;
+    case SPEER_EVENT_PEER_CONNECTED:
+        printf("[CONNECTED] peer=%p\n", (void *)ev->peer);
+        break;
+    case SPEER_EVENT_PEER_DISCONNECTED:
+        printf("[DISCONNECTED] peer=%p reason=%d\n", (void *)ev->peer, ev->disconnect_reason);
+        break;
+    case SPEER_EVENT_STREAM_OPENED:
+        printf("[STREAM_OPENED] peer=%p stream=%u\n", (void *)ev->peer, ev->stream_id);
+        break;
+    case SPEER_EVENT_STREAM_DATA:
+        printf("[STREAM_DATA] peer=%p stream=%u len=%zu\n", (void *)ev->peer, ev->stream_id,
+               ev->len);
+        break;
+    case SPEER_EVENT_STREAM_CLOSED:
+        printf("[STREAM_CLOSED] peer=%p stream=%u\n", (void *)ev->peer, ev->stream_id);
+        break;
+    case SPEER_EVENT_ERROR:
+        printf("[ERROR] peer=%p code=%d\n", (void *)ev->peer, ev->error_code);
+        break;
+    default:
+        break;
     }
     fflush(stdout);
 }
 
-static void on_event(speer_host_t* host, const speer_event_t* ev, void* user) {
+static void on_event(speer_host_t *host, const speer_event_t *ev, void *user) {
     (void)host;
     (void)user;
     print_event(ev);
 }
 
-static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
+static int hex_to_bytes(const char *hex, uint8_t *out, size_t out_len) {
     size_t hex_len = strlen(hex);
     if (hex_len != out_len * 2) return -1;
     for (size_t i = 0; i < out_len; i++) {
         unsigned int b;
-        if (sscanf(hex + 2*i, "%2x", &b) != 1) return -1;
+        if (sscanf(hex + 2 * i, "%2x", &b) != 1) return -1;
         out[i] = (uint8_t)b;
     }
     return 0;
 }
 
-static void print_usage(const char* prog) {
+static void print_usage(const char *prog) {
     printf("Usage: %s <command> [options]\n\n", prog);
     printf("Commands:\n");
     printf("  server [PORT]        Run echo server\n");
@@ -74,7 +71,7 @@ static void print_usage(const char* prog) {
     printf("  %s ping abc123... 10.0.0.5:4242\n", prog);
 }
 
-static int cmd_server(int argc, char** argv) {
+static int cmd_server(int argc, char **argv) {
     uint16_t port = (argc > 2) ? (uint16_t)atoi(argv[2]) : 0;
 
     uint8_t seed[32] = {0};
@@ -84,7 +81,7 @@ static int cmd_server(int argc, char** argv) {
     speer_config_default(&cfg);
     cfg.bind_port = port;
 
-    speer_host_t* host = speer_host_new(seed, &cfg);
+    speer_host_t *host = speer_host_new(seed, &cfg);
     if (!host) {
         fprintf(stderr, "Failed to create host\n");
         return 1;
@@ -92,23 +89,21 @@ static int cmd_server(int argc, char** argv) {
 
     printf("Server running on port %d\n", speer_host_get_port(host));
     printf("Public key: ");
-    const uint8_t* pk = speer_host_get_public_key(host);
+    const uint8_t *pk = speer_host_get_public_key(host);
     for (int i = 0; i < 32; i++) printf("%02x", pk[i]);
     printf("\n");
     fflush(stdout);
 
     speer_host_set_callback(host, on_event, NULL);
 
-    while (running) {
-        speer_host_poll(host, 100);
-    }
+    while (running) { speer_host_poll(host, 100); }
 
     printf("\nShutting down...\n");
     speer_host_free(host);
     return 0;
 }
 
-static int cmd_connect(int argc, char** argv) {
+static int cmd_connect(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stderr, "Usage: connect PUBKEY ADDR\n");
         return 1;
@@ -123,7 +118,7 @@ static int cmd_connect(int argc, char** argv) {
     uint8_t seed[32] = {0};
     speer_random_bytes(seed, 32);
 
-    speer_host_t* host = speer_host_new(seed, NULL);
+    speer_host_t *host = speer_host_new(seed, NULL);
     if (!host) {
         fprintf(stderr, "Failed to create host\n");
         return 1;
@@ -132,7 +127,7 @@ static int cmd_connect(int argc, char** argv) {
     printf("Connecting to %s...\n", argv[3]);
     fflush(stdout);
 
-    speer_peer_t* peer = speer_connect(host, peer_key, argv[3]);
+    speer_peer_t *peer = speer_connect(host, peer_key, argv[3]);
     if (!peer) {
         fprintf(stderr, "Failed to initiate connection\n");
         speer_host_free(host);
@@ -156,7 +151,7 @@ static int cmd_connect(int argc, char** argv) {
         return 1;
     }
 
-    speer_stream_t* stream = speer_stream_open(peer, 1);
+    speer_stream_t *stream = speer_stream_open(peer, 1);
     if (!stream) {
         fprintf(stderr, "Failed to open stream\n");
         speer_host_free(host);
@@ -166,11 +161,9 @@ static int cmd_connect(int argc, char** argv) {
     char line[1024];
     while (running && fgets(line, sizeof(line), stdin)) {
         size_t len = strlen(line);
-        if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
+        if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
 
-        if (len > 0) {
-            speer_stream_write(stream, (uint8_t*)line, len);
-        }
+        if (len > 0) { speer_stream_write(stream, (uint8_t *)line, len); }
 
         speer_host_poll(host, 10);
     }
@@ -180,7 +173,7 @@ static int cmd_connect(int argc, char** argv) {
     return 0;
 }
 
-static int cmd_ping(int argc, char** argv) {
+static int cmd_ping(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stderr, "Usage: ping PUBKEY ADDR\n");
         return 1;
@@ -195,14 +188,14 @@ static int cmd_ping(int argc, char** argv) {
     uint8_t seed[32] = {0};
     speer_random_bytes(seed, 32);
 
-    speer_host_t* host = speer_host_new(seed, NULL);
+    speer_host_t *host = speer_host_new(seed, NULL);
     if (!host) {
         fprintf(stderr, "Failed to create host\n");
         return 1;
     }
 
     uint64_t start = speer_timestamp_ms();
-    speer_peer_t* peer = speer_connect(host, peer_key, argv[3]);
+    speer_peer_t *peer = speer_connect(host, peer_key, argv[3]);
 
     if (!peer) {
         fprintf(stderr, "Failed to initiate connection\n");
@@ -232,16 +225,16 @@ static int cmd_info(void) {
     uint8_t seed[32] = {0};
     speer_random_bytes(seed, 32);
 
-    speer_host_t* host = speer_host_new(seed, NULL);
+    speer_host_t *host = speer_host_new(seed, NULL);
     if (!host) {
         fprintf(stderr, "Failed to create host\n");
         return 1;
     }
 
-    printf("speer version: %d.%d.%d\n",
-           SPEER_VERSION_MAJOR, SPEER_VERSION_MINOR, SPEER_VERSION_PATCH);
+    printf("speer version: %d.%d.%d\n", SPEER_VERSION_MAJOR, SPEER_VERSION_MINOR,
+           SPEER_VERSION_PATCH);
     printf("Public key: ");
-    const uint8_t* pk = speer_host_get_public_key(host);
+    const uint8_t *pk = speer_host_get_public_key(host);
     for (int i = 0; i < 32; i++) printf("%02x", pk[i]);
     printf("\n");
     printf("Port: %d\n", speer_host_get_port(host));
@@ -250,7 +243,7 @@ static int cmd_info(void) {
     return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
@@ -259,22 +252,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const char* cmd = argv[1];
+    const char *cmd = argv[1];
 
-    if (strcmp(cmd, "server") == 0) {
-        return cmd_server(argc, argv);
-    }
-    if (strcmp(cmd, "connect") == 0) {
-        return cmd_connect(argc, argv);
-    }
-    if (strcmp(cmd, "ping") == 0) {
-        return cmd_ping(argc, argv);
-    }
-    if (strcmp(cmd, "info") == 0) {
-        return cmd_info();
-    }
-    if (strcmp(cmd, "help") == 0 || strcmp(cmd, "--help") == 0 ||
-        strcmp(cmd, "-h") == 0) {
+    if (strcmp(cmd, "server") == 0) { return cmd_server(argc, argv); }
+    if (strcmp(cmd, "connect") == 0) { return cmd_connect(argc, argv); }
+    if (strcmp(cmd, "ping") == 0) { return cmd_ping(argc, argv); }
+    if (strcmp(cmd, "info") == 0) { return cmd_info(); }
+    if (strcmp(cmd, "help") == 0 || strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0) {
         print_usage(argv[0]);
         return 0;
     }

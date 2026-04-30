@@ -1,9 +1,16 @@
 #include "speer_internal.h"
-#include "protobuf.h"
+
 #include <stdio.h>
+
 #include <string.h>
 
-#define FAIL(...) do { fprintf(stderr, __VA_ARGS__); return 1; } while (0)
+#include "protobuf.h"
+
+#define FAIL(...)                     \
+    do {                              \
+        fprintf(stderr, __VA_ARGS__); \
+        return 1;                     \
+    } while (0)
 
 /* SHA-256("") */
 static const uint8_t kSha256Empty[32] = {
@@ -18,14 +25,15 @@ int main(void) {
 
     uint8_t ctx_storage[256];
     speer_sha256_init(ctx_storage);
-    speer_sha256_update(ctx_storage, (const uint8_t*)"abc", 3);
+    speer_sha256_update(ctx_storage, (const uint8_t *)"abc", 3);
     speer_sha256_final(ctx_storage, h);
     static const uint8_t kAbc[32] = {
-        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
-        0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40,
+        0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17,
+        0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
     };
     uint8_t h2[32];
-    speer_sha256(h2, (const uint8_t*)"abc", 3);
+    speer_sha256(h2, (const uint8_t *)"abc", 3);
     if (memcmp(h, kAbc, 32) != 0 || memcmp(h2, kAbc, 32) != 0) FAIL("sha256 abc\n");
 
     /* avoid `-1LL << k` (undefined / warned): negate unsigned shift. */
@@ -35,8 +43,9 @@ int main(void) {
     speer_pb_writer_t w;
     speer_pb_writer_init(&w, buf, sizeof(buf));
     if (speer_pb_write_int32_field(&w, 3, -42) != 0 || speer_pb_write_bool_field(&w, 4, 1) != 0 ||
-        speer_pb_write_bytes_field(&w, 5, (const uint8_t*)"abc", 3) != 0 ||
-        speer_pb_write_string_field(&w, 6, "hi") != 0 || speer_pb_write_int64_field(&w, 7, neg_shift40) != 0)
+        speer_pb_write_bytes_field(&w, 5, (const uint8_t *)"abc", 3) != 0 ||
+        speer_pb_write_string_field(&w, 6, "hi") != 0 ||
+        speer_pb_write_int64_field(&w, 7, neg_shift40) != 0)
         FAIL("pb write\n");
 
     speer_pb_reader_t r;
@@ -54,12 +63,13 @@ int main(void) {
             if (speer_pb_read_bool(&r, &bv) != 0 || bv != 1) FAIL("pb bool\n");
             saw |= 2;
         } else if (f == 5 && wire == PB_WIRE_LEN) {
-            const uint8_t* d;
+            const uint8_t *d;
             size_t l;
-            if (speer_pb_read_bytes(&r, &d, &l) != 0 || l != 3 || memcmp(d, "abc", 3) != 0) FAIL("pb bytes\n");
+            if (speer_pb_read_bytes(&r, &d, &l) != 0 || l != 3 || memcmp(d, "abc", 3) != 0)
+                FAIL("pb bytes\n");
             saw |= 4;
         } else if (f == 6 && wire == PB_WIRE_LEN) {
-            const char* str;
+            const char *str;
             size_t sl;
             if (speer_pb_read_string(&r, &str, &sl) != 0 || sl != 2 || memcmp(str, "hi", 2) != 0)
                 FAIL("pb string\n");
@@ -73,7 +83,7 @@ int main(void) {
     }
     if (saw != 31) FAIL("pb fields incomplete saw=%d\n", saw);
 
-    uint8_t junk[] = { 0x08, 0x01, 0x11, 1, 2, 3, 4, 5, 6, 7, 8 };
+    uint8_t junk[] = {0x08, 0x01, 0x11, 1, 2, 3, 4, 5, 6, 7, 8};
     speer_pb_reader_init(&r, junk, sizeof(junk));
     uint32_t f, wire;
     if (speer_pb_read_tag(&r, &f, &wire) != 0 || f != 1) FAIL("junk tag1\n");

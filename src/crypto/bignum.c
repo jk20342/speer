@@ -1,24 +1,28 @@
-#include "speer_internal.h"
 #include "bignum.h"
+
+#include "speer_internal.h"
 
 #define LIMBS SPEER_BN_MAX_LIMBS
 
-static void normalize(speer_bn_t* a) {
+static void normalize(speer_bn_t *a) {
     while (a->n > 0 && a->limbs[a->n - 1] == 0) a->n--;
 }
 
-void speer_bn_zero(speer_bn_t* a) {
+void speer_bn_zero(speer_bn_t *a) {
     ZERO(a->limbs, sizeof(a->limbs));
     a->n = 0;
 }
 
-void speer_bn_copy(speer_bn_t* r, const speer_bn_t* a) {
+void speer_bn_copy(speer_bn_t *r, const speer_bn_t *a) {
     *r = *a;
 }
 
-int speer_bn_from_bytes_be(speer_bn_t* a, const uint8_t* in, size_t len) {
+int speer_bn_from_bytes_be(speer_bn_t *a, const uint8_t *in, size_t len) {
     speer_bn_zero(a);
-    while (len > 0 && in[0] == 0) { in++; len--; }
+    while (len > 0 && in[0] == 0) {
+        in++;
+        len--;
+    }
     if (len == 0) return 0;
     size_t need = (len + 3) / 4;
     if (need > LIMBS) return -1;
@@ -28,7 +32,8 @@ int speer_bn_from_bytes_be(speer_bn_t* a, const uint8_t* in, size_t len) {
         size_t limb = byte_pos / 4;
         size_t shift = (byte_pos & 3) * 8;
         a->limbs[i / 4] = a->limbs[i / 4];
-        (void)limb; (void)shift;
+        (void)limb;
+        (void)shift;
     }
     /* simple decode: walk bytes from MSB to LSB into limbs LSB-first */
     speer_bn_zero(a);
@@ -43,7 +48,7 @@ int speer_bn_from_bytes_be(speer_bn_t* a, const uint8_t* in, size_t len) {
     return 0;
 }
 
-int speer_bn_to_bytes_be(uint8_t* out, size_t out_len, const speer_bn_t* a) {
+int speer_bn_to_bytes_be(uint8_t *out, size_t out_len, const speer_bn_t *a) {
     size_t bs = speer_bn_byte_size(a);
     if (bs > out_len) return -1;
     ZERO(out, out_len);
@@ -56,15 +61,18 @@ int speer_bn_to_bytes_be(uint8_t* out, size_t out_len, const speer_bn_t* a) {
     return 0;
 }
 
-size_t speer_bn_byte_size(const speer_bn_t* a) {
+size_t speer_bn_byte_size(const speer_bn_t *a) {
     if (a->n == 0) return 0;
     uint32_t hi = a->limbs[a->n - 1];
     size_t b = 0;
-    while (hi) { b++; hi >>= 8; }
+    while (hi) {
+        b++;
+        hi >>= 8;
+    }
     return (a->n - 1) * 4 + (b == 0 ? 1 : b);
 }
 
-int speer_bn_cmp(const speer_bn_t* a, const speer_bn_t* b) {
+int speer_bn_cmp(const speer_bn_t *a, const speer_bn_t *b) {
     if (a->n != b->n) return a->n > b->n ? 1 : -1;
     for (size_t i = a->n; i-- > 0;) {
         if (a->limbs[i] != b->limbs[i]) return a->limbs[i] > b->limbs[i] ? 1 : -1;
@@ -72,30 +80,33 @@ int speer_bn_cmp(const speer_bn_t* a, const speer_bn_t* b) {
     return 0;
 }
 
-int speer_bn_is_zero(const speer_bn_t* a) {
+int speer_bn_is_zero(const speer_bn_t *a) {
     return a->n == 0;
 }
 
-int speer_bn_is_odd(const speer_bn_t* a) {
+int speer_bn_is_odd(const speer_bn_t *a) {
     return a->n > 0 && (a->limbs[0] & 1);
 }
 
-int speer_bn_get_bit(const speer_bn_t* a, size_t i) {
+int speer_bn_get_bit(const speer_bn_t *a, size_t i) {
     size_t limb = i / 32;
     size_t bit = i & 31;
     if (limb >= a->n) return 0;
     return (int)((a->limbs[limb] >> bit) & 1);
 }
 
-size_t speer_bn_bit_size(const speer_bn_t* a) {
+size_t speer_bn_bit_size(const speer_bn_t *a) {
     if (a->n == 0) return 0;
     uint32_t hi = a->limbs[a->n - 1];
     size_t b = 0;
-    while (hi) { b++; hi >>= 1; }
+    while (hi) {
+        b++;
+        hi >>= 1;
+    }
     return (a->n - 1) * 32 + b;
 }
 
-void speer_bn_add(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b) {
+void speer_bn_add(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b) {
     size_t mx = a->n > b->n ? a->n : b->n;
     if (mx + 1 > LIMBS) return;
     uint64_t c = 0;
@@ -112,13 +123,17 @@ void speer_bn_add(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b) {
     normalize(r);
 }
 
-int speer_bn_sub(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b) {
+int speer_bn_sub(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b) {
     if (speer_bn_cmp(a, b) < 0) return -1;
     int64_t br = 0;
     for (size_t i = 0; i < a->n; i++) {
         uint64_t bv = i < b->n ? b->limbs[i] : 0;
         int64_t s = (int64_t)a->limbs[i] - (int64_t)bv - br;
-        if (s < 0) { s += (int64_t)1 << 32; br = 1; } else br = 0;
+        if (s < 0) {
+            s += (int64_t)1 << 32;
+            br = 1;
+        } else
+            br = 0;
         r->limbs[i] = (uint32_t)s;
     }
     r->n = a->n;
@@ -127,7 +142,7 @@ int speer_bn_sub(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b) {
     return 0;
 }
 
-void speer_bn_shr1(speer_bn_t* a) {
+void speer_bn_shr1(speer_bn_t *a) {
     uint32_t c = 0;
     for (size_t i = a->n; i-- > 0;) {
         uint32_t nc = a->limbs[i] & 1;
@@ -137,19 +152,17 @@ void speer_bn_shr1(speer_bn_t* a) {
     normalize(a);
 }
 
-void speer_bn_shl1(speer_bn_t* a) {
+void speer_bn_shl1(speer_bn_t *a) {
     uint32_t c = 0;
     for (size_t i = 0; i < a->n; i++) {
         uint32_t nc = a->limbs[i] >> 31;
         a->limbs[i] = (a->limbs[i] << 1) | c;
         c = nc;
     }
-    if (c && a->n < LIMBS) {
-        a->limbs[a->n++] = c;
-    }
+    if (c && a->n < LIMBS) { a->limbs[a->n++] = c; }
 }
 
-void speer_bn_mod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* m) {
+void speer_bn_mod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *m) {
     speer_bn_copy(r, a);
     if (m->n == 0) return;
     while (speer_bn_cmp(r, m) >= 0) {
@@ -166,13 +179,13 @@ void speer_bn_mod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* m) {
     }
 }
 
-void speer_bn_addmod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b, const speer_bn_t* m) {
+void speer_bn_addmod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, const speer_bn_t *m) {
     speer_bn_t s;
     speer_bn_add(&s, a, b);
     speer_bn_mod(r, &s, m);
 }
 
-void speer_bn_submod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b, const speer_bn_t* m) {
+void speer_bn_submod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, const speer_bn_t *m) {
     speer_bn_t am, bm, t;
     speer_bn_mod(&am, a, m);
     speer_bn_mod(&bm, b, m);
@@ -188,7 +201,7 @@ void speer_bn_submod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b, co
     }
 }
 
-void speer_bn_mulmod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b, const speer_bn_t* m) {
+void speer_bn_mulmod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, const speer_bn_t *m) {
     /* schoolbook multiplication with reduction */
     uint32_t prod[2 * LIMBS] = {0};
     size_t n = a->n + b->n;
@@ -216,9 +229,7 @@ void speer_bn_mulmod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b, co
             speer_bn_shl1(&rem);
             size_t limb = bit / 32;
             size_t b_idx = bit & 31;
-            if (limb < 2 * LIMBS) {
-                rem.limbs[0] |= (prod[limb] >> b_idx) & 1;
-            }
+            if (limb < 2 * LIMBS) { rem.limbs[0] |= (prod[limb] >> b_idx) & 1; }
             if (rem.n == 0 && rem.limbs[0]) rem.n = 1;
             if (speer_bn_cmp(&rem, m) >= 0) {
                 speer_bn_t t;
@@ -232,13 +243,13 @@ void speer_bn_mulmod(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* b, co
     speer_bn_mod(r, &big, m);
 }
 
-void speer_bn_modexp(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* e, const speer_bn_t* m) {
+void speer_bn_modexp(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *e, const speer_bn_t *m) {
     speer_bn_t result, base;
     speer_bn_zero(&result);
     result.limbs[0] = 1;
     result.n = 1;
     speer_bn_mod(&base, a, m);
-    
+
     size_t bits = speer_bn_bit_size(e);
     for (size_t i = 0; i < bits; i++) {
         if (speer_bn_get_bit(e, i)) {
@@ -253,15 +264,17 @@ void speer_bn_modexp(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* e, co
     speer_bn_copy(r, &result);
 }
 
-int speer_bn_modinv(speer_bn_t* r, const speer_bn_t* a, const speer_bn_t* m) {
+int speer_bn_modinv(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *m) {
     /* extended binary gcd; works for odd m. */
     speer_bn_t u, v, x1, x2, mm;
     speer_bn_copy(&u, a);
     speer_bn_copy(&v, m);
     speer_bn_copy(&mm, m);
-    speer_bn_zero(&x1); x1.limbs[0] = 1; x1.n = 1;
+    speer_bn_zero(&x1);
+    x1.limbs[0] = 1;
+    x1.n = 1;
     speer_bn_zero(&x2);
-    
+
     while (!speer_bn_is_zero(&u) && !speer_bn_is_zero(&v)) {
         while (!speer_bn_is_odd(&u)) {
             speer_bn_shr1(&u);

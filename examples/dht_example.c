@@ -1,14 +1,16 @@
+#include "speer.h"
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <signal.h>
 
-#include "speer.h"
+#include <signal.h>
+#include <string.h>
+
 #include "dht.h"
 
 #define BOOTSTRAP_NODES 3
 
-static const char* bootstrap_addrs[BOOTSTRAP_NODES] = {
+static const char *bootstrap_addrs[BOOTSTRAP_NODES] = {
     "router.bittorrent.com:6881",
     "router.utorrent.com:6881",
     "dht.transmissionbt.com:6881",
@@ -23,11 +25,11 @@ static void on_signal(int sig) {
     running = 0;
 }
 
-static void print_hex(const uint8_t* data, size_t len) {
+static void print_hex(const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) printf("%02x", data[i]);
 }
 
-static int send_rpc(void* user, const char* addr, const uint8_t* data, size_t len) {
+static int send_rpc(void *user, const char *addr, const uint8_t *data, size_t len) {
     (void)user;
     (void)addr;
     (void)data;
@@ -35,7 +37,7 @@ static int send_rpc(void* user, const char* addr, const uint8_t* data, size_t le
     return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
@@ -61,7 +63,7 @@ int main(int argc, char** argv) {
     speer_config_default(&cfg);
     cfg.bind_port = 6881;
 
-    speer_host_t* host = speer_host_new(seed, &cfg);
+    speer_host_t *host = speer_host_new(seed, &cfg);
     if (!host) {
         fprintf(stderr, "Failed to create host\n");
         return 1;
@@ -69,14 +71,12 @@ int main(int argc, char** argv) {
 
     printf("DHT node started\n");
     printf("Node ID: ");
-    const uint8_t* pk = speer_host_get_public_key(host);
+    const uint8_t *pk = speer_host_get_public_key(host);
     print_hex(pk, 32);
     printf("\n");
     printf("Port: %d\n", speer_host_get_port(host));
     printf("Bootstrap nodes: %d\n", BOOTSTRAP_NODES);
-    for (int i = 0; i < BOOTSTRAP_NODES; i++) {
-        printf("  - %s\n", bootstrap_addrs[i]);
-    }
+    for (int i = 0; i < BOOTSTRAP_NODES; i++) { printf("  - %s\n", bootstrap_addrs[i]); }
     printf("\n");
 
     uint64_t last_bootstrap = 0;
@@ -86,9 +86,7 @@ int main(int argc, char** argv) {
 
         if (now - last_bootstrap > 30000) {
             int bootstrapped = dht_bootstrap_run(&g_dht, &g_bootstrap, now);
-            if (bootstrapped > 0) {
-                printf("Bootstrap: contacted %d nodes\n", bootstrapped);
-            }
+            if (bootstrapped > 0) { printf("Bootstrap: contacted %d nodes\n", bootstrapped); }
             if (dht_is_bootstrapped(&g_dht)) {
                 printf("DHT bootstrapped, total nodes: %d\n", g_dht.total_nodes);
             }

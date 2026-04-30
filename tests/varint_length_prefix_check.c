@@ -1,15 +1,23 @@
 #include "speer_internal.h"
-#include "varint.h"
-#include "length_prefix.h"
+
 #include <stdio.h>
+
 #include <string.h>
 
-#define FAIL(...) do { fprintf(stderr, __VA_ARGS__); return 1; } while (0)
+#include "length_prefix.h"
+#include "varint.h"
+
+#define FAIL(...)                     \
+    do {                              \
+        fprintf(stderr, __VA_ARGS__); \
+        return 1;                     \
+    } while (0)
 
 static int test_uvar_roundtrip(uint64_t v) {
     uint8_t buf[16];
     size_t n = speer_uvarint_encode(buf, sizeof(buf), v);
-    if (n == 0 || n != speer_uvarint_size(v)) FAIL("uvar size mismatch for %llu\n", (unsigned long long)v);
+    if (n == 0 || n != speer_uvarint_size(v))
+        FAIL("uvar size mismatch for %llu\n", (unsigned long long)v);
     uint64_t d = 0;
     size_t k = speer_uvarint_decode(buf, n, &d);
     if (k != n || d != v) FAIL("uvar roundtrip fail %llu\n", (unsigned long long)v);
@@ -44,7 +52,8 @@ int main(void) {
 
     if (speer_qvarint_encode(NULL, 0, 64) != 0) FAIL("qvar encode cap 0\n");
     uint8_t qtmp[8];
-    if (speer_qvarint_encode(qtmp, 7, (1ULL << 62) - 1) != 0) FAIL("qvar needs 8 bytes for large values\n");
+    if (speer_qvarint_encode(qtmp, 7, (1ULL << 62) - 1) != 0)
+        FAIL("qvar needs 8 bytes for large values\n");
     if (speer_qvarint_encode(qtmp, 8, (1ULL << 62) - 1) != 8) FAIL("qvar 8-byte encode\n");
     if (speer_qvarint_encode(qtmp, 8, (1ULL << 62)) != 0) FAIL("qvar reject >= 2^62\n");
 
@@ -53,7 +62,7 @@ int main(void) {
         FAIL("qvar_peek_len\n");
 
     uint8_t lp[256];
-    const uint8_t* pay;
+    const uint8_t *pay;
     size_t plen, wn, cons;
     uint8_t hello[] = "hello";
 
@@ -72,8 +81,10 @@ int main(void) {
 
     static uint8_t huge[0xffff];
     static uint8_t lp_big[2 + 0xffff];
-    if (speer_lp_u16_write(lp_big, sizeof(lp_big), huge, 0xffff, NULL) != 0) FAIL("lp_u16 max len\n");
-    if (speer_lp_u16_write(lp, sizeof(lp), huge, 0x10000, NULL) == 0) FAIL("lp_u16 reject overflow\n");
+    if (speer_lp_u16_write(lp_big, sizeof(lp_big), huge, 0xffff, NULL) != 0)
+        FAIL("lp_u16 max len\n");
+    if (speer_lp_u16_write(lp, sizeof(lp), huge, 0x10000, NULL) == 0)
+        FAIL("lp_u16 reject overflow\n");
 
     puts("varint_length_prefix: ok");
     return 0;

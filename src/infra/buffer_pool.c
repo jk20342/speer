@@ -1,23 +1,26 @@
-#include "speer_internal.h"
 #include "buffer_pool.h"
 
+#include "speer_internal.h"
+
 struct speer_buf_pool_s {
-    uint8_t* storage;
-    uint8_t* free_flags;
+    uint8_t *storage;
+    uint8_t *free_flags;
     size_t buffer_size;
     size_t count;
     size_t in_use;
     size_t next_hint;
 };
 
-speer_buf_pool_t* speer_buf_pool_create(size_t buffer_size, size_t count) {
+speer_buf_pool_t *speer_buf_pool_create(size_t buffer_size, size_t count) {
     if (buffer_size == 0 || count == 0) return NULL;
-    speer_buf_pool_t* p = (speer_buf_pool_t*)calloc(1, sizeof(*p));
+    speer_buf_pool_t *p = (speer_buf_pool_t *)calloc(1, sizeof(*p));
     if (!p) return NULL;
-    p->storage = (uint8_t*)calloc(count, buffer_size);
-    p->free_flags = (uint8_t*)calloc(count, 1);
+    p->storage = (uint8_t *)calloc(count, buffer_size);
+    p->free_flags = (uint8_t *)calloc(count, 1);
     if (!p->storage || !p->free_flags) {
-        free(p->storage); free(p->free_flags); free(p);
+        free(p->storage);
+        free(p->free_flags);
+        free(p);
         return NULL;
     }
     p->buffer_size = buffer_size;
@@ -25,14 +28,14 @@ speer_buf_pool_t* speer_buf_pool_create(size_t buffer_size, size_t count) {
     return p;
 }
 
-void speer_buf_pool_destroy(speer_buf_pool_t* p) {
+void speer_buf_pool_destroy(speer_buf_pool_t *p) {
     if (!p) return;
     free(p->storage);
     free(p->free_flags);
     free(p);
 }
 
-uint8_t* speer_buf_pool_acquire(speer_buf_pool_t* p, size_t* out_size) {
+uint8_t *speer_buf_pool_acquire(speer_buf_pool_t *p, size_t *out_size) {
     if (!p) return NULL;
     for (size_t off = 0; off < p->count; off++) {
         size_t i = (p->next_hint + off) % p->count;
@@ -47,7 +50,7 @@ uint8_t* speer_buf_pool_acquire(speer_buf_pool_t* p, size_t* out_size) {
     return NULL;
 }
 
-void speer_buf_pool_release(speer_buf_pool_t* p, uint8_t* buf) {
+void speer_buf_pool_release(speer_buf_pool_t *p, uint8_t *buf) {
     if (!p || !buf) return;
     if (buf < p->storage) return;
     size_t off = (size_t)(buf - p->storage);
@@ -60,10 +63,10 @@ void speer_buf_pool_release(speer_buf_pool_t* p, uint8_t* buf) {
     }
 }
 
-size_t speer_buf_pool_in_use(const speer_buf_pool_t* p) {
+size_t speer_buf_pool_in_use(const speer_buf_pool_t *p) {
     return p ? p->in_use : 0;
 }
 
-size_t speer_buf_pool_capacity(const speer_buf_pool_t* p) {
+size_t speer_buf_pool_capacity(const speer_buf_pool_t *p) {
     return p ? p->count : 0;
 }

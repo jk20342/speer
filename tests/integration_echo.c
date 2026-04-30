@@ -1,16 +1,18 @@
 #include "speer.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <string.h>
 
 typedef struct {
-    speer_peer_t* peer;
+    speer_peer_t *peer;
     int connected;
     int echoed;
     char data[64];
 } test_state_t;
 
-static void server_cb(speer_host_t* host, const speer_event_t* ev, void* user) {
+static void server_cb(speer_host_t *host, const speer_event_t *ev, void *user) {
     (void)host;
     (void)user;
     if (ev->type == SPEER_EVENT_STREAM_DATA && ev->stream && ev->len) {
@@ -18,9 +20,9 @@ static void server_cb(speer_host_t* host, const speer_event_t* ev, void* user) {
     }
 }
 
-static void client_cb(speer_host_t* host, const speer_event_t* ev, void* user) {
+static void client_cb(speer_host_t *host, const speer_event_t *ev, void *user) {
     (void)host;
-    test_state_t* st = (test_state_t*)user;
+    test_state_t *st = (test_state_t *)user;
     if (ev->type == SPEER_EVENT_PEER_CONNECTED) {
         st->peer = ev->peer;
         st->connected = 1;
@@ -32,14 +34,14 @@ static void client_cb(speer_host_t* host, const speer_event_t* ev, void* user) {
     }
 }
 
-static void poll_pair(speer_host_t* a, speer_host_t* b, int rounds) {
+static void poll_pair(speer_host_t *a, speer_host_t *b, int rounds) {
     for (int i = 0; i < rounds; i++) {
         speer_host_poll(a, 1);
         speer_host_poll(b, 1);
     }
 }
 
-static int wait_connected(speer_host_t* a, speer_host_t* b, test_state_t* st, speer_peer_t* peer) {
+static int wait_connected(speer_host_t *a, speer_host_t *b, test_state_t *st, speer_peer_t *peer) {
     for (int i = 0; i < 1000; i++) {
         poll_pair(a, b, 1);
         if (st->connected && speer_peer_is_connected(peer)) return 1;
@@ -47,7 +49,7 @@ static int wait_connected(speer_host_t* a, speer_host_t* b, test_state_t* st, sp
     return 0;
 }
 
-static int wait_echo(speer_host_t* a, speer_host_t* b, test_state_t* st) {
+static int wait_echo(speer_host_t *a, speer_host_t *b, test_state_t *st) {
     for (int i = 0; i < 1000; i++) {
         poll_pair(a, b, 1);
         if (st->echoed) return 1;
@@ -63,8 +65,8 @@ int main(void) {
     cfg.bind_address = "127.0.0.1";
     cfg.bind_port = 0;
 
-    speer_host_t* server = speer_host_new(server_seed, &cfg);
-    speer_host_t* client = speer_host_new(client_seed, &cfg);
+    speer_host_t *server = speer_host_new(server_seed, &cfg);
+    speer_host_t *client = speer_host_new(client_seed, &cfg);
     if (!server || !client) {
         puts("host create failed");
         return 1;
@@ -77,7 +79,7 @@ int main(void) {
 
     char addr[64];
     snprintf(addr, sizeof(addr), "127.0.0.1:%u", speer_host_get_port(server));
-    speer_peer_t* peer = speer_connect(client, speer_host_get_public_key(server), addr);
+    speer_peer_t *peer = speer_connect(client, speer_host_get_public_key(server), addr);
     if (!peer) {
         puts("connect create failed");
         return 1;
@@ -88,12 +90,12 @@ int main(void) {
         return 1;
     }
 
-    speer_stream_t* s = speer_stream_open(peer, 0);
+    speer_stream_t *s = speer_stream_open(peer, 0);
     if (!s) {
         puts("stream open failed");
         return 1;
     }
-    if (speer_stream_write(s, (const uint8_t*)"hi", 2) != 2) {
+    if (speer_stream_write(s, (const uint8_t *)"hi", 2) != 2) {
         puts("stream write failed");
         return 1;
     }

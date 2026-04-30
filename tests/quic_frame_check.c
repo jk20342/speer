@@ -1,9 +1,16 @@
 #include "speer_internal.h"
-#include "quic_frame.h"
+
 #include <stdio.h>
+
 #include <string.h>
 
-#define FAIL(...) do { fprintf(stderr, __VA_ARGS__); return 1; } while (0)
+#include "quic_frame.h"
+
+#define FAIL(...)                     \
+    do {                              \
+        fprintf(stderr, __VA_ARGS__); \
+        return 1;                     \
+    } while (0)
 
 int main(void) {
     uint8_t buf[512];
@@ -12,10 +19,10 @@ int main(void) {
 
     if (speer_qf_encode_ping(&w) != 0) FAIL("ping\n");
 
-    const uint8_t tlsfrag[] = { 0x01, 0x02, 0x03 };
+    const uint8_t tlsfrag[] = {0x01, 0x02, 0x03};
     if (speer_qf_encode_crypto(&w, 7, tlsfrag, sizeof(tlsfrag)) != 0) FAIL("crypto\n");
 
-    uint64_t ack_pairs[] = { 0, 3, 10, 2 };
+    uint64_t ack_pairs[] = {0, 3, 10, 2};
     if (speer_qf_encode_ack(&w, 12, 5000, ack_pairs, 2) != 0) FAIL("ack\n");
 
     const uint8_t stream_data[] = "quic";
@@ -24,13 +31,13 @@ int main(void) {
     if (speer_qf_encode_stream(&w, 4, 100, stream_data, sizeof(stream_data) - 1, 1) != 0)
         FAIL("stream off fin\n");
 
-    uint8_t pc[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    uint8_t pc[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     if (speer_qf_encode_path_challenge(&w, pc) != 0) FAIL("path_challenge\n");
     if (speer_qf_encode_path_response(&w, pc) != 0) FAIL("path_response\n");
     if (speer_qf_encode_handshake_done(&w) != 0) FAIL("handshake_done\n");
     if (speer_qf_encode_connection_close(&w, 0x100u, 6, "bye") != 0) FAIL("conn_close\n");
 
-    uint8_t cid[] = { 0xde, 0xad };
+    uint8_t cid[] = {0xde, 0xad};
     uint8_t tok[16];
     for (size_t i = 0; i < sizeof(tok); i++) tok[i] = (uint8_t)i;
     if (speer_qf_encode_new_connection_id(&w, 3, 1, cid, sizeof(cid), tok) != 0)
@@ -46,7 +53,7 @@ int main(void) {
     uint64_t off, ln;
     if (speer_qf_r_varint(&r, &off) != 0 || off != 7) FAIL("crypto off\n");
     if (speer_qf_r_varint(&r, &ln) != 0 || ln != sizeof(tlsfrag)) FAIL("crypto len\n");
-    const uint8_t* body;
+    const uint8_t *body;
     if (speer_qf_r_bytes(&r, &body, sizeof(tlsfrag)) != 0 ||
         memcmp(body, tlsfrag, sizeof(tlsfrag)) != 0)
         FAIL("crypto body\n");
@@ -66,8 +73,7 @@ int main(void) {
     uint64_t sid;
     if (speer_qf_r_varint(&r, &sid) != 0 || sid != 4) FAIL("stream id1\n");
     if (speer_qf_r_varint(&r, &ln) != 0 || ln != sizeof(stream_data) - 1) FAIL("stream len1\n");
-    if (speer_qf_r_bytes(&r, &body, (size_t)ln) != 0 ||
-        memcmp(body, stream_data, (size_t)ln) != 0)
+    if (speer_qf_r_bytes(&r, &body, (size_t)ln) != 0 || memcmp(body, stream_data, (size_t)ln) != 0)
         FAIL("stream data1\n");
 
     if (speer_qf_r_u8(&r, &ty) != 0 || ty != (QF_STREAM_BASE | 0x02 | 0x04 | 0x01))
@@ -75,8 +81,7 @@ int main(void) {
     if (speer_qf_r_varint(&r, &sid) != 0 || sid != 4) FAIL("stream id2\n");
     if (speer_qf_r_varint(&r, &off) != 0 || off != 100) FAIL("stream off2\n");
     if (speer_qf_r_varint(&r, &ln) != 0 || ln != sizeof(stream_data) - 1) FAIL("stream len2\n");
-    if (speer_qf_r_bytes(&r, &body, (size_t)ln) != 0 ||
-        memcmp(body, stream_data, (size_t)ln) != 0)
+    if (speer_qf_r_bytes(&r, &body, (size_t)ln) != 0 || memcmp(body, stream_data, (size_t)ln) != 0)
         FAIL("stream data2\n");
 
     if (speer_qf_r_u8(&r, &ty) != 0 || ty != QF_PATH_CHALLENGE) FAIL("pc\n");

@@ -1,5 +1,6 @@
-#include "speer_internal.h"
 #include "field25519.h"
+
+#include "speer_internal.h"
 
 void fe25519_0(fe25519 r) {
     for (int i = 0; i < 16; i++) r[i] = 0;
@@ -65,26 +66,35 @@ void fe25519_pow22523(fe25519 r, const fe25519 a) {
     int i;
 
     fe25519_sq(t0, a);
-    fe25519_sq(t1, t0); for (i = 1; i < 2; i++) fe25519_sq(t1, t1);
+    fe25519_sq(t1, t0);
+    for (i = 1; i < 2; i++) fe25519_sq(t1, t1);
     fe25519_mul(t1, a, t1);
     fe25519_mul(t0, t0, t1);
     fe25519_sq(t0, t0);
     fe25519_mul(t0, t1, t0);
-    fe25519_sq(t1, t0); for (i = 1; i < 5; i++) fe25519_sq(t1, t1);
+    fe25519_sq(t1, t0);
+    for (i = 1; i < 5; i++) fe25519_sq(t1, t1);
     fe25519_mul(t0, t1, t0);
-    fe25519_sq(t1, t0); for (i = 1; i < 10; i++) fe25519_sq(t1, t1);
+    fe25519_sq(t1, t0);
+    for (i = 1; i < 10; i++) fe25519_sq(t1, t1);
     fe25519_mul(t1, t1, t0);
-    fe25519_sq(t2, t1); for (i = 1; i < 20; i++) fe25519_sq(t2, t2);
+    fe25519_sq(t2, t1);
+    for (i = 1; i < 20; i++) fe25519_sq(t2, t2);
     fe25519_mul(t1, t2, t1);
-    fe25519_sq(t1, t1); for (i = 1; i < 10; i++) fe25519_sq(t1, t1);
+    fe25519_sq(t1, t1);
+    for (i = 1; i < 10; i++) fe25519_sq(t1, t1);
     fe25519_mul(t0, t1, t0);
-    fe25519_sq(t1, t0); for (i = 1; i < 50; i++) fe25519_sq(t1, t1);
+    fe25519_sq(t1, t0);
+    for (i = 1; i < 50; i++) fe25519_sq(t1, t1);
     fe25519_mul(t1, t1, t0);
-    fe25519_sq(t2, t1); for (i = 1; i < 100; i++) fe25519_sq(t2, t2);
+    fe25519_sq(t2, t1);
+    for (i = 1; i < 100; i++) fe25519_sq(t2, t2);
     fe25519_mul(t1, t2, t1);
-    fe25519_sq(t1, t1); for (i = 1; i < 50; i++) fe25519_sq(t1, t1);
+    fe25519_sq(t1, t1);
+    for (i = 1; i < 50; i++) fe25519_sq(t1, t1);
     fe25519_mul(t0, t1, t0);
-    fe25519_sq(t0, t0); for (i = 1; i < 2; i++) fe25519_sq(t0, t0);
+    fe25519_sq(t0, t0);
+    for (i = 1; i < 2; i++) fe25519_sq(t0, t0);
     fe25519_mul(r, t0, a);
 }
 
@@ -105,7 +115,9 @@ void fe25519_frombytes(fe25519 r, const uint8_t in[32]) {
 void fe25519_tobytes(uint8_t out[32], const fe25519 a) {
     fe25519 t, m;
     fe25519_copy(t, a);
-    fe25519_carry(t); fe25519_carry(t); fe25519_carry(t);
+    fe25519_carry(t);
+    fe25519_carry(t);
+    fe25519_carry(t);
     for (int j = 0; j < 2; j++) {
         m[0] = t[0] - 0xffed;
         for (int i = 1; i < 15; i++) {

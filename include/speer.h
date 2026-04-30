@@ -44,9 +44,9 @@
 #ifndef SPEER_H
 #define SPEER_H
 
-#include <stdint.h>
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,12 +61,12 @@ extern "C" {
 
 /** @name Size Constants */
 /**@{*/
-#define SPEER_PUBLIC_KEY_SIZE 32  /**< Ed25519 public key size in bytes */
-#define SPEER_PRIVATE_KEY_SIZE 32 /**< Ed25519 private key size in bytes */
-#define SPEER_CONNECTION_ID_SIZE 8  /**< Connection ID size in bytes */
-#define SPEER_MAX_PACKET_SIZE 1350 /**< Maximum UDP packet payload size */
-#define SPEER_MAX_STREAMS 1024   /**< Maximum concurrent streams per peer */
-#define SPEER_MAX_PEERS 256      /**< Maximum connected peers per host */
+#define SPEER_PUBLIC_KEY_SIZE    32   /**< Ed25519 public key size in bytes */
+#define SPEER_PRIVATE_KEY_SIZE   32   /**< Ed25519 private key size in bytes */
+#define SPEER_CONNECTION_ID_SIZE 8    /**< Connection ID size in bytes */
+#define SPEER_MAX_PACKET_SIZE    1350 /**< Maximum UDP packet payload size */
+#define SPEER_MAX_STREAMS        1024 /**< Maximum concurrent streams per peer */
+#define SPEER_MAX_PEERS          256  /**< Maximum connected peers per host */
 /**@}*/
 
 /**
@@ -97,15 +97,15 @@ typedef struct speer_stream speer_stream_t;
  * @brief Result codes for speer operations
  */
 typedef enum {
-    SPEER_OK = 0,                    /**< Success */
-    SPEER_ERROR_INVALID_PARAM = -1,  /**< Invalid parameter passed */
-    SPEER_ERROR_NO_MEMORY = -2,      /**< Memory allocation failed */
-    SPEER_ERROR_NETWORK = -3,        /**< Network operation failed */
-    SPEER_ERROR_CRYPTO = -4,         /**< Cryptographic operation failed */
-    SPEER_ERROR_HANDSHAKE = -5,      /**< Handshake failed or invalid */
-    SPEER_ERROR_TIMEOUT = -6,        /**< Operation timed out */
-    SPEER_ERROR_PEER_NOT_FOUND = -7, /**< Peer not found */
-    SPEER_ERROR_STREAM_CLOSED = -8,  /**< Stream is closed */
+    SPEER_OK = 0,                      /**< Success */
+    SPEER_ERROR_INVALID_PARAM = -1,    /**< Invalid parameter passed */
+    SPEER_ERROR_NO_MEMORY = -2,        /**< Memory allocation failed */
+    SPEER_ERROR_NETWORK = -3,          /**< Network operation failed */
+    SPEER_ERROR_CRYPTO = -4,           /**< Cryptographic operation failed */
+    SPEER_ERROR_HANDSHAKE = -5,        /**< Handshake failed or invalid */
+    SPEER_ERROR_TIMEOUT = -6,          /**< Operation timed out */
+    SPEER_ERROR_PEER_NOT_FOUND = -7,   /**< Peer not found */
+    SPEER_ERROR_STREAM_CLOSED = -8,    /**< Stream is closed */
     SPEER_ERROR_BUFFER_TOO_SMALL = -9, /**< Buffer too small */
 } speer_result_t;
 
@@ -113,13 +113,13 @@ typedef enum {
  * @brief Event types passed to the host callback
  */
 typedef enum {
-    SPEER_EVENT_NONE = 0,              /**< No event (placeholder) */
-    SPEER_EVENT_PEER_CONNECTED,        /**< Peer connection established */
-    SPEER_EVENT_PEER_DISCONNECTED,     /**< Peer connection closed */
-    SPEER_EVENT_STREAM_OPENED,         /**< New stream opened */
-    SPEER_EVENT_STREAM_DATA,           /**< Data received on stream */
-    SPEER_EVENT_STREAM_CLOSED,         /**< Stream closed */
-    SPEER_EVENT_ERROR,                 /**< Error occurred */
+    SPEER_EVENT_NONE = 0,          /**< No event (placeholder) */
+    SPEER_EVENT_PEER_CONNECTED,    /**< Peer connection established */
+    SPEER_EVENT_PEER_DISCONNECTED, /**< Peer connection closed */
+    SPEER_EVENT_STREAM_OPENED,     /**< New stream opened */
+    SPEER_EVENT_STREAM_DATA,       /**< Data received on stream */
+    SPEER_EVENT_STREAM_CLOSED,     /**< Stream closed */
+    SPEER_EVENT_ERROR,             /**< Error occurred */
 } speer_event_type_t;
 
 /**
@@ -140,13 +140,13 @@ typedef enum {
  * The valid fields depend on the event type.
  */
 typedef struct {
-    speer_event_type_t type;           /**< Type of event */
-    speer_peer_t* peer;                /**< Associated peer (if applicable) */
-    speer_stream_t* stream;            /**< Associated stream (if applicable) */
-    uint32_t stream_id;                /**< Stream ID (for stream events) */
-    const uint8_t* data;               /**< Data pointer (for STREAM_DATA) */
-    size_t len;                        /**< Data length (for STREAM_DATA) */
-    int error_code;                    /**< Error code (for ERROR events) */
+    speer_event_type_t type;                     /**< Type of event */
+    speer_peer_t *peer;                          /**< Associated peer (if applicable) */
+    speer_stream_t *stream;                      /**< Associated stream (if applicable) */
+    uint32_t stream_id;                          /**< Stream ID (for stream events) */
+    const uint8_t *data;                         /**< Data pointer (for STREAM_DATA) */
+    size_t len;                                  /**< Data length (for STREAM_DATA) */
+    int error_code;                              /**< Error code (for ERROR events) */
     speer_disconnect_reason_t disconnect_reason; /**< Disconnect reason */
 } speer_event_t;
 
@@ -157,14 +157,14 @@ typedef struct {
  * modifying specific fields.
  */
 typedef struct {
-    uint16_t bind_port;                /**< UDP port to bind (0 = auto) */
-    const char* bind_address;          /**< Bind address (NULL = all interfaces) */
-    const char* stun_server;           /**< STUN server address (NULL = disabled) */
-    const char* relay_server;          /**< Relay server address (NULL = disabled) */
-    uint32_t max_peers;                /**< Maximum peers (default: SPEER_MAX_PEERS) */
-    uint32_t max_streams;              /**< Maximum streams (default: SPEER_MAX_STREAMS) */
-    uint32_t handshake_timeout_ms;     /**< Handshake timeout in milliseconds */
-    uint32_t keepalive_interval_ms;    /**< Keepalive interval in milliseconds */
+    uint16_t bind_port;             /**< UDP port to bind (0 = auto) */
+    const char *bind_address;       /**< Bind address (NULL = all interfaces) */
+    const char *stun_server;        /**< STUN server address (NULL = disabled) */
+    const char *relay_server;       /**< Relay server address (NULL = disabled) */
+    uint32_t max_peers;             /**< Maximum peers (default: SPEER_MAX_PEERS) */
+    uint32_t max_streams;           /**< Maximum streams (default: SPEER_MAX_STREAMS) */
+    uint32_t handshake_timeout_ms;  /**< Handshake timeout in milliseconds */
+    uint32_t keepalive_interval_ms; /**< Keepalive interval in milliseconds */
 } speer_config_t;
 
 /**
@@ -174,7 +174,7 @@ typedef struct {
  *
  * @note Always call this before modifying config to ensure forward compatibility
  */
-static inline void speer_config_default(speer_config_t* cfg) {
+static inline void speer_config_default(speer_config_t *cfg) {
     cfg->bind_port = 0;
     cfg->bind_address = NULL;
     cfg->stun_server = NULL;
@@ -201,8 +201,8 @@ static inline void speer_config_default(speer_config_t* cfg) {
  * @note The host takes ownership of the socket and will bind to the configured port
  * @note Use speer_host_free() to release resources
  */
-speer_host_t* speer_host_new(const uint8_t seed_key[SPEER_PRIVATE_KEY_SIZE],
-                               const speer_config_t* config);
+speer_host_t *speer_host_new(const uint8_t seed_key[SPEER_PRIVATE_KEY_SIZE],
+                             const speer_config_t *config);
 
 /**
  * @brief Free a host and all associated resources
@@ -212,7 +212,7 @@ speer_host_t* speer_host_new(const uint8_t seed_key[SPEER_PRIVATE_KEY_SIZE],
  *
  * @param host Host to free (may be NULL)
  */
-void speer_host_free(speer_host_t* host);
+void speer_host_free(speer_host_t *host);
 
 /**
  * @brief Poll for network events
@@ -224,7 +224,7 @@ void speer_host_free(speer_host_t* host);
  * @param timeout_ms Maximum time to block waiting for events (0 = non-blocking)
  * @return Number of packets processed, or negative on error
  */
-int speer_host_poll(speer_host_t* host, int timeout_ms);
+int speer_host_poll(speer_host_t *host, int timeout_ms);
 
 /**
  * @brief Set the event callback function
@@ -235,11 +235,10 @@ int speer_host_poll(speer_host_t* host, int timeout_ms);
  * @param callback Function to call for events (NULL to disable)
  * @param user_data User data passed to callback
  */
-void speer_host_set_callback(speer_host_t* host,
-                               void (*callback)(speer_host_t* host,
-                                                  const speer_event_t* event,
-                                                  void* user_data),
-                               void* user_data);
+void speer_host_set_callback(speer_host_t *host,
+                             void (*callback)(speer_host_t *host, const speer_event_t *event,
+                                              void *user_data),
+                             void *user_data);
 
 /**
  * @brief Get the host's public key
@@ -249,7 +248,7 @@ void speer_host_set_callback(speer_host_t* host,
  * @param host Host instance
  * @return Pointer to 32-byte public key, or NULL
  */
-const uint8_t* speer_host_get_public_key(const speer_host_t* host);
+const uint8_t *speer_host_get_public_key(const speer_host_t *host);
 
 /**
  * @brief Get the host's bound port
@@ -257,7 +256,7 @@ const uint8_t* speer_host_get_public_key(const speer_host_t* host);
  * @param host Host instance
  * @return UDP port number, or 0 on error
  */
-uint16_t speer_host_get_port(const speer_host_t* host);
+uint16_t speer_host_get_port(const speer_host_t *host);
 
 /**@}*/
 
@@ -277,9 +276,8 @@ uint16_t speer_host_get_port(const speer_host_t* host);
  *
  * @note The peer may not be immediately connected - wait for SPEER_EVENT_PEER_CONNECTED
  */
-speer_peer_t* speer_connect(speer_host_t* host,
-                              const uint8_t public_key[SPEER_PUBLIC_KEY_SIZE],
-                              const char* address);
+speer_peer_t *speer_connect(speer_host_t *host, const uint8_t public_key[SPEER_PUBLIC_KEY_SIZE],
+                            const char *address);
 
 /**
  * @brief Close a peer connection
@@ -288,7 +286,7 @@ speer_peer_t* speer_connect(speer_host_t* host,
  *
  * @param peer Peer to close (may be NULL)
  */
-void speer_peer_close(speer_peer_t* peer);
+void speer_peer_close(speer_peer_t *peer);
 
 /**
  * @brief Set/update the peer's network address
@@ -300,7 +298,7 @@ void speer_peer_close(speer_peer_t* peer);
  * @param address New address as "host:port" string
  * @return SPEER_OK on success, error code on failure
  */
-int speer_peer_set_address(speer_peer_t* peer, const char* address);
+int speer_peer_set_address(speer_peer_t *peer, const char *address);
 
 /**
  * @brief Check if peer connection is established
@@ -308,7 +306,7 @@ int speer_peer_set_address(speer_peer_t* peer, const char* address);
  * @param peer Peer instance
  * @return true if handshake complete and connection established
  */
-bool speer_peer_is_connected(const speer_peer_t* peer);
+bool speer_peer_is_connected(const speer_peer_t *peer);
 
 /**
  * @brief Get the peer's public key
@@ -316,7 +314,7 @@ bool speer_peer_is_connected(const speer_peer_t* peer);
  * @param peer Peer instance
  * @return Pointer to 32-byte public key, or NULL
  */
-const uint8_t* speer_peer_get_public_key(const speer_peer_t* peer);
+const uint8_t *speer_peer_get_public_key(const speer_peer_t *peer);
 
 /**@}*/
 
@@ -333,7 +331,7 @@ const uint8_t* speer_peer_get_public_key(const speer_peer_t* peer);
  * @param stream_id Stream ID (0 for auto-assign)
  * @return New stream handle, or NULL on error
  */
-speer_stream_t* speer_stream_open(speer_peer_t* peer, uint32_t stream_id);
+speer_stream_t *speer_stream_open(speer_peer_t *peer, uint32_t stream_id);
 
 /**
  * @brief Close a stream
@@ -342,7 +340,7 @@ speer_stream_t* speer_stream_open(speer_peer_t* peer, uint32_t stream_id);
  *
  * @param stream Stream to close (may be NULL)
  */
-void speer_stream_close(speer_stream_t* stream);
+void speer_stream_close(speer_stream_t *stream);
 
 /**
  * @brief Write data to a stream
@@ -354,7 +352,7 @@ void speer_stream_close(speer_stream_t* stream);
  * @param len Number of bytes to send
  * @return Number of bytes sent, or negative error code
  */
-int speer_stream_write(speer_stream_t* stream, const uint8_t* data, size_t len);
+int speer_stream_write(speer_stream_t *stream, const uint8_t *data, size_t len);
 
 /**
  * @brief Read data from a stream
@@ -367,7 +365,7 @@ int speer_stream_write(speer_stream_t* stream, const uint8_t* data, size_t len);
  * @param cap Capacity of buffer in bytes
  * @return Number of bytes read, 0 if no data, or negative error code
  */
-int speer_stream_read(speer_stream_t* stream, uint8_t* buf, size_t cap);
+int speer_stream_read(speer_stream_t *stream, uint8_t *buf, size_t cap);
 
 /**
  * @brief Check if a stream is open
@@ -375,7 +373,7 @@ int speer_stream_read(speer_stream_t* stream, uint8_t* buf, size_t cap);
  * @param stream Stream instance
  * @return true if stream is open and can be used
  */
-bool speer_stream_is_open(const speer_stream_t* stream);
+bool speer_stream_is_open(const speer_stream_t *stream);
 
 /**
  * @brief Get the stream ID
@@ -383,7 +381,7 @@ bool speer_stream_is_open(const speer_stream_t* stream);
  * @param stream Stream instance
  * @return Stream ID, or 0 on error
  */
-uint32_t speer_stream_get_id(const speer_stream_t* stream);
+uint32_t speer_stream_get_id(const speer_stream_t *stream);
 
 /**@}*/
 
@@ -402,8 +400,7 @@ uint32_t speer_stream_get_id(const speer_stream_t* stream);
  * @return SPEER_OK on success, error code on failure
  */
 int speer_generate_keypair(uint8_t public_key[SPEER_PUBLIC_KEY_SIZE],
-                             uint8_t private_key[SPEER_PRIVATE_KEY_SIZE],
-                             const uint8_t seed[32]);
+                           uint8_t private_key[SPEER_PRIVATE_KEY_SIZE], const uint8_t seed[32]);
 
 /**
  * @brief Generate cryptographically secure random bytes
@@ -413,7 +410,7 @@ int speer_generate_keypair(uint8_t public_key[SPEER_PUBLIC_KEY_SIZE],
  * @param[out] buf Buffer to fill with random bytes
  * @param len Number of bytes to generate
  */
-void speer_random_bytes(uint8_t* buf, size_t len);
+void speer_random_bytes(uint8_t *buf, size_t len);
 
 /**
  * @brief Get current timestamp in milliseconds

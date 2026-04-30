@@ -1,15 +1,22 @@
 #include "speer_internal.h"
-#include "asn1.h"
+
 #include <stdio.h>
+
 #include <string.h>
 
-#define FAIL(...) do { fprintf(stderr, __VA_ARGS__); return 1; } while (0)
+#include "asn1.h"
+
+#define FAIL(...)                     \
+    do {                              \
+        fprintf(stderr, __VA_ARGS__); \
+        return 1;                     \
+    } while (0)
 
 /* SEQUENCE { INTEGER 42 } */
-static const uint8_t kSeqInt[] = { 0x30, 0x03, 0x02, 0x01, 0x2a };
+static const uint8_t kSeqInt[] = {0x30, 0x03, 0x02, 0x01, 0x2a};
 
 /* OID 2.5.4.3 (commonName) */
-static const uint8_t kOidCn[] = { 0x06, 0x03, 0x55, 0x04, 0x03 };
+static const uint8_t kOidCn[] = {0x06, 0x03, 0x55, 0x04, 0x03};
 
 int main(void) {
     speer_asn1_t root;
@@ -29,14 +36,14 @@ int main(void) {
     speer_asn1_t oid;
     if (speer_asn1_parse(kOidCn, sizeof(kOidCn), &oid) != 0 || oid.tag != ASN1_OID)
         FAIL("parse oid\n");
-    uint8_t raw[] = { 0x55, 0x04, 0x03 };
+    uint8_t raw[] = {0x55, 0x04, 0x03};
     if (!speer_asn1_oid_eq(&oid, raw, sizeof(raw))) FAIL("oid_eq positive\n");
     if (speer_asn1_oid_eq(&oid, raw, 2)) FAIL("oid_eq negative len\n");
 
-    static const uint8_t kBitStr[] = { 0x03, 0x04, 0x00, 0x01, 0x02, 0x03 };
+    static const uint8_t kBitStr[] = {0x03, 0x04, 0x00, 0x01, 0x02, 0x03};
     speer_asn1_t bs;
     if (speer_asn1_parse(kBitStr, sizeof(kBitStr), &bs) != 0) FAIL("bitstr parse\n");
-    const uint8_t* bits = NULL;
+    const uint8_t *bits = NULL;
     size_t bc = 0;
     uint8_t unused = 0xff;
     if (speer_asn1_get_bit_string(&bs, &bits, &bc, &unused) != 0 || unused != 0 || bc != 3 ||
