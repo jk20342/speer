@@ -14,12 +14,6 @@
 #include <arpa/inet.h>
 #endif
 
-#define MIN(a, b)           ((a) < (b) ? (a) : (b))
-#define MAX(a, b)           ((a) > (b) ? (a) : (b))
-#define COPY(dst, src, len) memcpy((dst), (src), (len))
-#define ZERO(p, len)        memset((p), 0, (len))
-#define EQUAL(a, b, len)    (memcmp((a), (b), (len)) == 0)
-
 static uint8_t g_dht_token_secret[32];
 static int g_dht_token_secret_initialized = 0;
 

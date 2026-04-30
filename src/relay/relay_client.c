@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "../speer_internal.h"
 #include "circuit_relay.h"
 #include "dcutr.h"
 
@@ -23,12 +24,6 @@ typedef int socklen_t;
 #include <unistd.h>
 #define CLOSESOCKET close
 #endif
-
-#define MIN(a, b)           ((a) < (b) ? (a) : (b))
-#define MAX(a, b)           ((a) > (b) ? (a) : (b))
-#define COPY(dst, src, len) memcpy((dst), (src), (len))
-#define ZERO(p, len)        memset((p), 0, (len))
-#define EQUAL(a, b, len)    (memcmp((a), (b), (len)) == 0)
 
 extern uint64_t speer_timestamp_ms(void);
 
