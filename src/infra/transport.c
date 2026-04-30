@@ -215,51 +215,6 @@ static void recovery_on_packet_sent(recovery_ctx_t* rcv, uint64_t pkt_num,
     rcv->conn->pkt_num++;
 }
 
-static void recovery_on_ack_received(recovery_ctx_t* rcv, const ack_frame_t* ack, uint64_t now_ms) {
-    uint64_t largest_acked = ack->largest_acked;
-    
-    if (largest_acked > rcv->largest_acked_pkt) {
-        rcv->largest_acked_pkt = largest_acked;
-        
-        sent_pkt_t* pkt = sent_queue_find(&rcv->sent, largest_acked);
-        if (pkt && pkt->in_flight) {
-            uint32_t rtt = (uint32_t)(now_ms - pkt->send_time_ms);
-            speer_conn_update_rtt(rcv->conn, rtt);
-            sent_queue_remove(&rcv->sent, pkt);
-        }
-    }
-    
-    for (uint32_t i = 0; i < ack->num_ranges; i++) {
-        uint64_t gap = ack->ranges[i * 2];
-        uint64_t ack_range_len = ack->ranges[i * 2 + 1];
-        
-        uint64_t acked = largest_acked - gap;
-        for (uint64_t j = 0; j <= ack_range_len && acked > 0; j++) {
-            sent_pkt_t* pkt = sent_queue_find(&rcv->sent, acked);
-            if (pkt && pkt->in_flight) {
-                sent_queue_remove(&rcv->sent, pkt);
-            }
-            if (j < ack_range_len) acked--;
-        }
-    }
-    
-    recv_tracker_clear_up_to(&rcv->received, largest_acked);
-    
-    if (rcv->sent.bytes_in_flight > 0) {
-        if (rcv->conn->cwnd < rcv->conn->ssthresh) {
-            rcv->conn->cwnd += 1460;
-            if (rcv->conn->cwnd > MAX_CWND) rcv->conn->cwnd = MAX_CWND;
-        } else {
-            rcv->conn->cwnd += (1460 * 1460) / rcv->conn->cwnd;
-        }
-    }
-}
-
-static void recovery_on_packet_lost(recovery_ctx_t* rcv) {
-    rcv->conn->ssthresh = MAX(rcv->sent.bytes_in_flight / 2, MIN_CWND);
-    rcv->conn->cwnd = rcv->conn->ssthresh;
-}
-
 static void recovery_on_packet_received(recovery_ctx_t* rcv, uint64_t pkt_num, uint64_t now_ms) {
     if (recv_tracker_should_ack(&rcv->received, pkt_num, now_ms)) {
         ack_frame_add(&rcv->pending_ack, pkt_num);
@@ -269,37 +224,6 @@ static void recovery_on_packet_received(recovery_ctx_t* rcv, uint64_t pkt_num, u
         }
     }
     rcv->conn->last_recv_ms = now_ms;
-}
-
-static int recovery_get_loss_pn(recovery_ctx_t* rcv, uint64_t now_ms, uint64_t* lost_pn) {
-    uint64_t loss_time = rcv->conn->rtt_ms + 4 * rcv->conn->rtt_var_ms;
-    
-    for (uint32_t i = rcv->sent.head; i < rcv->sent.tail; i++) {
-        sent_pkt_t* pkt = &rcv->sent.pkts[i % MAX_SENT_PKTS];
-        if (pkt->in_flight && now_ms - pkt->send_time_ms > loss_time) {
-            *lost_pn = pkt->pkt_num;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static size_t recovery_get_retransmissions(recovery_ctx_t* rcv, uint64_t now_ms,
-                                           uint8_t** packets, uint64_t* pkt_nums,
-                                           size_t max_pkts) {
-    size_t count = 0;
-    uint64_t loss_time = rcv->conn->rtt_ms + 4 * rcv->conn->rtt_var_ms;
-    
-    for (uint32_t i = rcv->sent.head; i < rcv->sent.tail && count < max_pkts; i++) {
-        sent_pkt_t* pkt = &rcv->sent.pkts[i % MAX_SENT_PKTS];
-        if (pkt->in_flight && now_ms - pkt->send_time_ms > loss_time) {
-            packets[count] = pkt->data;
-            pkt_nums[count] = pkt->pkt_num;
-            count++;
-        }
-    }
-    
-    return count;
 }
 
 int speer_transport_send(speer_peer_t* peer,
