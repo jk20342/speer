@@ -6,7 +6,7 @@
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = speer
 PROJECT_NUMBER         = 0.1.0
-PROJECT_BRIEF          = "A tiny libp2p implementation in C"
+PROJECT_BRIEF          = "A tiny libp2p in C: Noise XX, libp2p over TCP, partial QUIC v1, partial TLS 1.3, optional Web PKI. ~13k LOC, zero external dependencies."
 PROJECT_LOGO           =
 OUTPUT_DIRECTORY       = docs/doxygen
 CREATE_SUBDIRS         = NO

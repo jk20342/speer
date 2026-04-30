@@ -1,6 +1,8 @@
 # speer
 
-A tiny libp2p in C. Full QUIC v1 + TLS 1.3 + Web PKI in ~20k LOC, zero dependencies.
+A tiny libp2p in C. Noise XX, libp2p over TCP, partial QUIC v1, partial TLS 1.3, optional Web PKI. ~13k LOC of code, zero external dependencies.
+
+See [docs/architecture.md](docs/architecture.md) for the per-protocol status table and [docs/SECURITY.md](docs/SECURITY.md) for the trust model.
 
 ## Build
 
@@ -15,7 +17,7 @@ On **Windows** with MinGW, `mingw32-make` (or GNU Make with `OS=Windows_NT`) bui
 
 speer exposes the stack at every level. Pick the layer you need.
 
-### Layer 1: speer-native (Noise + reliable UDP)
+### Layer 1: speer-native (Noise XX over UDP, framed packets)
 
 ```c
 #include "speer.h"
@@ -28,7 +30,7 @@ speer_stream_write(s, (uint8_t*)"hello", 5);
 while (running) speer_host_poll(host, 100);
 ```
 
-### Layer 2: libp2p over TCP
+### Layer 2: libp2p over TCP (Noise XX + Yamux)
 
 ```c
 #include "transport_tcp.h"
@@ -47,13 +49,14 @@ speer_yamux_init(&mux, 1);
 speer_yamux_stream_t* stream = speer_yamux_open_stream(&mux);
 ```
 
-### Layer 3: QUIC v1
+### Layer 3: QUIC v1 packet codec (no full connection / loss recovery yet)
 
 ```c
 #include "quic_pkt.h"
 
 speer_quic_keys_t client_keys, server_keys;
-speer_quic_keys_init_initial(&client_keys, &server_keys, dcid, dcid_len);
+speer_quic_keys_init_initial(&client_keys, &server_keys,
+                             dcid, dcid_len, QUIC_VERSION_V1);
 
 speer_quic_pkt_t pkt = {
     .is_long = 1, .pkt_type = QUIC_PT_INITIAL, .version = QUIC_VERSION_V1,
@@ -63,7 +66,9 @@ speer_quic_pkt_t pkt = {
 speer_quic_pkt_encode_long(out, sizeof(out), &out_len, &pkt, &client_keys);
 ```
 
-### Layer 4: TLS 1.3 + Web PKI
+### Layer 4: TLS 1.3 + optional Web PKI
+
+CertificateVerify and Finished are verified. WebPKI chain validation requires a CA bundle; without one, trust falls back to the libp2p extension.
 
 ```c
 #include "tls13_handshake.h"
@@ -96,12 +101,25 @@ speer_x509_verify_chain(speer_ca_bundle_default(),
 
 ## Build flags
 
-| Flag           | Default  | Adds                                       |
-|----------------|----------|--------------------------------------------|
-| (none)         | on       | Layer 1 + 2: Noise + TCP + libp2p MVP      |
-| `SPEER_QUIC`   | on       | Layer 3: QUIC v1 + TLS 1.3 + libp2p certs  |
-| `SPEER_WEBPKI` | opt-in   | Layer 4: bignum, RSA, ECDSA, RFC 5280      |
-| `SPEER_RELAY`  | on       | Circuit Relay v2 + DCUtR                   |
+| Flag           | Default  | Adds                                              |
+|----------------|----------|---------------------------------------------------|
+| (none)         | on       | Layer 1 + 2: Noise + TCP + libp2p                 |
+| `SPEER_QUIC`   | on       | Layer 3: QUIC v1 packet codec + TLS 1.3 + libp2p TLS certs |
+| `SPEER_WEBPKI` | opt-in   | Layer 4: bignum, RSA, ECDSA, RFC 5280 chain verify |
+| `SPEER_RELAY`  | on       | Circuit Relay v2 + DCUtR                          |
+
+## Status
+
+| Protocol         | State   |
+|------------------|---------|
+| Noise XX         | full    |
+| Yamux            | full    |
+| mDNS             | full (records are untrusted hints) |
+| Kademlia DHT     | partial (STORE tokens, iterative lookup) |
+| TLS 1.3          | partial (CV/Finished verified; HRR/KeyUpdate/mutual partial) |
+| QUIC v1          | partial (packet codec only; no full connection, loss recovery, migration) |
+| Circuit Relay v2 | partial (auth on RESERVE/STOP) |
+| DCUtR            | partial (per-peer state, anti-spoofed candidates) |
 
 ## License
 
