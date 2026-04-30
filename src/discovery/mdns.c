@@ -1,3 +1,7 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+
 #include "mdns.h"
 #include <string.h>
 #include <stdlib.h>
@@ -133,6 +137,10 @@ int mdns_init(mdns_ctx_t* ctx) {
     int reuse = 1;
     setsockopt(ctx->socket_ipv4, SOL_SOCKET, SO_REUSEADDR,
                (const char*)&reuse, sizeof(reuse));
+#ifdef SO_REUSEPORT
+    setsockopt(ctx->socket_ipv4, SOL_SOCKET, SO_REUSEPORT,
+               (const char*)&reuse, sizeof(reuse));
+#endif
     int loop = 1;
     setsockopt(ctx->socket_ipv4, IPPROTO_IP, IP_MULTICAST_LOOP,
                (const char*)&loop, sizeof(loop));
