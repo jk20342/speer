@@ -28,12 +28,13 @@ static int sock_v4_addr(struct sockaddr_in *sin, const char *host, uint16_t port
         return 0;
     }
 #if defined(_WIN32)
-    struct in_addr v4;
-    int sz = sizeof(v4);
-    if (WSAStringToAddressA((char *)host, AF_INET, NULL, (struct sockaddr *)&v4, &sz) != 0) {
+    struct sockaddr_in parsed;
+    int sz = sizeof(parsed);
+    ZERO(&parsed, sizeof(parsed));
+    if (WSAStringToAddressA((char *)host, AF_INET, NULL, (struct sockaddr *)&parsed, &sz) != 0) {
         return -1;
     }
-    sin->sin_addr = v4;
+    sin->sin_addr = parsed.sin_addr;
 #else
     if (inet_pton(AF_INET, host, &sin->sin_addr) != 1) return -1;
 #endif

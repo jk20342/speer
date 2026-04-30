@@ -4,7 +4,7 @@
  *
  * speer is a minimal peer-to-peer networking library implementing the libp2p
  * protocol stack. It provides a layered architecture from low-level crypto
- * to high-level P2P abstractions, all in ~11k lines of C with zero dependencies.
+ * to high-level P2P abstractions, all in ~17k lines of C with zero dependencies.
  *
  * @author speer contributors
  * @version 0.1.0

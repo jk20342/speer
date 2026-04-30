@@ -415,13 +415,15 @@ int relay_client_poll(relay_client_t *client, uint64_t now_ms) {
             }
         }
     }
-    if ((client->state == RELAY_STATE_RESERVED || client->state == RELAY_STATE_ACTIVE) &&
-        now_ms - client->last_send_ms > RELAY_KEEPALIVE_INTERVAL_MS) {
+    uint64_t keepalive_now = speer_timestamp_ms();
+    if (client->last_send_ms > 0 &&
+        (client->state == RELAY_STATE_RESERVED || client->state == RELAY_STATE_ACTIVE) &&
+        keepalive_now - client->last_send_ms > RELAY_KEEPALIVE_INTERVAL_MS) {
         uint8_t frame[RELAY_FRAME_HEADER_SIZE];
         int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_KEEPALIVE, 0, NULL, 0);
         if (frame_len > 0 && client->send_fn) {
             client->send_fn(client->user, frame, (size_t)frame_len);
-            client->last_send_ms = now_ms;
+            client->last_send_ms = keepalive_now;
         }
     }
     uint32_t i = 0;

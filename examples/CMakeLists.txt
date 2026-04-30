@@ -4,7 +4,9 @@ set(SPEER_EXAMPLES
     echo_server
     chat
     libp2p_ping
+    libp2p_tcp_full_session
     libp2p_quic_ping
+    advanced_stack_demo
 )
 
 if(SPEER_ENABLE_DHT)
