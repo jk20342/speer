@@ -12,7 +12,6 @@
 #else
     #include <sys/socket.h>
     #include <netinet/in.h>
-    #include <netinet/ip.h>
     #include <arpa/inet.h>
     #include <unistd.h>
     #include <fcntl.h>
@@ -28,6 +27,13 @@ static void mdns_ensure_wsa(void) {
         if (WSAStartup(MAKEWORD(2, 2), &wsa) == 0) done = 1;
     }
 }
+#else
+    #ifndef HAVE_IP_MREQ
+    struct ip_mreq {
+        struct in_addr imr_multiaddr;
+        struct in_addr imr_interface;
+    };
+    #endif
 #endif
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
