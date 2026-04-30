@@ -2,6 +2,7 @@
 #include "dcutr.h"
 #include "protobuf.h"
 #include "log.h"
+#include <stdio.h>
 
 #define DCUTR_TIMEOUT_MS 10000
 #define DCUTR_RETRY_INTERVAL_MS 100
@@ -63,6 +64,8 @@ static int get_mapped_addr(const char* stun_server, struct sockaddr_storage* out
     (void)out;
     return -1;
 }
+
+#define STUB(x) (void)(x)
 
 int speer_dcutr_init(speer_peer_t* peer, int is_initiator) {
     dcutr_ctx_t* ctx = &g_dcutr_ctx;
