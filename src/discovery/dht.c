@@ -419,7 +419,8 @@ int dht_iterative_find_node(dht_t *dht, const uint8_t *target_id, dht_node_t *ou
             if (ret >= 0) {
                 to_query_nodes[i]->responded = true;
                 dht_add_node(dht, to_query_nodes[i]->node.id, to_query_nodes[i]->node.address);
-                parse_nodes_response(response, response_len, candidates, &num_candidates, target_id);
+                parse_nodes_response(response, response_len, candidates, &num_candidates,
+                                     target_id);
             }
         }
 

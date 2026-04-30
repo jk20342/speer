@@ -26,7 +26,8 @@ int main(void) {
     uint8_t libp2p_pub[32] = {4};
     if (speer_tls13_init_handshake(&h, SPEER_TLS_ROLE_CLIENT, cert_priv, cert_pub,
                                    SPEER_LIBP2P_KEY_ED25519, libp2p_pub, sizeof(libp2p_pub),
-                                   libp2p_priv, sizeof(libp2p_priv), "test/1.0", "example.test") != 0)
+                                   libp2p_priv, sizeof(libp2p_priv), "test/1.0",
+                                   "example.test") != 0)
         FAIL("init\n");
     if (speer_tls13_handshake_start(&h) != SPEER_TLS_NEED_OUT) FAIL("start\n");
 

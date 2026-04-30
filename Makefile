@@ -45,9 +45,12 @@ UNIT_TESTS = \
 	tls_msg_check \
 	tls13_full_handshake_check \
 	tls13_negotiation_check \
+	tls13_negative_vectors_check \
 	tls13_hrr_check \
 	tls13_key_update_check \
 	tls13_psk_ticket_check \
+	tls13_record_handshake_check \
+	tls13_openssl_smoke_check \
 	packet_check \
 	aead_check \
 	ed25519_check \
@@ -59,6 +62,7 @@ UNIT_TESTS = \
 	dht_iterative_check \
 	dht_maintenance_check \
 	dht_libp2p_check \
+	dht_libp2p_stream_check \
 	mdns_check \
 	dcutr_check \
 	dcutr_relay_integration_check \
@@ -154,9 +158,12 @@ check: $(STATIC) $(TEST_PROGS)
 	tests/tls_msg_check$(EXEEXT)
 	tests/tls13_full_handshake_check$(EXEEXT)
 	tests/tls13_negotiation_check$(EXEEXT)
+	tests/tls13_negative_vectors_check$(EXEEXT)
 	tests/tls13_hrr_check$(EXEEXT)
 	tests/tls13_key_update_check$(EXEEXT)
 	tests/tls13_psk_ticket_check$(EXEEXT)
+	tests/tls13_record_handshake_check$(EXEEXT)
+	tests/tls13_openssl_smoke_check$(EXEEXT)
 	tests/packet_check$(EXEEXT)
 	tests/aead_check$(EXEEXT)
 	tests/ed25519_check$(EXEEXT)
@@ -168,6 +175,7 @@ check: $(STATIC) $(TEST_PROGS)
 	tests/dht_iterative_check$(EXEEXT)
 	tests/dht_maintenance_check$(EXEEXT)
 	tests/dht_libp2p_check$(EXEEXT)
+	tests/dht_libp2p_stream_check$(EXEEXT)
 	tests/mdns_check$(EXEEXT)
 	tests/dcutr_check$(EXEEXT)
 	tests/dcutr_relay_integration_check$(EXEEXT)

@@ -132,8 +132,7 @@ int speer_tls13_application_keys(const speer_tls13_keysched_t *ks, speer_tls13_k
 int speer_tls13_update_application_traffic(speer_tls13_keysched_t *ks, int from_server,
                                            speer_tls13_keys_t *out_keys) {
     uint8_t next[SPEER_TLS13_MAX_HASH];
-    uint8_t *secret = from_server ? ks->server_application_traffic
-                                  : ks->client_application_traffic;
+    uint8_t *secret = from_server ? ks->server_application_traffic : ks->client_application_traffic;
     speer_hkdf_expand_label(ks->suite.hash, next, ks->suite.hash->digest_size, secret,
                             ks->suite.hash->digest_size, "traffic upd", NULL, 0);
     COPY(secret, next, ks->suite.hash->digest_size);

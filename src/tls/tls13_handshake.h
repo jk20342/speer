@@ -126,8 +126,8 @@ int speer_tls13_handshake_consume(speer_tls13_t *h, uint8_t msg_type, const uint
 int speer_tls13_handshake_take_output(speer_tls13_t *h, uint8_t *out, size_t cap, size_t *out_len);
 
 int speer_tls13_send_key_update(speer_tls13_t *h, int request_peer_update);
-int speer_tls13_send_new_session_ticket(speer_tls13_t *h, uint32_t lifetime,
-                                        const uint8_t *ticket, size_t ticket_len);
+int speer_tls13_send_new_session_ticket(speer_tls13_t *h, uint32_t lifetime, const uint8_t *ticket,
+                                        size_t ticket_len);
 
 int speer_tls13_export_traffic_secret(const speer_tls13_t *h, int from_server, int application,
                                       uint8_t *out, size_t *out_len);

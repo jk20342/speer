@@ -1,6 +1,7 @@
 #include "speer_internal.h"
 
 #include <stdio.h>
+
 #include <string.h>
 
 #include "ed25519.h"
@@ -76,8 +77,8 @@ int main(void) {
         uint8_t msg_type = server.out_buf[off];
         off += used;
         if (off < server.out_len && rc != SPEER_TLS_OK)
-            FAIL("client mid flight type=%u rc=%d state=%d alert=%u\n", msg_type, rc,
-                 client.state, client.alert_description);
+            FAIL("client mid flight type=%u rc=%d state=%d alert=%u\n", msg_type, rc, client.state,
+                 client.alert_description);
         if (off == server.out_len && rc != SPEER_TLS_NEED_OUT)
             FAIL("client final flight type=%u rc=%d state=%d alert=%u\n", msg_type, rc,
                  client.state, client.alert_description);

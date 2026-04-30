@@ -1,6 +1,7 @@
 #include "speer_internal.h"
 
 #include <stdio.h>
+
 #include <string.h>
 
 #include "tls13_handshake.h"
@@ -33,8 +34,7 @@ int main(void) {
     ready(&h, SPEER_TLS_ROLE_CLIENT);
     speer_tls13_export_traffic_secret(&h, 0, 1, before, &n);
     if (speer_tls13_send_key_update(&h, 1) != SPEER_TLS_NEED_OUT) FAIL("send ku\n");
-    if (h.out_len != 5 || h.out_buf[0] != TLS_HS_KEY_UPDATE || h.out_buf[4] != 1)
-        FAIL("ku msg\n");
+    if (h.out_len != 5 || h.out_buf[0] != TLS_HS_KEY_UPDATE || h.out_buf[4] != 1) FAIL("ku msg\n");
     speer_tls13_export_traffic_secret(&h, 0, 1, after, NULL);
     if (memcmp(before, after, n) == 0) FAIL("client traffic unchanged\n");
     if (h.client_record_seq != 0) FAIL("client seq\n");
@@ -42,7 +42,8 @@ int main(void) {
     ready(&h, SPEER_TLS_ROLE_CLIENT);
     uint8_t req[] = {1};
     speer_tls13_export_traffic_secret(&h, 1, 1, before, &n);
-    if (speer_tls13_handshake_consume(&h, TLS_HS_KEY_UPDATE, req, sizeof(req)) != SPEER_TLS_NEED_OUT)
+    if (speer_tls13_handshake_consume(&h, TLS_HS_KEY_UPDATE, req, sizeof(req)) !=
+        SPEER_TLS_NEED_OUT)
         FAIL("consume ku request\n");
     if (h.out_len != 5 || h.out_buf[0] != TLS_HS_KEY_UPDATE || h.out_buf[4] != 0)
         FAIL("ku response\n");

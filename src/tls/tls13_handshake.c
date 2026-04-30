@@ -14,11 +14,9 @@ static const char CV_LABEL_SERVER[] = "TLS 1.3, server CertificateVerify";
 static const char CV_LABEL_CLIENT[] = "TLS 1.3, client CertificateVerify";
 static const uint16_t TLS13_CIPHER_SUITES[] = {TLS_CS_AES_128_GCM_SHA256, TLS_CS_AES_256_GCM_SHA384,
                                                TLS_CS_CHACHA20_POLY1305_SHA256};
-static const uint16_t TLS13_SIGALGS[] = {TLS_SIGSCHEME_ED25519,
-                                         TLS_SIGSCHEME_ECDSA_SECP256R1_SHA256,
-                                         TLS_SIGSCHEME_RSA_PSS_RSAE_SHA256,
-                                         TLS_SIGSCHEME_RSA_PSS_RSAE_SHA384,
-                                         TLS_SIGSCHEME_RSA_PSS_RSAE_SHA512};
+static const uint16_t TLS13_SIGALGS[] = {
+    TLS_SIGSCHEME_ED25519, TLS_SIGSCHEME_ECDSA_SECP256R1_SHA256, TLS_SIGSCHEME_RSA_PSS_RSAE_SHA256,
+    TLS_SIGSCHEME_RSA_PSS_RSAE_SHA384, TLS_SIGSCHEME_RSA_PSS_RSAE_SHA512};
 static const uint8_t TLS13_HRR_RANDOM[32] = {0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11,
                                              0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91,
                                              0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
@@ -896,13 +894,15 @@ static int append_certificate_request(speer_tls13_t *h) {
     return append_handshake_msg(h, TLS_HS_CERT_REQUEST, body, w.pos);
 }
 
-static int append_finished(speer_tls13_t *h, int from_server, const uint8_t *transcript_hash_at_send) {
+static int append_finished(speer_tls13_t *h, int from_server,
+                           const uint8_t *transcript_hash_at_send) {
     size_t hash_len = h->ks.suite.hash->digest_size;
     const uint8_t *traffic = from_server ? h->ks.server_handshake_traffic
                                          : h->ks.client_handshake_traffic;
 
     uint8_t fin_mac[SPEER_TLS13_MAX_HASH];
-    if (speer_tls13_finished_mac(&h->ks, from_server, traffic, transcript_hash_at_send, fin_mac) != 0)
+    if (speer_tls13_finished_mac(&h->ks, from_server, traffic, transcript_hash_at_send, fin_mac) !=
+        0)
         return -1;
     return append_handshake_msg(h, TLS_HS_FINISHED, fin_mac, hash_len);
 }
@@ -1046,8 +1046,7 @@ int speer_tls13_handshake_consume(speer_tls13_t *h, uint8_t msg_type, const uint
         if (msg_type != TLS_HS_FINISHED) return do_fail(h);
         const uint8_t *fin_hash = h->require_client_auth ? h->transcript_hash_after_cv
                                                          : h->transcript_hash_after_sfin;
-        if (verify_finished(h, body, body_len, 0, fin_hash) != 0)
-            return do_fail(h);
+        if (verify_finished(h, body, body_len, 0, fin_hash) != 0) return do_fail(h);
         if (append_transcript(h, msg_type, body, body_len) != 0) return do_fail(h);
         h->state = TLS_ST_DONE;
         return SPEER_TLS_DONE;
@@ -1162,8 +1161,8 @@ int speer_tls13_send_key_update(speer_tls13_t *h, int request_peer_update) {
     return SPEER_TLS_NEED_OUT;
 }
 
-int speer_tls13_send_new_session_ticket(speer_tls13_t *h, uint32_t lifetime,
-                                        const uint8_t *ticket, size_t ticket_len) {
+int speer_tls13_send_new_session_ticket(speer_tls13_t *h, uint32_t lifetime, const uint8_t *ticket,
+                                        size_t ticket_len) {
     if (!h || h->role != SPEER_TLS_ROLE_SERVER || h->state != TLS_ST_DONE) return SPEER_TLS_ERR;
     if (!ticket || ticket_len == 0 || ticket_len > 0xffff || h->out_len != 0) return SPEER_TLS_ERR;
     uint8_t nonce[8];

@@ -1,8 +1,10 @@
+#include "speer_internal.h"
+
 #include <stdio.h>
+
 #include <string.h>
 
 #include "dht.h"
-#include "speer_internal.h"
 
 #define FAIL(...)                     \
     do {                              \
@@ -36,7 +38,7 @@ static int mock_rpc(void *user, const char *addr, uint8_t op, const uint8_t *req
         dht_value_t unused;
         if (request_len != DHT_ID_BYTES) return -1;
         return dht_handle_find_value(m->remote, request, response, response_len, &unused) >= 0 ? 0
-                                                                                              : -1;
+                                                                                               : -1;
     }
     return -1;
 }
@@ -77,7 +79,8 @@ int main(void) {
     uint8_t got[64];
     size_t got_len = sizeof(got);
     if (dht_iterative_find_value(&local, key, got, &got_len) != 0) FAIL("iterative find value\n");
-    if (got_len != sizeof(value) || memcmp(got, value, sizeof(value)) != 0) FAIL("value mismatch\n");
+    if (got_len != sizeof(value) || memcmp(got, value, sizeof(value)) != 0)
+        FAIL("value mismatch\n");
 
     dht_free(&remote);
     dht_free(&local);

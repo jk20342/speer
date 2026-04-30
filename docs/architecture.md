@@ -251,9 +251,9 @@ For integration with existing event loops:
 | libp2p Noise XX | Full | libp2p signed payload encrypted in messages 2/3 |
 | Yamux | Full | Stream multiplexing with windowed flow control |
 | mDNS Discovery | Full | Local peer discovery (claims treated as untrusted hints) |
-| Kademlia DHT | Partial | Routing table, iterative lookups, STORE tokens |
+| Kademlia DHT | Practical core | Routing table, iterative lookups, STORE tokens, libp2p kad protobuf + stream boundary |
 | QUIC v1 | Partial | Initial packet support, packet number reconstruction, basic framing |
-| TLS 1.3 | Partial | Client + server handshake; CertificateVerify and Finished verified |
+| TLS 1.3 | Core tested | Client + server handshake, record-layer round trips, negative vectors; CertificateVerify and Finished verified |
 | Circuit Relay v2 | Partial | Reservation auth, signed STOP binding |
 | DCUtR | Partial | Per-peer state, anti-spoofed candidate addresses |
 
@@ -279,7 +279,9 @@ For integration with existing event loops:
   `CHACHA20_POLY1305_SHA256`. Key share: `x25519` (with `secp256r1`
   hooks). Sigalgs: `ed25519`, `ecdsa_secp256r1_sha256`,
   `rsa_pss_rsae_sha256`. Post-handshake KeyUpdate advances application
-  traffic secrets; mutual authentication and full HRR are partial.
+  traffic secrets; HRR and mutual-authentication paths have focused
+  coverage, while external OpenSSL/BoringSSL interop remains optional
+  and is skipped when the tool is unavailable.
 - The record layer caps sequence numbers below `2^48`, enforces the
   RFC 8446 §5.1 record-size limit, validates the legacy version
   bytes (`0x0303`), rejects `inner_type = 0`, and produces / consumes
