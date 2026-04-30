@@ -6,7 +6,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
 else()
     # GCC or other - use standalone mode
     set(FUZZER_FLAGS "")
-    add_definitions(-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=0)
 endif()
 
 set(FUZZ_TARGETS
@@ -27,6 +26,7 @@ foreach(target ${FUZZ_TARGETS})
     )
 
     if(FUZZER_FLAGS)
+        target_compile_definitions(${target} PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1)
         target_compile_options(${target} PRIVATE ${FUZZER_FLAGS})
         target_link_options(${target} PRIVATE ${FUZZER_FLAGS})
     endif()

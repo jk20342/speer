@@ -18,11 +18,11 @@ static inline uint32_t speer_ct_lt_u32(uint32_t a, uint32_t b) {
 }
 
 static inline uint32_t speer_ct_select_u32(uint32_t mask, uint32_t a, uint32_t b) {
-    return b ^ ((-(mask & 1u)) & (a ^ b));
+    return b ^ ((0u - (mask & 1u)) & (a ^ b));
 }
 
 static inline uint8_t speer_ct_select_u8(uint32_t mask, uint8_t a, uint8_t b) {
-    return (uint8_t)(b ^ ((-(mask & 1u)) & (a ^ b)));
+    return (uint8_t)(b ^ ((0u - (mask & 1u)) & (a ^ b)));
 }
 
 static inline int speer_ct_memeq(const void* a, const void* b, size_t n) {
@@ -34,7 +34,7 @@ static inline int speer_ct_memeq(const void* a, const void* b, size_t n) {
 }
 
 static inline void speer_ct_cmov(uint8_t* dst, const uint8_t* src, size_t n, uint32_t cond) {
-    uint8_t mask = (uint8_t)(-(cond & 1u));
+    uint8_t mask = (uint8_t)(0u - (cond & 1u));
     for (size_t i = 0; i < n; i++) {
         dst[i] ^= mask & (dst[i] ^ src[i]);
     }

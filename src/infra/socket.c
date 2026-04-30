@@ -37,7 +37,7 @@ static int my_inet_pton(int af, const char* src, void* dst) {
     if (src_len >= sizeof(src_copy)) return 0;
     memcpy(src_copy, src, src_len + 1);
     
-    ss.ss_family = af;
+    ss.ss_family = (ADDRESS_FAMILY)af;
     int size = sizeof(ss);
     if (WSAStringToAddressA(src_copy, af, NULL, (struct sockaddr*)&ss, &size) != 0) {
         return 0;
@@ -58,7 +58,7 @@ int speer_socket_create(uint16_t port, const char* bind_addr) {
     init_winsock();
 #endif
     
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    int sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return -1;
     
     int reuse = 1;
@@ -193,7 +193,7 @@ typedef struct {
     uint8_t tid[12];
 } stun_header_t;
 
-#define STUN_MAGIC_COOKIE 0x2112A442
+#define STUN_MAGIC_COOKIE 0x2112A442u
 #define STUN_BINDING_REQUEST 0x0001
 #define STUN_BINDING_RESPONSE 0x0101
 #define STUN_ATTR_MAPPED_ADDRESS 0x0001
@@ -209,7 +209,7 @@ int speer_stun_get_mapped_addr(const char* stun_server,
         return -1;
     }
     
-    int sock = socket(stun_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
+    int sock = (int)socket(stun_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return -1;
     
     uint8_t tid[12];
@@ -218,7 +218,10 @@ int speer_stun_get_mapped_addr(const char* stun_server,
     uint8_t req[20];
     STORE16_BE(req, STUN_BINDING_REQUEST);
     STORE16_BE(req + 2, 0);
-    STORE32_BE(req + 4, STUN_MAGIC_COOKIE);
+    req[4] = (uint8_t)((STUN_MAGIC_COOKIE >> 24) & 0xffu);
+    req[5] = (uint8_t)((STUN_MAGIC_COOKIE >> 16) & 0xffu);
+    req[6] = (uint8_t)((STUN_MAGIC_COOKIE >> 8) & 0xffu);
+    req[7] = (uint8_t)(STUN_MAGIC_COOKIE & 0xffu);
     COPY(req + 8, tid, 12);
     
     if (sendto(sock, (char*)req, 20, 0,

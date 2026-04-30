@@ -104,7 +104,7 @@ static void poly1305_blocks(uint32_t h[5], uint32_t r[5], const uint8_t* m, size
         h1 += ((((t1) << 32) | (t0)) >> 26) & 0x3ffffff;
         h2 += ((((t2) << 32) | (t1)) >> 20) & 0x3ffffff;
         h3 += ((((t3) << 32) | (t2)) >> 14) & 0x3ffffff;
-        h4 += ((t3) >> 8) | (padbit << 24);
+        h4 += (uint32_t)(((t3) >> 8) | ((uint64_t)padbit << 24));
         
         uint64_t d0 = (h0 * r0) + (h1 * s4) + (h2 * s3) + (h3 * s2) + (h4 * s1);
         uint64_t d1 = (h0 * r1) + (h1 * r0) + (h2 * s4) + (h3 * s3) + (h4 * s2);
@@ -173,7 +173,7 @@ void speer_poly1305(uint8_t mac[16], const uint8_t* msg, size_t len, const uint8
     g4 = h4 + c; c = g4 >> 26; g4 &= 0x3ffffff;
     g0 += c * 5;
     
-    mask = -(c ^ 1);
+    mask = 0u - (c ^ 1u);
     h0 = (h0 & ~mask) | (g0 & mask);
     h1 = (h1 & ~mask) | (g1 & mask);
     h2 = (h2 & ~mask) | (g2 & mask);

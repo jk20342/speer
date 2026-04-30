@@ -12,7 +12,7 @@ static void mix_hash(uint8_t hash[32], const uint8_t* data, size_t len) {
 
 static void mix_key(speer_handshake_t* hs, const uint8_t input_key_material[32]) {
     uint8_t temp[64];
-    uint8_t info[14] = "Noise key hash";
+    static const uint8_t info[] = "Noise key hash";
     speer_hkdf(temp, 64, hs->chaining_key, 32, input_key_material, 32, info, 14);
     COPY(hs->chaining_key, temp, 32);
     COPY(hs->send_key, temp + 32, 32);
@@ -65,7 +65,7 @@ static int decrypt_and_hash(speer_handshake_t* hs, uint8_t* out, const uint8_t* 
 
 static void derive_keys(speer_handshake_t* hs, uint8_t send_key[32], uint8_t recv_key[32]) {
     uint8_t temp[64];
-    uint8_t info[13] = "Noise derived";
+    static const uint8_t info[] = "Noise derived";
     speer_hkdf(temp, 64, hs->chaining_key, 32, NULL, 0, info, 13);
     COPY(send_key, temp, 32);
     COPY(recv_key, temp + 32, 32);

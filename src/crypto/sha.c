@@ -125,8 +125,10 @@ void speer_sha256_final(void* state, uint8_t out[32]) {
         ZERO(ctx->buffer + ctx->buffer_used, 56 - ctx->buffer_used);
     }
     
-    ctx->bit_count = __builtin_bswap64(ctx->bit_count);
-    COPY(ctx->buffer + 56, &ctx->bit_count, 8);
+    uint64_t bit_count = ctx->bit_count;
+    for (int i = 0; i < 8; i++) {
+        ctx->buffer[56 + i] = (uint8_t)(bit_count >> (56 - 8 * i));
+    }
     sha256_transform(ctx, ctx->buffer);
     
     for (int i = 0; i < 8; i++) {
@@ -141,31 +143,45 @@ void speer_sha256(uint8_t out[32], const uint8_t* in, size_t len) {
     speer_sha256_final(&ctx, out);
 }
 
+static void hmac_sha256(uint8_t out[32],
+                        const uint8_t* key, size_t key_len,
+                        const uint8_t* a, size_t a_len,
+                        const uint8_t* b, size_t b_len,
+                        const uint8_t* c, size_t c_len) {
+    uint8_t key_block[SHA256_BLOCK_SIZE] = {0};
+    uint8_t ipad[SHA256_BLOCK_SIZE];
+    uint8_t opad[SHA256_BLOCK_SIZE];
+    uint8_t inner[SHA256_DIGEST_SIZE];
+    sha256_ctx_t ctx;
+
+    if (key && key_len > SHA256_BLOCK_SIZE) {
+        speer_sha256(key_block, key, key_len);
+    } else if (key && key_len > 0) {
+        COPY(key_block, key, key_len);
+    }
+
+    for (int i = 0; i < SHA256_BLOCK_SIZE; i++) {
+        ipad[i] = key_block[i] ^ 0x36;
+        opad[i] = key_block[i] ^ 0x5c;
+    }
+
+    speer_sha256_init(&ctx);
+    speer_sha256_update(&ctx, ipad, SHA256_BLOCK_SIZE);
+    if (a && a_len > 0) speer_sha256_update(&ctx, a, a_len);
+    if (b && b_len > 0) speer_sha256_update(&ctx, b, b_len);
+    if (c && c_len > 0) speer_sha256_update(&ctx, c, c_len);
+    speer_sha256_final(&ctx, inner);
+
+    speer_sha256_init(&ctx);
+    speer_sha256_update(&ctx, opad, SHA256_BLOCK_SIZE);
+    speer_sha256_update(&ctx, inner, SHA256_DIGEST_SIZE);
+    speer_sha256_final(&ctx, out);
+}
+
 void speer_hkdf_extract(uint8_t prk[32],
                         const uint8_t* salt, size_t salt_len,
                         const uint8_t* ikm, size_t ikm_len) {
-    uint8_t key[64] = {0};
-    if (salt && salt_len > 0) {
-        if (salt_len > 64) {
-            speer_sha256(key, salt, salt_len);
-        } else {
-            COPY(key, salt, salt_len);
-        }
-    }
-    
-    uint8_t hmac_input[SHA256_BLOCK_SIZE + 32];
-    COPY(hmac_input, key, 64);
-    for (int i = 0; i < 64; i++) hmac_input[i] ^= 0x36;
-    COPY(hmac_input + 64, ikm, ikm_len);
-    
-    uint8_t inner_hash[32];
-    speer_sha256(inner_hash, hmac_input, 64 + ikm_len);
-    
-    COPY(hmac_input, key, 64);
-    for (int i = 0; i < 64; i++) hmac_input[i] ^= 0x5c;
-    COPY(hmac_input + 64, inner_hash, 32);
-    
-    speer_sha256(prk, hmac_input, 64 + 32);
+    hmac_sha256(prk, salt, salt_len, ikm, ikm_len, NULL, 0, NULL, 0);
 }
 
 void speer_hkdf_expand(uint8_t* okm, size_t okm_len,
@@ -176,32 +192,14 @@ void speer_hkdf_expand(uint8_t* okm, size_t okm_len,
     size_t t_prev_len = 0;
     
     size_t n = (okm_len + 31) / 32;
+    if (n > 255) {
+        ZERO(okm, okm_len);
+        return;
+    }
     
     for (size_t i = 1; i <= n; i++) {
-        uint8_t hmac_input[64 + info_len + 1];
-        COPY(hmac_input, t_prev, t_prev_len);
-        COPY(hmac_input + t_prev_len, info, info_len);
-        hmac_input[t_prev_len + info_len] = (uint8_t)i;
-        
-        uint8_t key[64] = {0};
-        COPY(key, prk, 32);
-        
-        for (int j = 0; j < 64; j++) key[j] ^= 0x36;
-        
-        uint8_t inner[32];
-        sha256_ctx_t ctx;
-        speer_sha256_init(&ctx);
-        speer_sha256_update(&ctx, key, 64);
-        speer_sha256_update(&ctx, hmac_input, t_prev_len + info_len + 1);
-        speer_sha256_final(&ctx, inner);
-        
-        COPY(key, prk, 32);
-        for (int j = 0; j < 64; j++) key[j] ^= 0x5c;
-        
-        speer_sha256_init(&ctx);
-        speer_sha256_update(&ctx, key, 64);
-        speer_sha256_update(&ctx, inner, 32);
-        speer_sha256_final(&ctx, t);
+        uint8_t counter = (uint8_t)i;
+        hmac_sha256(t, prk, 32, t_prev, t_prev_len, info, info_len, &counter, 1);
         
         size_t to_copy = MIN(32, okm_len - (i-1)*32);
         COPY(okm + (i-1)*32, t, to_copy);

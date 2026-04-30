@@ -60,14 +60,6 @@ static int gather_local_addrs(dcutr_candidate_t* out, size_t max) {
     return (int)count;
 }
 
-static int get_mapped_addr(const char* stun_server, struct sockaddr_storage* out) __attribute__((unused));
-
-static int get_mapped_addr(const char* stun_server, struct sockaddr_storage* out) {
-    (void)stun_server;
-    (void)out;
-    return -1;
-}
-
 #define STUB(x) (void)(x)
 
 int speer_dcutr_init(speer_peer_t* peer, int is_initiator) {

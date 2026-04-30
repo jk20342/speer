@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include "multiaddr.h"
 
+typedef struct speer_peer speer_peer_t;
+
 #ifndef __GNUC__
 #define __attribute__(x)
 #endif

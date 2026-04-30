@@ -166,6 +166,12 @@ endif()
 
 # Apply compile options
 target_compile_options(speer PRIVATE ${SPEER_COMPILE_OPTIONS})
+if(WIN32)
+    target_compile_definitions(speer PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+        _WINSOCK_DEPRECATED_NO_WARNINGS
+    )
+endif()
 
 # Link libraries
 target_link_libraries(speer PRIVATE ${SPEER_PLATFORM_LIBS})
