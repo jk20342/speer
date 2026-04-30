@@ -14,6 +14,7 @@
 
 #define DCUTR_PROTO     "/libp2p/dcutr"
 #define DCUTR_MAX_ADDRS 8
+#define DCUTR_STREAM_ID 0xDC00u
 
 typedef enum {
     DCUTR_TYPE_CONNECT = 100,
@@ -26,7 +27,13 @@ typedef struct {
     size_t num_addrs;
 } speer_dcutr_msg_t;
 
+typedef int (*speer_dcutr_send_fn)(void *user, const uint8_t *data, size_t len);
+
 int speer_dcutr_init(speer_peer_t *peer, int is_initiator);
+void speer_dcutr_set_transport(speer_dcutr_send_fn send_fn, void *user);
+int speer_dcutr_start_stream(speer_peer_t *peer, uint32_t stream_id, int is_initiator);
+int speer_dcutr_on_stream_data(speer_peer_t *peer, uint32_t stream_id, const uint8_t *data,
+                               size_t len);
 void speer_dcutr_free(void);
 int speer_dcutr_is_active(void);
 int speer_dcutr_success(void);

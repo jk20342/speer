@@ -42,24 +42,37 @@ typedef struct {
 
     speer_peer_t *peer;
     int is_initiator;
+    speer_dcutr_send_fn send_fn;
+    void *user;
+    uint32_t stream_id;
 } dcutr_ctx_t;
 
 static dcutr_ctx_t g_dcutr_ctx;
 
-static int gather_local_addrs(dcutr_candidate_t *out, size_t max) {
-    (void)max;
+static int add_ipv4_candidate(dcutr_candidate_t *out, size_t max, size_t *count,
+                              const struct sockaddr_in *sin) {
+    if (*count >= max || sin->sin_port == 0) return 0;
+    ZERO(&out[*count], sizeof(out[*count]));
+    COPY(&out[*count].addr, sin, sizeof(*sin));
+    out[*count].addr_len = sizeof(*sin);
+    (*count)++;
+    return 1;
+}
+
+static int gather_local_addrs(dcutr_ctx_t *ctx, dcutr_candidate_t *out, size_t max) {
     size_t count = 0;
-
-    struct sockaddr_in loopback;
-    memset(&loopback, 0, sizeof(loopback));
-    loopback.sin_family = AF_INET;
-    loopback.sin_addr.s_addr = htonl(0x7f000001);
-    out[count].addr.ss_family = AF_INET;
-    ((struct sockaddr_in *)&out[count].addr)->sin_family = AF_INET;
-    ((struct sockaddr_in *)&out[count].addr)->sin_addr.s_addr = htonl(0x7f000001);
-    out[count].addr_len = sizeof(struct sockaddr_in);
-    count++;
-
+    speer_host_t *host = ctx->peer ? ctx->peer->host : NULL;
+    if (host && host->socket >= 0) {
+        struct sockaddr_storage bound;
+        socklen_t bound_len = sizeof(bound);
+        ZERO(&bound, sizeof(bound));
+        if (getsockname(host->socket, (struct sockaddr *)&bound, &bound_len) == 0 &&
+            bound.ss_family == AF_INET) {
+            struct sockaddr_in sin = *(struct sockaddr_in *)&bound;
+            if (sin.sin_addr.s_addr == htonl(INADDR_ANY)) sin.sin_addr.s_addr = htonl(0x7f000001);
+            add_ipv4_candidate(out, max, &count, &sin);
+        }
+    }
     return (int)count;
 }
 
@@ -67,14 +80,52 @@ static int gather_local_addrs(dcutr_candidate_t *out, size_t max) {
 
 int speer_dcutr_init(speer_peer_t *peer, int is_initiator) {
     dcutr_ctx_t *ctx = &g_dcutr_ctx;
+    speer_dcutr_send_fn send_fn = ctx->send_fn;
+    void *user = ctx->user;
+    uint32_t stream_id = ctx->stream_id;
     memset(ctx, 0, sizeof(*ctx));
+    ctx->send_fn = send_fn;
+    ctx->user = user;
+    ctx->stream_id = stream_id;
     ctx->peer = peer;
     ctx->is_initiator = is_initiator;
     ctx->state = DCUTR_STATE_GATHERING;
     ctx->start_ms = speer_timestamp_ms();
-    ctx->num_local = gather_local_addrs(ctx->local, DCUTR_MAX_ADDRS);
+    ctx->num_local = gather_local_addrs(ctx, ctx->local, DCUTR_MAX_ADDRS);
     ctx->sync_count = 0;
     return 0;
+}
+
+void speer_dcutr_set_transport(speer_dcutr_send_fn send_fn, void *user) {
+    g_dcutr_ctx.send_fn = send_fn;
+    g_dcutr_ctx.user = user;
+}
+
+static int send_stream(void *user, const uint8_t *data, size_t len) {
+    dcutr_ctx_t *ctx = (dcutr_ctx_t *)user;
+    if (!ctx || !ctx->peer) return -1;
+    speer_stream_t stream = {.peer = ctx->peer, .id = ctx->stream_id};
+    return speer_stream_write(&stream, data, len);
+}
+
+int speer_dcutr_start_stream(speer_peer_t *peer, uint32_t stream_id, int is_initiator) {
+    if (!peer) return -1;
+    g_dcutr_ctx.stream_id = stream_id;
+    g_dcutr_ctx.send_fn = send_stream;
+    g_dcutr_ctx.user = &g_dcutr_ctx;
+    return speer_dcutr_init(peer, is_initiator);
+}
+
+int speer_dcutr_on_stream_data(speer_peer_t *peer, uint32_t stream_id, const uint8_t *data,
+                               size_t len) {
+    if (stream_id != DCUTR_STREAM_ID) return 0;
+    if (!speer_dcutr_is_active()) {
+        g_dcutr_ctx.stream_id = stream_id;
+        g_dcutr_ctx.send_fn = send_stream;
+        g_dcutr_ctx.user = &g_dcutr_ctx;
+        if (speer_dcutr_init(peer, 0) != 0) return -1;
+    }
+    return speer_dcutr_on_msg(data, len);
 }
 
 void speer_dcutr_free(void) {
@@ -90,8 +141,17 @@ int speer_dcutr_success(void) {
     return g_dcutr_ctx.state == DCUTR_STATE_COMPLETE;
 }
 
+static int send_msg(dcutr_ctx_t *ctx, const speer_dcutr_msg_t *m) {
+    uint8_t buf[256];
+    size_t len;
+    if (speer_dcutr_encode(m, buf, sizeof(buf), &len) != 0) return -1;
+    if (ctx->send_fn) return ctx->send_fn(ctx->user, buf, len);
+    return 0;
+}
+
 static void send_connect(dcutr_ctx_t *ctx) {
     speer_dcutr_msg_t m;
+    ZERO(&m, sizeof(m));
     m.type = DCUTR_TYPE_CONNECT;
     m.num_addrs = ctx->num_local;
     for (size_t i = 0; i < ctx->num_local; i++) {
@@ -104,23 +164,18 @@ static void send_connect(dcutr_ctx_t *ctx) {
         }
     }
 
-    uint8_t buf[256];
-    size_t len;
-    if (speer_dcutr_encode(&m, buf, sizeof(buf), &len) == 0) {
+    if (send_msg(ctx, &m) >= 0) {
         SPEER_LOG_DEBUG("dcutr", "sending CONNECT with %zu addrs", m.num_addrs);
     }
 }
 
 static void send_sync(dcutr_ctx_t *ctx) {
     speer_dcutr_msg_t m;
+    ZERO(&m, sizeof(m));
     m.type = DCUTR_TYPE_SYNC;
     m.num_addrs = 0;
 
-    uint8_t buf[256];
-    size_t len;
-    if (speer_dcutr_encode(&m, buf, sizeof(buf), &len) == 0) {
-        SPEER_LOG_DEBUG("dcutr", "sending SYNC #%d", ctx->sync_count);
-    }
+    if (send_msg(ctx, &m) >= 0) { SPEER_LOG_DEBUG("dcutr", "sending SYNC #%d", ctx->sync_count); }
 }
 
 static void try_connect(dcutr_ctx_t *ctx) {
@@ -145,6 +200,11 @@ static void try_connect(dcutr_ctx_t *ctx) {
                             c->attempts);
 
             if (ctx->peer && ctx->peer->host) { speer_peer_set_address(ctx->peer, addr_str); }
+            if (ctx->peer && ctx->peer->host && ctx->peer->host->socket >= 0) {
+                uint8_t probe = 0;
+                speer_socket_send(ctx->peer->host->socket, &probe, sizeof(probe), &c->addr,
+                                  c->addr_len);
+            }
         }
     }
 }

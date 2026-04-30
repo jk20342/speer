@@ -41,14 +41,25 @@ static void write_be16(uint8_t *p, uint16_t v) {
     p[1] = v & 0xFF;
 }
 
+static uint32_t read_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static void write_be32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)((v >> 24) & 0xFF);
+    p[1] = (uint8_t)((v >> 16) & 0xFF);
+    p[2] = (uint8_t)((v >> 8) & 0xFF);
+    p[3] = (uint8_t)(v & 0xFF);
+}
+
 static int relay_frame_encode(uint8_t *out, size_t out_cap, relay_frame_type_t type,
                               uint32_t circuit_id, const uint8_t *payload, size_t payload_len) {
-    (void)circuit_id;
     if (payload_len + RELAY_FRAME_HEADER_SIZE > out_cap) return -1;
     if (payload_len > RELAY_MAX_FRAME_SIZE) return -1;
     out[0] = (uint8_t)type;
     out[1] = 0;
     write_be16(out + 2, (uint16_t)payload_len);
+    write_be32(out + 4, circuit_id);
     if (payload_len > 0 && payload) { COPY(out + RELAY_FRAME_HEADER_SIZE, payload, payload_len); }
     return RELAY_FRAME_HEADER_SIZE + (int)payload_len;
 }
@@ -256,6 +267,24 @@ int relay_client_send(relay_client_t *client, uint32_t circuit_id, const uint8_t
     return -1;
 }
 
+static int relay_dcutr_send(void *user, const uint8_t *data, size_t len) {
+    relay_client_t *client = (relay_client_t *)user;
+    if (!client || !client->dcutr_enabled) return -1;
+    return relay_client_send(client, client->dcutr_circuit_id, data, len);
+}
+
+int relay_client_start_dcutr(relay_client_t *client, uint32_t circuit_id, speer_peer_t *peer,
+                             bool is_initiator) {
+    if (!client || !peer) return -1;
+    relay_circuit_t *circ = find_circuit(client, circuit_id);
+    if (!circ || circ->state != CIRCUIT_STATE_CONNECTED) return -1;
+    client->dcutr_enabled = true;
+    client->dcutr_circuit_id = circuit_id;
+    client->dcutr_peer = peer;
+    speer_dcutr_set_transport(relay_dcutr_send, client);
+    return speer_dcutr_init(peer, is_initiator ? 1 : 0);
+}
+
 static void handle_hop_status(relay_client_t *client, const uint8_t *payload, size_t payload_len) {
     speer_relay_msg_type_t type;
     int status;
@@ -328,6 +357,10 @@ static void process_frame(relay_client_t *client, relay_frame_type_t type, uint3
         handle_stop_connect(client, payload, payload_len);
         break;
     case RELAY_FRAME_DATA:
+        if (client->dcutr_enabled && circuit_id == client->dcutr_circuit_id) {
+            speer_dcutr_on_msg(payload, payload_len);
+            break;
+        }
         if (client->on_data && circuit_id > 0) {
             client->on_data(client->user, circuit_id, payload, payload_len);
         }
@@ -345,7 +378,7 @@ static void consume_recv_buf(relay_client_t *client) {
         size_t frame_total = RELAY_FRAME_HEADER_SIZE + payload_len;
         if (client->recv_len < frame_total) break;
         relay_frame_type_t type = (relay_frame_type_t)client->recv_buf[0];
-        uint32_t circuit_id = 0;
+        uint32_t circuit_id = read_be32(client->recv_buf + 4);
         process_frame(client, type, circuit_id, client->recv_buf + RELAY_FRAME_HEADER_SIZE,
                       payload_len);
         if (client->recv_len > frame_total) {

@@ -62,6 +62,12 @@ int main(void) {
                                 multiaddr, sizeof(multiaddr), htonl(0x7f000001));
     (void)ret;
 
+    ret = mdns_parse_packet(&ctx, packet, len, peer_id, sizeof(peer_id), multiaddr,
+                            sizeof(multiaddr), htonl(0x7f000001));
+    if (ret != 0) FAIL("mdns_parse_packet should parse built announcement\n");
+    if (strcmp(peer_id, "test_peer_123") != 0) FAIL("parsed peer id mismatch\n");
+    if (strcmp(multiaddr, "/ip4/127.0.0.1/tcp/4001") != 0) FAIL("parsed multiaddr mismatch\n");
+
     uint8_t peer_pubkey[32] = {0xAB, 0xCD, 0xEF};
     char svc_name[256];
     if (mdns_build_libp2p_service_name(svc_name, sizeof(svc_name), peer_pubkey) != 0)

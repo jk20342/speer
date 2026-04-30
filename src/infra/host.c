@@ -1,5 +1,9 @@
 #include "speer_internal.h"
 
+#if SPEER_RELAY
+#include "dcutr.h"
+#endif
+
 #if defined(_WIN32)
 #include <winsock2.h>
 #else
@@ -139,6 +143,13 @@ static void emit_stream_frames(speer_host_t *host, speer_peer_t *peer, const uin
         pos += n;
         if (pos + data_len > len) return;
         (void)offset;
+#if SPEER_RELAY
+        if (stream_id == DCUTR_STREAM_ID) {
+            speer_dcutr_on_stream_data(peer, (uint32_t)stream_id, data + pos, (size_t)data_len);
+            pos += (size_t)data_len;
+            continue;
+        }
+#endif
         buffer_stream_data(peer, (uint32_t)stream_id, data + pos, (size_t)data_len);
         speer_stream_t stream = {.peer = peer, .id = (uint32_t)stream_id};
         speer_event_t ev = {.type = SPEER_EVENT_STREAM_DATA,

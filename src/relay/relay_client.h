@@ -1,6 +1,8 @@
 #ifndef SPEER_RELAY_CLIENT_H
 #define SPEER_RELAY_CLIENT_H
 
+#include "speer.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -12,7 +14,7 @@
 #define RELAY_CONNECT_TIMEOUT_MS    10000
 #define RELAY_KEEPALIVE_INTERVAL_MS 60000
 #define RELAY_MAX_FRAME_SIZE        65535
-#define RELAY_FRAME_HEADER_SIZE     4
+#define RELAY_FRAME_HEADER_SIZE     8
 
 typedef enum {
     RELAY_STATE_DISCONNECTED = 0,
@@ -60,6 +62,9 @@ typedef struct {
     relay_circuit_t circuits[RELAY_MAX_CIRCUITS];
     uint32_t num_circuits;
     uint32_t next_circuit_id;
+    bool dcutr_enabled;
+    uint32_t dcutr_circuit_id;
+    speer_peer_t *dcutr_peer;
     int (*send_fn)(void *user, const uint8_t *data, size_t len);
     int (*recv_fn)(void *user, uint8_t *buf, size_t cap, size_t *out_len);
     void (*on_circuit)(void *user, uint32_t circuit_id, const uint8_t *peer_id, size_t peer_id_len,
@@ -87,6 +92,8 @@ int relay_client_reserve(relay_client_t *client);
 int relay_client_connect_to_peer(relay_client_t *client, const uint8_t *target_peer_id,
                                  size_t target_peer_id_len);
 int relay_client_send(relay_client_t *client, uint32_t circuit_id, const uint8_t *data, size_t len);
+int relay_client_start_dcutr(relay_client_t *client, uint32_t circuit_id, speer_peer_t *peer,
+                             bool is_initiator);
 void relay_client_close_circuit(relay_client_t *client, uint32_t circuit_id);
 int relay_client_poll(relay_client_t *client, uint64_t now_ms);
 void relay_client_set_transport(relay_client_t *client,

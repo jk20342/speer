@@ -53,6 +53,8 @@ UNIT_TESTS = \
 	webpki_check \
 	dht_check \
 	mdns_check \
+	dcutr_check \
+	dcutr_relay_integration_check \
 	relay_client_check
 
 TEST_PROGS = $(patsubst %,tests/%$(EXEEXT),$(UNIT_TESTS))
@@ -151,6 +153,8 @@ check: $(STATIC) $(TEST_PROGS)
 	tests/webpki_check$(EXEEXT)
 	tests/dht_check$(EXEEXT)
 	tests/mdns_check$(EXEEXT)
+	tests/dcutr_check$(EXEEXT)
+	tests/dcutr_relay_integration_check$(EXEEXT)
 	tests/relay_client_check$(EXEEXT)
 
 .PHONY: all clean install debug release amalgamate examples check

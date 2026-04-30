@@ -236,29 +236,29 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     pos += name_len;
     write_u16(out + pos, MDNS_TYPE_PTR);
     pos += 2;
-    write_u16(out + pos, htons(DNS_CLASS_FLUSH_CACHE));
+    write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
     pos += 2;
-    write_u32(out + pos, htonl(svc->ttl));
+    write_u32(out + pos, svc->ttl);
     pos += 4;
     size_t ptr_len = encode_name(out + pos + 2, full_name);
     write_u16(out + pos, (uint16_t)ptr_len);
     pos += 2 + ptr_len;
     name_len = encode_name(out + pos, full_name);
-    if (pos + name_len + 10 + 6 > max) return -1;
+    if (pos + name_len + 10 + 7 > max) return -1;
     pos += name_len;
     write_u16(out + pos, MDNS_TYPE_SRV);
     pos += 2;
-    write_u16(out + pos, htons(DNS_CLASS_FLUSH_CACHE));
+    write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
     pos += 2;
-    write_u32(out + pos, htonl(svc->ttl));
+    write_u32(out + pos, svc->ttl);
     pos += 4;
-    write_u16(out + pos, 6);
+    write_u16(out + pos, 7);
     pos += 2;
-    write_u16(out + pos, htons(svc->srv.priority));
+    write_u16(out + pos, svc->srv.priority);
     pos += 2;
-    write_u16(out + pos, htons(svc->srv.weight));
+    write_u16(out + pos, svc->srv.weight);
     pos += 2;
-    write_u16(out + pos, htons(svc->srv.port));
+    write_u16(out + pos, svc->srv.port);
     pos += 2;
     out[pos++] = 0;
     name_len = encode_name(out + pos, full_name);
@@ -266,9 +266,9 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     pos += name_len;
     write_u16(out + pos, MDNS_TYPE_TXT);
     pos += 2;
-    write_u16(out + pos, htons(DNS_CLASS_FLUSH_CACHE));
+    write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
     pos += 2;
-    write_u32(out + pos, htonl(svc->ttl));
+    write_u32(out + pos, svc->ttl);
     pos += 4;
     size_t txt_start = pos;
     pos += 2;
@@ -344,10 +344,10 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
     dns_header_t hdr;
     hdr.id = read_u16(data);
     hdr.flags = read_u16(data + 2);
-    hdr.questions = ntohs(read_u16(data + 4));
-    hdr.answers = ntohs(read_u16(data + 6));
-    hdr.authority = ntohs(read_u16(data + 8));
-    hdr.additional = ntohs(read_u16(data + 10));
+    hdr.questions = read_u16(data + 4);
+    hdr.answers = read_u16(data + 6);
+    hdr.authority = read_u16(data + 8);
+    hdr.additional = read_u16(data + 10);
     size_t pos = 12;
     for (uint16_t i = 0; i < hdr.questions && pos < len; i++) {
         char name[MDNS_MAX_NAME_LENGTH];
@@ -378,7 +378,7 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         if (pos + rdlen > len) break;
         if (rtype == MDNS_TYPE_SRV) {
             if (rdlen >= 6) {
-                port = ntohs(read_u16(data + pos + 4));
+                port = read_u16(data + pos + 4);
                 char *dot = strchr(name, '.');
                 if (dot) {
                     size_t svc_len = dot - name;

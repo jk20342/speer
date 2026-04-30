@@ -20,6 +20,8 @@ set(SPEER_UNIT_TESTS
     quic_initial_check
     dht_check
     mdns_check
+    dcutr_check
+    dcutr_relay_integration_check
     relay_client_check
 )
 
