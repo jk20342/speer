@@ -44,6 +44,7 @@ typedef struct {
 static dcutr_ctx_t g_dcutr_ctx;
 
 static int gather_local_addrs(dcutr_candidate_t* out, size_t max) {
+    (void)max;
     size_t count = 0;
 
     struct sockaddr_in loopback;
@@ -58,6 +59,8 @@ static int gather_local_addrs(dcutr_candidate_t* out, size_t max) {
 
     return (int)count;
 }
+
+static int get_mapped_addr(const char* stun_server, struct sockaddr_storage* out) __attribute__((unused));
 
 static int get_mapped_addr(const char* stun_server, struct sockaddr_storage* out) {
     (void)stun_server;

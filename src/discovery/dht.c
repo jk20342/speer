@@ -322,7 +322,7 @@ int dht_iterative_find_node(dht_t* dht, const uint8_t* target_id,
             to_query_nodes[i]->queried = true;
             num_queried++;
 
-            uint8_t response[2048];
+            uint8_t response[2048] = {0};
             size_t response_len = sizeof(response);
             int ret = dht->send_rpc(dht->user, to_query_nodes[i]->node.address,
                                     target_id, DHT_ID_BYTES);

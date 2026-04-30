@@ -85,6 +85,5 @@ CheckOptions:
 
 WarningsAsErrors: ''
 HeaderFilterRegex: '.*'
-AnalyzeTemporaryDtors: false
 FormatStyle:     file
 User:            speer
