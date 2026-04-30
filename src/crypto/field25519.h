@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef int64_t fe25519[16];
+typedef uint64_t fe25519[5];
 
 void fe25519_0(fe25519 r);
 void fe25519_1(fe25519 r);

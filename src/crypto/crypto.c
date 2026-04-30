@@ -1,6 +1,13 @@
 #include "speer_internal.h"
 
+#include "cpu_features.h"
 #include "field25519.h"
+
+#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)) && \
+    (defined(__GNUC__) || defined(__clang__))
+#define SPEER_HAS_CHACHA_AVX2 1
+void speer_chacha20_avx2_8blocks(const uint32_t state[16], const uint8_t *in, uint8_t *out);
+#endif
 
 static const uint32_t chacha_const[4] = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
 
@@ -78,8 +85,37 @@ int speer_chacha_block_counter_at_max(const speer_chacha_ctx_t *ctx) {
     return ctx->state[12] == 0xffffffffu;
 }
 
+#if defined(SPEER_HAS_CHACHA_AVX2)
+static int g_chacha_avx2_init = 0;
+static int g_chacha_avx2 = 0;
+static int chacha_use_avx2(void) {
+    if (!g_chacha_avx2_init) {
+        g_chacha_avx2 = speer_cpu_has_avx2();
+        g_chacha_avx2_init = 1;
+    }
+    return g_chacha_avx2;
+}
+#endif
+
 void speer_chacha_crypt(speer_chacha_ctx_t *ctx, uint8_t *out, const uint8_t *in, size_t len) {
     uint8_t buf[64];
+
+#if defined(SPEER_HAS_CHACHA_AVX2)
+    if (ctx->idx == 64 && len >= 8 * 64 && chacha_use_avx2()) {
+        size_t bulk = (len / (8 * 64)) * (8 * 64);
+        size_t blocks = bulk / 64;
+        size_t i = 0;
+        while (i + (8 * 64) <= bulk) {
+            speer_chacha20_avx2_8blocks(ctx->state, in + i, out + i);
+            ctx->state[12] += 8;
+            i += 8 * 64;
+        }
+        in += bulk;
+        out += bulk;
+        len -= bulk;
+        (void)blocks;
+    }
+#endif
 
     while (len > 0) {
         if (ctx->idx == 64) {
@@ -251,7 +287,7 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
     store32(mac + 12, h3);
 }
 
-static const fe25519 fe_121665 = {0xdb41, 1};
+static const fe25519 fe_121665 = {121665ULL, 0, 0, 0, 0};
 
 static void x25519_scalar_mult(uint8_t out[32], const uint8_t scalar[32], const uint8_t point[32]) {
     uint8_t z[32];

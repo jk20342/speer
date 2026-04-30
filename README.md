@@ -1,6 +1,6 @@
 # speer
 
-A tiny libp2p in C. Noise XX, libp2p over TCP, partial QUIC v1, TLS 1.3 core, optional Web PKI, practical DHT core. ~13k LOC of code, zero external dependencies.
+A tiny libp2p in C. Noise XX, libp2p over TCP, partial QUIC v1, TLS 1.3 core, optional Web PKI, practical DHT core. ~14k LOC of code, zero external dependencies.
 
 See [docs/architecture.md](docs/architecture.md) for the per-protocol status table and [docs/SECURITY.md](docs/SECURITY.md) for the trust model.
 

@@ -17,6 +17,7 @@ option(SPEER_BUILD_TESTS "Build unit tests" ON)
 option(SPEER_BUILD_EXAMPLES "Build examples" ON)
 option(SPEER_BUILD_TOOLS "Build tools" ON)
 option(SPEER_BUILD_FUZZ "Build fuzzing targets" OFF)
+option(SPEER_BUILD_BENCHMARK "Build benchmarks" OFF)
 option(SPEER_BUILD_DOCS "Build documentation" OFF)
 option(SPEER_ENABLE_WEBPKI "Enable Web PKI support (X.509, RSA, ECDSA)" OFF)
 option(SPEER_ENABLE_RELAY "Enable Circuit Relay v2 support" ON)
@@ -249,6 +250,16 @@ if(SPEER_BUILD_TOOLS)
     add_subdirectory(tools)
 endif()
 
+# Fuzzing
+if(SPEER_BUILD_FUZZ)
+    add_subdirectory(tests/fuzz)
+endif()
+
+# Benchmarks
+if(SPEER_BUILD_BENCHMARK)
+    add_subdirectory(tests/benchmark)
+endif()
+
 # Documentation
 if(SPEER_BUILD_DOCS)
     find_package(Doxygen)
@@ -279,6 +290,8 @@ message(STATUS "  Build shared libs: ${BUILD_SHARED_LIBS}")
 message(STATUS "  Build tests: ${SPEER_BUILD_TESTS}")
 message(STATUS "  Build examples: ${SPEER_BUILD_EXAMPLES}")
 message(STATUS "  Build tools: ${SPEER_BUILD_TOOLS}")
+message(STATUS "  Build fuzzers: ${SPEER_BUILD_FUZZ}")
+message(STATUS "  Build benchmarks: ${SPEER_BUILD_BENCHMARK}")
 message(STATUS "  Web PKI: ${SPEER_ENABLE_WEBPKI}")
 message(STATUS "  Relay support: ${SPEER_ENABLE_RELAY}")
 message(STATUS "  DHT support: ${SPEER_ENABLE_DHT}")

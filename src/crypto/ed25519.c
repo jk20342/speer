@@ -9,14 +9,14 @@ typedef struct {
     fe25519 X, Y, Z, T;
 } ge_p3;
 
-static const fe25519 d = {0x78a3, 0x1359, 0x4dca, 0x75eb, 0xd8ab, 0x4141, 0x0a4d, 0x0070,
-                          0xe898, 0x7779, 0x4079, 0x8cc7, 0xfe73, 0x2b6f, 0x6cee, 0x5203};
+static const fe25519 d = {0x34dca135978a3ULL, 0x1a8283b156ebdULL, 0x5e7a26001c029ULL,
+                          0x739c663a03cbbULL, 0x52036cee2b6ffULL};
 
-static const fe25519 ge_base_x = {0xd51a, 0x8f25, 0x2d60, 0xc956, 0xa7b2, 0x9525, 0xc760, 0x692c,
-                                  0xdc5c, 0xfdd6, 0xe231, 0xc0a4, 0x53fe, 0xcd6e, 0x36d3, 0x2169};
+static const fe25519 ge_base_x = {0x62d608f25d51aULL, 0x412a4b4f6592aULL, 0x75b7171a4b31dULL,
+                                  0x1ff60527118feULL, 0x216936d3cd6e5ULL};
 
-static const fe25519 ge_base_y = {0x6658, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666,
-                                  0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666};
+static const fe25519 ge_base_y = {0x6666666666658ULL, 0x4ccccccccccccULL, 0x1999999999999ULL,
+                                  0x3333333333333ULL, 0x6666666666666ULL};
 
 static void ge_p3_0(ge_p3 *h) {
     fe25519_0(h->X);
@@ -176,8 +176,8 @@ static int ge_frombytes_negate_vartime(ge_p3 *h, const uint8_t *s) {
     if (!fe25519_iszero(check)) {
         fe25519_add(check, vxx, u);
         if (!fe25519_iszero(check)) return -1;
-        fe25519 sqrtm1 = {0xa0b0, 0x4a0e, 0x1b27, 0xc4ee, 0xe478, 0xad2f, 0x1806, 0x2f43,
-                          0xd7a7, 0x3dfb, 0x0099, 0x2b4d, 0xdf0b, 0x4fc1, 0x2480, 0x2b83};
+        fe25519 sqrtm1 = {0x61b274a0ea0b0ULL, 0x0d5a5fc8f189dULL, 0x7ef5e9cbd0c60ULL,
+                          0x78595a6804c9eULL, 0x2b8324804fc1dULL};
         fe25519_mul(h->X, h->X, sqrtm1);
     }
 

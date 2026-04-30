@@ -1,7 +1,15 @@
 #include "speer_internal.h"
 
+#include "cpu_features.h"
+
 #define SHA256_BLOCK_SIZE  64
 #define SHA256_DIGEST_SIZE 32
+
+#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)) && \
+    (defined(__GNUC__) || defined(__clang__))
+#define SPEER_SHA_HAS_SHANI 1
+void speer_sha256_blocks_shani(uint32_t state[8], const uint8_t *data, size_t nblocks);
+#endif
 
 static const uint32_t k256[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -24,7 +32,44 @@ static INLINE uint32_t rotr(uint32_t x, int n) {
 #define SIG0(x)      (rotr(x, 7) ^ rotr(x, 18) ^ ((x) >> 3))
 #define SIG1(x)      (rotr(x, 17) ^ rotr(x, 19) ^ ((x) >> 10))
 
-static void sha256_transform(sha256_ctx_t *ctx, const uint8_t *data) {
+static void sha256_transform_scalar(sha256_ctx_t *ctx, const uint8_t *data);
+
+#if defined(SPEER_SHA_HAS_SHANI)
+static int g_sha256_use_shani_init = 0;
+static int g_sha256_use_shani = 0;
+static int sha256_use_shani(void) {
+    if (!g_sha256_use_shani_init) {
+        g_sha256_use_shani = speer_cpu_has_sha();
+        g_sha256_use_shani_init = 1;
+    }
+    return g_sha256_use_shani;
+}
+#endif
+
+static INLINE void sha256_transform(sha256_ctx_t *ctx, const uint8_t *data) {
+#if defined(SPEER_SHA_HAS_SHANI)
+    if (sha256_use_shani()) {
+        speer_sha256_blocks_shani(ctx->state, data, 1);
+        return;
+    }
+#endif
+    sha256_transform_scalar(ctx, data);
+}
+
+static void sha256_transform_blocks(sha256_ctx_t *ctx, const uint8_t *data, size_t nblocks) {
+#if defined(SPEER_SHA_HAS_SHANI)
+    if (sha256_use_shani()) {
+        speer_sha256_blocks_shani(ctx->state, data, nblocks);
+        return;
+    }
+#endif
+    while (nblocks--) {
+        sha256_transform_scalar(ctx, data);
+        data += 64;
+    }
+}
+
+static void sha256_transform_scalar(sha256_ctx_t *ctx, const uint8_t *data) {
     uint32_t m[64];
     uint32_t a, b, c, d, e, f, g, h;
 
@@ -82,20 +127,31 @@ void speer_sha256_init(void *state) {
 void speer_sha256_update(void *state, const uint8_t *in, size_t len) {
     sha256_ctx_t *ctx = (sha256_ctx_t *)state;
 
-    while (len > 0) {
+    if (ctx->buffer_used > 0) {
         size_t space = SHA256_BLOCK_SIZE - ctx->buffer_used;
         size_t to_copy = MIN(len, space);
-
         COPY(ctx->buffer + ctx->buffer_used, in, to_copy);
         ctx->buffer_used += to_copy;
         in += to_copy;
         len -= to_copy;
-
         if (ctx->buffer_used == SHA256_BLOCK_SIZE) {
             sha256_transform(ctx, ctx->buffer);
             ctx->bit_count += SHA256_BLOCK_SIZE * 8;
             ctx->buffer_used = 0;
         }
+    }
+
+    if (len >= SHA256_BLOCK_SIZE) {
+        size_t nblocks = len / SHA256_BLOCK_SIZE;
+        sha256_transform_blocks(ctx, in, nblocks);
+        ctx->bit_count += (uint64_t)nblocks * SHA256_BLOCK_SIZE * 8;
+        in += nblocks * SHA256_BLOCK_SIZE;
+        len -= nblocks * SHA256_BLOCK_SIZE;
+    }
+
+    if (len > 0) {
+        COPY(ctx->buffer, in, len);
+        ctx->buffer_used = len;
     }
 }
 

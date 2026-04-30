@@ -51,14 +51,17 @@ UNIT_TESTS = \
 	tls13_psk_ticket_check \
 	tls13_record_handshake_check \
 	tls13_openssl_smoke_check \
+	tls13_auth_check \
 	packet_check \
 	aead_check \
 	ed25519_check \
 	noise_check \
 	x25519_check \
 	quic_initial_check \
+	quic_pkt_robustness_check \
 	webpki_check \
 	dht_check \
+	dht_check_negative \
 	dht_iterative_check \
 	dht_maintenance_check \
 	dht_libp2p_check \
@@ -67,7 +70,13 @@ UNIT_TESTS = \
 	dcutr_check \
 	dcutr_relay_integration_check \
 	relay_client_check \
-	cpu_features_check
+	cpu_features_check \
+	poly1305_kat_check \
+	rng_failure_check \
+	parser_robustness_check \
+	chacha_counter_check \
+	ecdsa_p256_check \
+	identify_check
 
 TEST_PROGS = $(patsubst %,tests/%$(EXEEXT),$(UNIT_TESTS))
 
@@ -145,41 +154,55 @@ tests/%$(EXEEXT): tests/%.c $(STATIC)
 
 .PHONY: check
 check: $(STATIC) $(TEST_PROGS)
-	tests/varint_length_prefix_check$(EXEEXT)
-	tests/multiaddr_peer_id_check$(EXEEXT)
-	tests/protobuf_sha256_check$(EXEEXT)
-	tests/buf_cursor_check$(EXEEXT)
-	tests/asn1_check$(EXEEXT)
-	tests/buffer_pool_check$(EXEEXT)
-	tests/yamux_hdr_check$(EXEEXT)
-	tests/yamux_session_check$(EXEEXT)
-	tests/multistream_check$(EXEEXT)
-	tests/quic_frame_check$(EXEEXT)
-	tests/tls_msg_check$(EXEEXT)
-	tests/tls13_full_handshake_check$(EXEEXT)
-	tests/tls13_negotiation_check$(EXEEXT)
-	tests/tls13_negative_vectors_check$(EXEEXT)
-	tests/tls13_hrr_check$(EXEEXT)
-	tests/tls13_key_update_check$(EXEEXT)
-	tests/tls13_psk_ticket_check$(EXEEXT)
-	tests/tls13_record_handshake_check$(EXEEXT)
-	tests/tls13_openssl_smoke_check$(EXEEXT)
-	tests/packet_check$(EXEEXT)
-	tests/aead_check$(EXEEXT)
-	tests/ed25519_check$(EXEEXT)
-	tests/noise_check$(EXEEXT)
-	tests/x25519_check$(EXEEXT)
-	tests/quic_initial_check$(EXEEXT)
-	tests/webpki_check$(EXEEXT)
-	tests/dht_check$(EXEEXT)
-	tests/dht_iterative_check$(EXEEXT)
-	tests/dht_maintenance_check$(EXEEXT)
-	tests/dht_libp2p_check$(EXEEXT)
-	tests/dht_libp2p_stream_check$(EXEEXT)
-	tests/mdns_check$(EXEEXT)
-	tests/dcutr_check$(EXEEXT)
-	tests/dcutr_relay_integration_check$(EXEEXT)
-	tests/relay_client_check$(EXEEXT)
-	tests/cpu_features_check$(EXEEXT)
+	@echo "Running unit tests..."
+	@failed=0; \
+	for test in $(UNIT_TESTS); do \
+		echo "==> $$test"; \
+		./tests/$$test$(EXEEXT) || failed=$$((failed + 1)); \
+	done; \
+	if [ $$failed -gt 0 ]; then \
+		echo ""; \
+		echo "$$failed test(s) FAILED"; \
+		exit 1; \
+	else \
+		echo ""; \
+		echo "All unit tests passed"; \
+	fi
 
-.PHONY: all clean install debug release amalgamate examples check
+# Benchmark targets
+.PHONY: bench
+bench: $(STATIC)
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_crypto.c $(STATIC) $(LIBS) -o tests/benchmark/bench_crypto
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_wire.c $(STATIC) $(LIBS) -o tests/benchmark/bench_wire
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_protocol.c $(STATIC) $(LIBS) -o tests/benchmark/bench_protocol
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_throughput.c $(STATIC) $(LIBS) -o tests/benchmark/bench_throughput
+	@echo "=== Crypto Benchmarks ==="
+	@tests/benchmark/bench_crypto
+	@echo "=== Wire Format Benchmarks ==="
+	@tests/benchmark/bench_wire
+	@echo "=== Protocol Benchmarks ==="
+	@tests/benchmark/bench_protocol
+	@echo "=== Throughput Benchmarks ==="
+	@tests/benchmark/bench_throughput
+
+.PHONY: bench-crypto
+bench-crypto: $(STATIC)
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_crypto.c $(STATIC) $(LIBS) -o tests/benchmark/bench_crypto
+	@tests/benchmark/bench_crypto
+
+.PHONY: bench-wire
+bench-wire: $(STATIC)
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_wire.c $(STATIC) $(LIBS) -o tests/benchmark/bench_wire
+	@tests/benchmark/bench_wire
+
+.PHONY: bench-protocol
+bench-protocol: $(STATIC)
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_protocol.c $(STATIC) $(LIBS) -o tests/benchmark/bench_protocol
+	@tests/benchmark/bench_protocol
+
+.PHONY: bench-throughput
+bench-throughput: $(STATIC)
+	$(CC) $(CFLAGS) -O3 -I$(INCDIR) tests/benchmark/bench_throughput.c $(STATIC) $(LIBS) -o tests/benchmark/bench_throughput
+	@tests/benchmark/bench_throughput
+
+.PHONY: all clean install debug release amalgamate examples check bench bench-crypto bench-wire bench-protocol bench-throughput
