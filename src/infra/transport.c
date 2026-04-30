@@ -39,29 +39,6 @@ uint32_t speer_conn_get_timeout(speer_conn_t* conn) {
     return conn->timeout_ms;
 }
 
-static INLINE uint64_t pkt_num_encode(uint64_t full, uint64_t largest) {
-    uint64_t win = 1;
-    uint64_t h = largest + win;
-    uint64_t l = h - (win << 1);
-    
-    uint64_t num = full;
-    if (UNLIKELY(num < l)) num += (win << 1);
-    
-    return num;
-}
-
-static INLINE uint64_t pkt_num_decode(uint64_t truncated, uint64_t expected) {
-    uint64_t win = 1;
-    uint64_t h = expected + win;
-    uint64_t l = h - (win << 1);
-    
-    uint64_t candidate = (expected & ~(win * 2 - 1)) | truncated;
-    if (candidate < l) candidate += win * 2;
-    else if (candidate > h) candidate -= win * 2;
-    
-    return candidate;
-}
-
 typedef struct {
     uint64_t pkt_num;
     uint64_t send_time_ms;

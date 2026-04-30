@@ -483,25 +483,25 @@ int dht_update_node(dht_t* dht, const uint8_t* id, const char* address) {
 }
 
 void dht_bootstrap_init(dht_bootstrap_list_t* list) {
-    list->count = 0;
+    list->num_nodes = 0;
 }
 
 void dht_bootstrap_add(dht_bootstrap_list_t* list, const char* address) {
-    if (list->count >= 8) return;
+    if (list->num_nodes >= 8) return;
     size_t len = strlen(address);
     if (len >= sizeof(list->nodes[0].address)) return;
-    COPY(list->nodes[list->count].address, address, len + 1);
-    list->count++;
+    COPY(list->nodes[list->num_nodes].address, address, len + 1);
+    list->num_nodes++;
 }
 
 int dht_bootstrap_run(dht_t* dht, dht_bootstrap_list_t* list, uint64_t now_ms) {
     (void)now_ms;
-    for (size_t i = 0; i < list->count; i++) {
+    for (int i = 0; i < list->num_nodes; i++) {
         dht_ping(dht, list->nodes[i].address);
     }
-    return list->count > 0 ? 0 : -1;
+    return list->num_nodes > 0 ? 0 : -1;
 }
 
 int dht_is_bootstrapped(dht_t* dht) {
-    return dht->num_nodes > 0;
+    return dht->bootstrapped;
 }

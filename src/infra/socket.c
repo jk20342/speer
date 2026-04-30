@@ -321,6 +321,7 @@ void speer_random_bytes(uint8_t* buf, size_t len) {
     CryptReleaseContext(hProvider, 0);
 #else
     size_t offset = 0;
+    #if defined(__linux__) && defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25))
     while (offset < len) {
         ssize_t ret = getrandom(buf + offset, len - offset, 0);
         if (ret < 0) {
@@ -329,6 +330,7 @@ void speer_random_bytes(uint8_t* buf, size_t len) {
         }
         offset += (size_t)ret;
     }
+    #endif
     if (offset < len) {
         int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
         if (fd >= 0) {
