@@ -146,7 +146,13 @@ int speer_tcp_send_all(int fd, const uint8_t *data, size_t len) {
 }
 
 void speer_tcp_close(int fd) {
-    if (fd >= 0) CLOSESOCKET(fd);
+    if (fd < 0) return;
+    /* Send FIN before closing so the peer sees a graceful shutdown rather than
+     * a connection abort (RST). On Windows, omitting shutdown() before
+     * closesocket() makes the peer's recv() fail with WSAECONNABORTED (10053).
+     * shutdown() failing on a non-connected socket is harmless and ignored. */
+    (void)shutdown(fd, SHUT_WR);
+    CLOSESOCKET(fd);
 }
 
 int speer_tcp_set_nonblocking(int fd, int yes) {

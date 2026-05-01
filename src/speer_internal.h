@@ -20,6 +20,9 @@
 typedef int socklen_t;
 #define CLOSESOCKET closesocket
 #define SHUT_RDWR   SD_BOTH
+#ifndef SHUT_WR
+#define SHUT_WR SD_SEND
+#endif
 #ifndef IPV6_V6ONLY
 #define IPV6_V6ONLY 27
 #endif

@@ -64,15 +64,46 @@ foreach ($d in $SUBDIRS) {
     }
 }
 
+# Build dependency check: any header touched after a .o means rebuild. We
+# don't track which header is included by which .c file (no -MMD pass), so
+# we use a coarse "newest header mtime" stamp as a global floor.
+$headers = @()
+$headers += Get-ChildItem -Path $SRCDIR -Recurse -Filter "*.h" -File -ErrorAction SilentlyContinue
+$headers += Get-ChildItem -Path $INCDIR -Recurse -Filter "*.h" -File -ErrorAction SilentlyContinue
+$newestHeaderTime = [DateTime]::MinValue
+foreach ($h in $headers) {
+    if ($h.LastWriteTime -gt $newestHeaderTime) { $newestHeaderTime = $h.LastWriteTime }
+}
+
 $objects = @()
 $built = 0
 foreach ($src in $sources) {
-    $relUnderSrc = $src.FullName.Substring($SRCDIR.Length).TrimStart('\','/').Replace('\','/')
-    $objpath = (Join-Path $OBJDIR ($relUnderSrc -replace '\.c$', '.o')).Replace('\','/')
-    $objdir  = Split-Path $objpath -Parent
-    if (-not (Test-Path $objdir)) { New-Item -ItemType Directory $objdir -Force | Out-Null }
+    # Use the immediate parent directory name as the only sub-folder in
+    # obj-bench. SUBDIRS is a flat one-level layout under src/, so this is
+    # unambiguous. CRITICAL: PowerShell variables are case-insensitive, so
+    # $objdir and $OBJDIR are the SAME variable. The earlier code "$objdir =
+    # Join-Path $OBJDIR $parentName" silently rewrote $OBJDIR every iteration
+    # and produced obj-bench\util\util\crypto\crypto\... cumulative nesting.
+    $parentName = $src.Directory.Name
+    if ($parentName -eq (Split-Path $SRCDIR -Leaf)) {
+        $objSubdir = $OBJDIR
+    } else {
+        $objSubdir = Join-Path $OBJDIR $parentName
+    }
+    if (-not (Test-Path -LiteralPath $objSubdir)) {
+        New-Item -ItemType Directory -Path $objSubdir -Force | Out-Null
+    }
+    $objpath = Join-Path $objSubdir ($src.BaseName + ".o")
 
-    if ((Test-Path $objpath) -and ((Get-Item $objpath).LastWriteTime -gt $src.LastWriteTime)) {
+    $needRebuild = $true
+    if (Test-Path $objpath) {
+        $objMtime = (Get-Item $objpath).LastWriteTime
+        if (($objMtime -gt $src.LastWriteTime) -and ($objMtime -gt $newestHeaderTime)) {
+            $needRebuild = $false
+        }
+    }
+
+    if (-not $needRebuild) {
         $objects += $objpath
         continue
     }
