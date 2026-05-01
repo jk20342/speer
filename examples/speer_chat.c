@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <string.h>
 
 #include "ed25519.h"
@@ -65,15 +66,15 @@ static void thread_sleep_ms(int ms) {
 
 #define MAX_NOISE_FRAME     65535
 
-#define ANSI_RESET      "\033[0m"
-#define ANSI_DIM        "\033[2m"
-#define ANSI_BOLD       "\033[1m"
-#define ANSI_GREEN      "\033[32m"
-#define ANSI_CYAN       "\033[36m"
-#define ANSI_YELLOW     "\033[33m"
-#define ANSI_RED        "\033[31m"
-#define ANSI_BLUE       "\033[34m"
-#define ANSI_CLEAR_LINE "\r\033[K"
+#define ANSI_RESET          "\033[0m"
+#define ANSI_DIM            "\033[2m"
+#define ANSI_BOLD           "\033[1m"
+#define ANSI_GREEN          "\033[32m"
+#define ANSI_CYAN           "\033[36m"
+#define ANSI_YELLOW         "\033[33m"
+#define ANSI_RED            "\033[31m"
+#define ANSI_BLUE           "\033[34m"
+#define ANSI_CLEAR_LINE     "\r\033[K"
 
 typedef struct outmsg {
     struct outmsg *next;
@@ -711,7 +712,8 @@ static int already_attempted(disc_state_t *st, const char *pid) {
             break;
         }
     }
-    if (!found && st->num_attempted < (int)(sizeof(st->attempted_pids) / sizeof(st->attempted_pids[0]))) {
+    if (!found &&
+        st->num_attempted < (int)(sizeof(st->attempted_pids) / sizeof(st->attempted_pids[0]))) {
         snprintf(st->attempted_pids[st->num_attempted], sizeof(st->attempted_pids[0]), "%s", pid);
         st->num_attempted++;
     }
