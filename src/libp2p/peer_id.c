@@ -91,16 +91,21 @@ int speer_peer_id_to_b58(char *out, size_t out_cap, const uint8_t *peer_id, size
     size_t length = 0;
     for (size_t i = zeroes; i < peer_id_len; i++) {
         uint32_t carry = peer_id[i];
-        size_t j = 0;
-        for (size_t k = buflen; k > 0; k--) {
-            size_t idx = k - 1;
-            if (idx < buflen - length || carry) {
-                carry += (uint32_t)256 * buf[idx];
-                buf[idx] = (uint8_t)(carry % 58);
-                carry /= 58;
-                j++;
-                if (j > length) length = j;
+        for (size_t k = 0; k < length; k++) {
+            size_t idx = buflen - 1 - k;
+            carry += (uint32_t)256 * buf[idx];
+            buf[idx] = (uint8_t)(carry % 58);
+            carry /= 58;
+        }
+        while (carry > 0) {
+            if (length >= buflen) {
+                free(buf);
+                return -1;
             }
+            length++;
+            size_t idx = buflen - length;
+            buf[idx] = (uint8_t)(carry % 58);
+            carry /= 58;
         }
     }
     size_t offset = buflen - length;

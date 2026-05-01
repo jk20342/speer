@@ -5,6 +5,7 @@
 #include "mdns.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <string.h>
 
@@ -12,17 +13,26 @@
 #include <winsock2.h>
 
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
 typedef int socklen_t;
 #define CLOSESOCKET closesocket
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #define CLOSESOCKET close
+#endif
+
+#if defined(_WIN32)
+#define mdns_strcasecmp _stricmp
+#else
+#define mdns_strcasecmp strcasecmp
 #endif
 
 #if defined(_WIN32)
@@ -45,6 +55,7 @@ typedef struct {
 } dns_header_t;
 
 #define DNS_FLAG_RESPONSE     0x8000
+#define DNS_FLAG_AA           0x0400
 #define DNS_CLASS_IN          1
 #define DNS_CLASS_FLUSH_CACHE 0x8001
 
@@ -238,10 +249,14 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     size_t max = *out_len;
     if (pos + 12 > max) return -1;
     memset(out + pos, 0, 12);
-    write_u16(out + 2, DNS_FLAG_RESPONSE);
-    write_u16(out + 6, 3);
+    write_u16(out + 2, DNS_FLAG_RESPONSE | DNS_FLAG_AA);
+    write_u16(out + 4, 0);
+    write_u16(out + 6, 1);
+    write_u16(out + 8, 0);
+    uint16_t txt_count = svc->txt.num_fields ? svc->txt.num_fields : 1;
+    write_u16(out + 10, txt_count);
     pos += 12;
-    char full_name[MDNS_MAX_NAME_LENGTH * 3 + 2];
+
     char service_name[MDNS_MAX_NAME_LENGTH * 2 + 2];
     size_t type_len = strlen(svc->service_type);
     int n;
@@ -251,88 +266,232 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
         n = snprintf(service_name, sizeof(service_name), "%s.%s", svc->service_type, svc->domain);
     }
     if (n < 0 || (size_t)n >= sizeof(service_name)) return -1;
-    n = snprintf(full_name, sizeof(full_name), "%s.%s", svc->instance_name, service_name);
-    if (n < 0 || (size_t)n >= sizeof(full_name)) return -1;
+
     if (append_name(out, &pos, max, service_name) != 0) return -1;
     if (pos + 10 > max) return -1;
     write_u16(out + pos, MDNS_TYPE_PTR);
     pos += 2;
-    write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
+    write_u16(out + pos, DNS_CLASS_IN);
     pos += 2;
     write_u32(out + pos, svc->ttl);
     pos += 4;
-    size_t rdlen_pos = pos;
+    size_t ptr_rdlen_pos = pos;
     pos += 2;
-    size_t rdata_start = pos;
-    if (append_name(out, &pos, max, full_name) != 0) return -1;
-    write_u16(out + rdlen_pos, (uint16_t)(pos - rdata_start));
-    if (append_name(out, &pos, max, full_name) != 0) return -1;
-    if (pos + 10 + 7 > max) return -1;
-    write_u16(out + pos, MDNS_TYPE_SRV);
-    pos += 2;
-    write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
-    pos += 2;
-    write_u32(out + pos, svc->ttl);
-    pos += 4;
-    write_u16(out + pos, 7);
-    pos += 2;
-    write_u16(out + pos, svc->srv.priority);
-    pos += 2;
-    write_u16(out + pos, svc->srv.weight);
-    pos += 2;
-    write_u16(out + pos, svc->srv.port);
-    pos += 2;
-    out[pos++] = 0;
-    if (append_name(out, &pos, max, full_name) != 0) return -1;
-    if (pos + 10 > max) return -1;
-    write_u16(out + pos, MDNS_TYPE_TXT);
-    pos += 2;
-    write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
-    pos += 2;
-    write_u32(out + pos, svc->ttl);
-    pos += 4;
-    size_t txt_start = pos;
-    pos += 2;
-    for (uint32_t i = 0; i < svc->txt.num_fields; i++) {
-        char txt_field[256];
-        int len;
-        if (svc->txt.fields[i].has_value) {
-            len = snprintf(txt_field, sizeof(txt_field), "%s=%s", svc->txt.fields[i].key,
-                           svc->txt.fields[i].value);
+    size_t ptr_rdata_start = pos;
+    size_t peer_name_offset = pos;
+    if (append_name(out, &pos, max, svc->instance_name) != 0) return -1;
+    write_u16(out + ptr_rdlen_pos, (uint16_t)(pos - ptr_rdata_start));
+
+    for (uint32_t i = 0; i < txt_count; i++) {
+        if (peer_name_offset <= 0x3FFF) {
+            if (pos + 2 > max) return -1;
+            out[pos++] = (uint8_t)(0xC0 | (peer_name_offset >> 8));
+            out[pos++] = (uint8_t)(peer_name_offset & 0xFF);
         } else {
-            len = snprintf(txt_field, sizeof(txt_field), "%s", svc->txt.fields[i].key);
+            if (append_name(out, &pos, max, svc->instance_name) != 0) return -1;
         }
-        if (len < 0) return -1;
-        if (len > 255) len = 255;
-        if (pos + 1 + (size_t)len > max) return -1;
-        out[pos++] = (uint8_t)len;
-        memcpy(out + pos, txt_field, (size_t)len);
-        pos += (size_t)len;
+        if (pos + 10 > max) return -1;
+        write_u16(out + pos, MDNS_TYPE_TXT);
+        pos += 2;
+        write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
+        pos += 2;
+        write_u32(out + pos, svc->ttl);
+        pos += 4;
+        size_t txt_rdlen_pos = pos;
+        pos += 2;
+        size_t txt_rdata_start = pos;
+        if (svc->txt.num_fields == 0) {
+            if (pos + 1 > max) return -1;
+            out[pos++] = 0;
+        } else {
+            char txt_field[256];
+            int len;
+            const mdns_txt_field_t *f = &svc->txt.fields[i];
+            if (f->has_value) {
+                len = snprintf(txt_field, sizeof(txt_field), "%s=%s", f->key, f->value);
+            } else {
+                len = snprintf(txt_field, sizeof(txt_field), "%s", f->key);
+            }
+            if (len < 0) return -1;
+            if (len > 255) len = 255;
+            if (pos + 1 + (size_t)len > max) return -1;
+            out[pos++] = (uint8_t)len;
+            memcpy(out + pos, txt_field, (size_t)len);
+            pos += (size_t)len;
+        }
+        write_u16(out + txt_rdlen_pos, (uint16_t)(pos - txt_rdata_start));
     }
-    if (svc->txt.num_fields == 0) {
-        if (pos + 1 > max) return -1;
-        out[pos++] = 0;
-    }
-    write_u16(out + txt_start, (uint16_t)(pos - txt_start - 2));
+
     *out_len = pos;
+    return 0;
+}
+
+static int mdns_enum_local_ipv4(uint32_t *out, int cap) {
+    int count = 0;
+    if (cap > 0) {
+        out[count++] = htonl(INADDR_LOOPBACK);
+    }
+#if defined(_WIN32)
+    ULONG buf_len = 16 * 1024;
+    IP_ADAPTER_ADDRESSES *addrs = (IP_ADAPTER_ADDRESSES *)malloc(buf_len);
+    if (!addrs) return count;
+    ULONG ret = GetAdaptersAddresses(AF_INET,
+                                     GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                                         GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME,
+                                     NULL, addrs, &buf_len);
+    if (ret == ERROR_BUFFER_OVERFLOW) {
+        free(addrs);
+        addrs = (IP_ADAPTER_ADDRESSES *)malloc(buf_len);
+        if (!addrs) return count;
+        ret = GetAdaptersAddresses(AF_INET,
+                                   GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                                       GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME,
+                                   NULL, addrs, &buf_len);
+    }
+    if (ret == NO_ERROR) {
+        for (IP_ADAPTER_ADDRESSES *a = addrs; a && count < cap; a = a->Next) {
+            if (a->OperStatus != IfOperStatusUp) continue;
+            for (IP_ADAPTER_UNICAST_ADDRESS *u = a->FirstUnicastAddress; u && count < cap;
+                 u = u->Next) {
+                if (u->Address.lpSockaddr->sa_family != AF_INET) continue;
+                struct sockaddr_in *si = (struct sockaddr_in *)u->Address.lpSockaddr;
+                uint32_t addr = si->sin_addr.s_addr;
+                if (addr == htonl(INADDR_LOOPBACK)) continue;
+                /* skip APIPA 169.254/16 */
+                if ((ntohl(addr) & 0xFFFF0000U) == 0xA9FE0000U) continue;
+                out[count++] = addr;
+            }
+        }
+    }
+    free(addrs);
+#else
+    struct ifaddrs *ifa = NULL;
+    if (getifaddrs(&ifa) == 0) {
+        for (struct ifaddrs *cur = ifa; cur && count < cap; cur = cur->ifa_next) {
+            if (!cur->ifa_addr || cur->ifa_addr->sa_family != AF_INET) continue;
+            if (!(cur->ifa_flags & IFF_UP)) continue;
+            struct sockaddr_in *si = (struct sockaddr_in *)cur->ifa_addr;
+            uint32_t addr = si->sin_addr.s_addr;
+            if (addr == htonl(INADDR_LOOPBACK)) continue;
+            out[count++] = addr;
+        }
+        freeifaddrs(ifa);
+    }
+#endif
+    return count;
+}
+
+int mdns_query(mdns_ctx_t *ctx, const char *service_name) {
+    uint8_t pkt[256];
+    size_t pos = 0;
+    if (pos + 12 > sizeof(pkt)) return -1;
+    memset(pkt, 0, 12);
+    write_u16(pkt + 4, 1);
+    pos += 12;
+    if (append_name(pkt, &pos, sizeof(pkt), service_name) != 0) return -1;
+    if (pos + 4 > sizeof(pkt)) return -1;
+    write_u16(pkt + pos, MDNS_TYPE_PTR);
+    pos += 2;
+    write_u16(pkt + pos, DNS_CLASS_IN);
+    pos += 2;
+    uint32_t ifaces[16];
+    int n_ifaces = mdns_enum_local_ipv4(ifaces, (int)(sizeof(ifaces) / sizeof(ifaces[0])));
+    struct sockaddr_in dest;
+    memset(&dest, 0, sizeof(dest));
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(MDNS_PORT);
+    dest.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR_IPV4);
+    for (int k = 0; k < n_ifaces; k++) {
+        struct in_addr if_addr;
+        if_addr.s_addr = ifaces[k];
+        setsockopt(ctx->socket_ipv4, IPPROTO_IP, IP_MULTICAST_IF, (const char *)&if_addr,
+                   sizeof(if_addr));
+        sendto(ctx->socket_ipv4, (const char *)pkt, (int)pos, 0, (struct sockaddr *)&dest,
+               sizeof(dest));
+    }
+    if (n_ifaces == 0) {
+        sendto(ctx->socket_ipv4, (const char *)pkt, (int)pos, 0, (struct sockaddr *)&dest,
+               sizeof(dest));
+    }
     return 0;
 }
 
 int mdns_announce(mdns_ctx_t *ctx) {
     uint8_t packet[MDNS_MAX_PACKET_SIZE];
+    uint32_t ifaces[16];
+    int n_ifaces = mdns_enum_local_ipv4(ifaces, (int)(sizeof(ifaces) / sizeof(ifaces[0])));
     for (uint32_t i = 0; i < ctx->num_services; i++) {
         size_t len = sizeof(packet);
-        if (mdns_build_announcement(packet, &len, &ctx->services[i]) == 0) {
-            struct sockaddr_in dest;
-            memset(&dest, 0, sizeof(dest));
-            dest.sin_family = AF_INET;
-            dest.sin_port = htons(MDNS_PORT);
-            dest.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR_IPV4);
+        if (mdns_build_announcement(packet, &len, &ctx->services[i]) != 0) continue;
+        struct sockaddr_in dest;
+        memset(&dest, 0, sizeof(dest));
+        dest.sin_family = AF_INET;
+        dest.sin_port = htons(MDNS_PORT);
+        dest.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR_IPV4);
+        for (int k = 0; k < n_ifaces; k++) {
+            struct in_addr if_addr;
+            if_addr.s_addr = ifaces[k];
+            setsockopt(ctx->socket_ipv4, IPPROTO_IP, IP_MULTICAST_IF, (const char *)&if_addr,
+                       sizeof(if_addr));
+            sendto(ctx->socket_ipv4, (const char *)packet, (int)len, 0, (struct sockaddr *)&dest,
+                   sizeof(dest));
+        }
+        if (n_ifaces == 0) {
             sendto(ctx->socket_ipv4, (const char *)packet, (int)len, 0, (struct sockaddr *)&dest,
                    sizeof(dest));
         }
     }
     return 0;
+}
+
+static void mdns_handle_query(mdns_ctx_t *ctx, const uint8_t *data, size_t len,
+                              const struct sockaddr_in *from) {
+    if (len < 12) return;
+    uint16_t qcount = read_u16(data + 4);
+    size_t pos = 12;
+    int matched_any = 0;
+    for (uint16_t i = 0; i < qcount && pos < len; i++) {
+        char qname[MDNS_MAX_NAME_LENGTH];
+        size_t name_end = decode_name(data, len, pos, qname, sizeof(qname), 0);
+        if (name_end == 0) return;
+        if (name_end + 4 > len) return;
+        uint16_t qtype = read_u16(data + name_end);
+        pos = name_end + 4;
+        for (uint32_t s = 0; s < ctx->num_services && !matched_any; s++) {
+            const mdns_service_t *svc = &ctx->services[s];
+            char service_name[MDNS_MAX_NAME_LENGTH * 2 + 2];
+            size_t type_len = strlen(svc->service_type);
+            int n;
+            if (type_len >= 6 && strcmp(svc->service_type + type_len - 6, ".local") == 0) {
+                n = snprintf(service_name, sizeof(service_name), "%s", svc->service_type);
+            } else {
+                n = snprintf(service_name, sizeof(service_name), "%s.%s", svc->service_type,
+                             svc->domain);
+            }
+            if (n < 0 || (size_t)n >= sizeof(service_name)) continue;
+            if (mdns_strcasecmp(qname, service_name) == 0 &&
+                (qtype == MDNS_TYPE_PTR || qtype == MDNS_TYPE_ANY)) {
+                matched_any = 1;
+            }
+        }
+    }
+    if (!matched_any) return;
+    uint8_t packet[MDNS_MAX_PACKET_SIZE];
+    for (uint32_t i = 0; i < ctx->num_services; i++) {
+        size_t plen = sizeof(packet);
+        if (mdns_build_announcement(packet, &plen, &ctx->services[i]) != 0) continue;
+        struct sockaddr_in dest;
+        memset(&dest, 0, sizeof(dest));
+        dest.sin_family = AF_INET;
+        dest.sin_port = htons(MDNS_PORT);
+        dest.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR_IPV4);
+        sendto(ctx->socket_ipv4, (const char *)packet, (int)plen, 0, (struct sockaddr *)&dest,
+               sizeof(dest));
+        if (from && from->sin_addr.s_addr != 0) {
+            sendto(ctx->socket_ipv4, (const char *)packet, (int)plen, 0,
+                   (const struct sockaddr *)from, sizeof(*from));
+        }
+    }
 }
 
 int mdns_poll(mdns_ctx_t *ctx, int timeout_ms) {
@@ -352,6 +511,11 @@ int mdns_poll(mdns_ctx_t *ctx, int timeout_ms) {
             break;
         }
         if (n < 12) continue;
+        uint16_t flags = read_u16(ctx->recv_buffer + 2);
+        uint16_t qcount = read_u16(ctx->recv_buffer + 4);
+        if ((flags & 0x8000) == 0 && qcount > 0) {
+            mdns_handle_query(ctx, ctx->recv_buffer, (size_t)n, &from);
+        }
         char peer_id[128];
         char multiaddr[256];
         if (mdns_parse_packet(ctx, ctx->recv_buffer, (size_t)n, peer_id, sizeof(peer_id), multiaddr,
@@ -461,21 +625,20 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         }
         pos += rdlen;
     }
-    if (txt_dnsaddr[0]) {
+    /* Only accept responses that yield an actual libp2p peer id, i.e. the
+     * TXT record contains a `dnsaddr=.../p2p/<peerid>` value. Anything else
+     * (Oculus advertisements, generic DNS-SD records, etc.) is filtered out
+     * here so callers don't have to deal with bogus peer-ids. */
+    if (txt_peer_id[0] && txt_dnsaddr[0]) {
         size_t id_len = strlen(txt_peer_id);
         size_t addr_len = strlen(txt_dnsaddr);
-        if (id_len > 0 && id_len < peer_id_cap) memcpy(out_peer_id, txt_peer_id, id_len + 1);
+        if (id_len < peer_id_cap) memcpy(out_peer_id, txt_peer_id, id_len + 1);
         if (addr_len < multiaddr_cap) memcpy(out_multiaddr, txt_dnsaddr, addr_len + 1);
         return 0;
     }
-    if (port > 0 && service_name[0]) {
-        size_t id_len = strlen(txt_peer_id);
-        if (id_len > 0 && id_len < peer_id_cap) { memcpy(out_peer_id, txt_peer_id, id_len + 1); }
-        char host[16];
-        mdns_format_ipv4(host, sender_ipv4_s_addr);
-        snprintf(out_multiaddr, multiaddr_cap, "/ip4/%s/tcp/%u", host, port);
-        return 0;
-    }
+    (void)port;
+    (void)service_name;
+    (void)sender_ipv4_s_addr;
     return -1;
 }
 

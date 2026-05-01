@@ -92,9 +92,16 @@ speer_yamux_stream_t *speer_yamux_open_stream(speer_yamux_session_t *s) {
 int speer_yamux_stream_write(speer_yamux_session_t *s, speer_yamux_stream_t *st,
                              const uint8_t *data, size_t len) {
     while (len > 0) {
+        if (st->reset) return -1;
+        /* If our send window is exhausted, pump the session so we pick up any
+         * pending WINDOW_UPDATE frames from the peer. Without this, large
+         * writes that exceed the initial window would silently truncate. */
+        if (st->send_window == 0) {
+            if (speer_yamux_pump(s) != 0) return -1;
+            continue;
+        }
         uint32_t chunk = (uint32_t)(len > st->send_window ? st->send_window : len);
         if (chunk > 65536) chunk = 65536;
-        if (chunk == 0) return 0;
         speer_yamux_hdr_t h = {.version = YAMUX_VERSION,
                                .type = YAMUX_TYPE_DATA,
                                .flags = 0,

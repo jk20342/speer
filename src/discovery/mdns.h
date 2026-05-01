@@ -79,6 +79,7 @@ void mdns_set_discovery_callback(mdns_ctx_t *ctx,
 
 int mdns_poll(mdns_ctx_t *ctx, int timeout_ms);
 int mdns_announce(mdns_ctx_t *ctx);
+int mdns_query(mdns_ctx_t *ctx, const char *service_name);
 
 int mdns_build_probe(uint8_t *out, size_t *out_len, const char *service_name);
 int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t *svc);
