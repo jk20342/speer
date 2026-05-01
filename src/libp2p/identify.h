@@ -9,13 +9,14 @@
 #define IDENTIFY_PROTO                "/ipfs/id/1.0.0"
 #define IDENTIFY_PUSH_PROTO           "/ipfs/id/push/1.0.0"
 
-#define IDENTIFY_MAX_PROTOCOLS        32
-#define IDENTIFY_MAX_LISTEN_ADDRS     8
+#define IDENTIFY_MAX_PROTOCOLS        64
+#define IDENTIFY_MAX_LISTEN_ADDRS     16
 #define IDENTIFY_AGENT_VERSION_MAX    64
 #define IDENTIFY_PROTOCOL_VERSION_MAX 32
+#define IDENTIFY_PUBKEY_PROTO_MAX     1024
 
 typedef struct {
-    uint8_t pubkey_proto[256];
+    uint8_t pubkey_proto[IDENTIFY_PUBKEY_PROTO_MAX];
     size_t pubkey_proto_len;
     speer_multiaddr_t listen_addrs[IDENTIFY_MAX_LISTEN_ADDRS];
     size_t num_listen_addrs;

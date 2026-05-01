@@ -238,6 +238,13 @@ void speer_bn_mulmod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, co
     big.n = n;
     if (big.n > LIMBS) big.n = LIMBS;
     for (size_t i = 0; i < big.n; i++) big.limbs[i] = prod[i];
+    /* Normalize: speer_bn_cmp keys off `n` first, so a non-normalized
+     * value (top limb == 0 but n != true-limb-count) compares as larger
+     * than a smaller-but-equal-in-value normalized value, which makes
+     * speer_bn_sub take an underflowing branch and wrecks the modulus
+     * reduction. RSA modexp can produce products whose top 32-bit limb is
+     * zero, so this matters in practice. */
+    normalize(&big);
     if (n > LIMBS) {
         speer_bn_t rem;
         speer_bn_zero(&rem);

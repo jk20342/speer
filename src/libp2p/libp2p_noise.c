@@ -6,7 +6,9 @@
 
 #include "aead_iface.h"
 #include "ed25519.h"
+#include "hash_iface.h"
 #include "protobuf.h"
+#include "rsa.h"
 
 int speer_libp2p_noise_init(speer_libp2p_noise_t *n, const uint8_t static_pub[32],
                             const uint8_t static_priv[32], speer_libp2p_keytype_t kt,
@@ -67,7 +69,7 @@ int speer_libp2p_noise_payload_parse(const uint8_t *in, size_t in_len, speer_lib
             got_id = 1;
         } else if (f == 2 && wire == PB_WIRE_LEN) {
             if (speer_pb_read_bytes(&r, sig, sig_len) != 0) return -1;
-            if (!sig_len || *sig_len != 64) return -1;
+            if (!sig_len || *sig_len == 0) return -1;
             got_sig = 1;
         } else {
             if (speer_pb_skip(&r, wire) != 0) return -1;
@@ -96,18 +98,107 @@ int speer_libp2p_noise_sign_static(uint8_t *sig_out, size_t sig_cap, size_t *sig
     return 0;
 }
 
+static size_t der_read_len(const uint8_t *buf, size_t buf_len, size_t *pos) {
+    if (*pos >= buf_len) return (size_t)-1;
+    uint8_t b = buf[(*pos)++];
+    if ((b & 0x80) == 0) return b;
+    size_t k = b & 0x7f;
+    if (k == 0 || k > 4) return (size_t)-1;
+    if (*pos + k > buf_len) return (size_t)-1;
+    size_t out = 0;
+    for (size_t i = 0; i < k; i++) out = (out << 8) | buf[(*pos)++];
+    return out;
+}
+
+static int spki_rsa_extract_n_e(const uint8_t *spki, size_t spki_len, const uint8_t **n_out,
+                                size_t *n_len_out, const uint8_t **e_out, size_t *e_len_out) {
+    if (spki_len < 2 || spki[0] != 0x30) return -1;
+    size_t pos = 1;
+    size_t outer = der_read_len(spki, spki_len, &pos);
+    if (outer == (size_t)-1) return -1;
+    if (outer != spki_len - pos) return -1;
+
+    if (pos >= spki_len || spki[pos] != 0x30) return -1;
+    pos++;
+    size_t alg_len = der_read_len(spki, spki_len, &pos);
+    if (alg_len == (size_t)-1) return -1;
+    if (alg_len > spki_len - pos) return -1;
+    pos += alg_len;
+
+    if (pos >= spki_len || spki[pos] != 0x03) return -1;
+    pos++;
+    size_t bs_len = der_read_len(spki, spki_len, &pos);
+    if (bs_len == (size_t)-1 || bs_len < 1 || bs_len > spki_len - pos) return -1;
+    if (spki[pos] != 0x00) return -1;
+    pos++;
+    bs_len--;
+
+    if (bs_len < 2 || spki[pos] != 0x30) return -1;
+    size_t inner_start = pos;
+    pos++;
+    size_t inner_len = der_read_len(spki, spki_len, &pos);
+    if (inner_len == (size_t)-1) return -1;
+    if (inner_len > spki_len - pos) return -1;
+    if ((pos - inner_start) + inner_len != bs_len) return -1;
+
+    if (spki[pos] != 0x02) return -1;
+    pos++;
+    size_t nl = der_read_len(spki, spki_len, &pos);
+    if (nl == (size_t)-1 || nl == 0 || nl > spki_len - pos) return -1;
+    *n_out = spki + pos;
+    *n_len_out = nl;
+    pos += nl;
+
+    if (pos >= spki_len || spki[pos] != 0x02) return -1;
+    pos++;
+    size_t el = der_read_len(spki, spki_len, &pos);
+    if (el == (size_t)-1 || el == 0 || el > spki_len - pos) return -1;
+    *e_out = spki + pos;
+    *e_len_out = el;
+    return 0;
+}
+
 int speer_libp2p_noise_verify_static(speer_libp2p_keytype_t kt, const uint8_t *libp2p_pub,
                                      size_t libp2p_pub_len, const uint8_t static_pub[32],
                                      const uint8_t *sig, size_t sig_len) {
-    if (kt != SPEER_LIBP2P_KEY_ED25519) return -1;
-    if (libp2p_pub_len != 32) return -1;
-    if (sig_len != 64) return -1;
-
     uint8_t msg[256];
     size_t prefix_len = strlen(LIBP2P_NOISE_PAYLOAD_PREFIX);
+    if (prefix_len + 32 > sizeof(msg)) return -1;
     COPY(msg, LIBP2P_NOISE_PAYLOAD_PREFIX, prefix_len);
     COPY(msg + prefix_len, static_pub, 32);
-    return speer_ed25519_verify(sig, msg, prefix_len + 32, libp2p_pub);
+
+    if (kt == SPEER_LIBP2P_KEY_ED25519) {
+        if (libp2p_pub_len != 32) return -1;
+        if (sig_len != 64) return -1;
+        return speer_ed25519_verify(sig, msg, prefix_len + 32, libp2p_pub);
+    }
+    if (kt == SPEER_LIBP2P_KEY_RSA) {
+        /* Reject obviously bogus shapes early. RSA-2048 sigs are 256 bytes;
+         * we accept up to RSA-8192 = 1024 bytes. SPKIs smaller than ~200
+         * bytes can't carry a real RSA-2048 modulus. */
+        if (libp2p_pub_len < 200 || libp2p_pub_len > SPEER_LIBP2P_PUBKEY_MAX) return -1;
+        if (sig_len < 256 || sig_len > 1024) return -1;
+        const uint8_t *n;
+        size_t n_len;
+        const uint8_t *e;
+        size_t e_len;
+        if (spki_rsa_extract_n_e(libp2p_pub, libp2p_pub_len, &n, &n_len, &e, &e_len) != 0)
+            return -1;
+        /* Strip a possible leading 0x00 sign byte from the DER INTEGER n. */
+        if (n_len > 1 && n[0] == 0x00) {
+            n++;
+            n_len--;
+        }
+        /* Reject anything smaller than RSA-2048 (256 bytes of modulus). */
+        if (n_len < 256) return -1;
+        /* go-libp2p / rust-libp2p sign with RSA-PKCS#1-v1.5 over SHA-256. */
+        uint8_t h[32];
+        speer_sha256(h, msg, prefix_len + 32);
+        return speer_rsa_pkcs1_v15_verify(n, n_len, e, e_len, &speer_hash_sha256, h, sizeof(h), sig,
+                                          sig_len);
+    }
+    /* secp256k1 / ECDSA-P256 not implemented yet. */
+    return -1;
 }
 
 int speer_libp2p_noise_seal(speer_libp2p_noise_t *n, const uint8_t *plaintext, size_t pt_len,

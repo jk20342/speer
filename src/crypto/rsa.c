@@ -2,6 +2,8 @@
 
 #include "speer_internal.h"
 
+#include <stdlib.h>
+
 #include "bignum.h"
 #include "ct_helpers.h"
 

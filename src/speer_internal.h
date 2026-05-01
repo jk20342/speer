@@ -33,6 +33,7 @@ typedef int socklen_t;
 
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <time.h>
 #include <unistd.h>
 #define CLOSESOCKET close

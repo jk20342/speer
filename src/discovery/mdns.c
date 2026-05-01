@@ -11,8 +11,10 @@
 
 #if defined(_WIN32)
 #include <winsock2.h>
+#include <windows.h>
 
 #include <iphlpapi.h>
+#include <winerror.h>
 #include <ws2tcpip.h>
 typedef int socklen_t;
 #define CLOSESOCKET closesocket
@@ -29,11 +31,18 @@ typedef int socklen_t;
 #define CLOSESOCKET close
 #endif
 
-#if defined(_WIN32)
-#define mdns_strcasecmp _stricmp
-#else
-#define mdns_strcasecmp strcasecmp
-#endif
+static int mdns_strcasecmp(const char *a, const char *b) {
+    while (*a && *b) {
+        unsigned char ca = (unsigned char)*a;
+        unsigned char cb = (unsigned char)*b;
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + 32);
+        if (ca != cb) return (int)ca - (int)cb;
+        a++;
+        b++;
+    }
+    return (int)(unsigned char)*a - (int)(unsigned char)*b;
+}
 
 #if defined(_WIN32)
 static void mdns_ensure_wsa(void) {

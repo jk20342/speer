@@ -28,17 +28,36 @@ static int sock_v4_addr(struct sockaddr_in *sin, const char *host, uint16_t port
         return 0;
     }
 #if defined(_WIN32)
-    struct sockaddr_in parsed;
-    int sz = sizeof(parsed);
-    ZERO(&parsed, sizeof(parsed));
-    if (WSAStringToAddressA((char *)host, AF_INET, NULL, (struct sockaddr *)&parsed, &sz) != 0) {
-        return -1;
+    {
+        struct sockaddr_in parsed;
+        int sz = sizeof(parsed);
+        ZERO(&parsed, sizeof(parsed));
+        if (WSAStringToAddressA((char *)host, AF_INET, NULL, (struct sockaddr *)&parsed, &sz) ==
+            0) {
+            sin->sin_addr = parsed.sin_addr;
+            return 0;
+        }
     }
-    sin->sin_addr = parsed.sin_addr;
 #else
-    if (inet_pton(AF_INET, host, &sin->sin_addr) != 1) return -1;
+    if (inet_pton(AF_INET, host, &sin->sin_addr) == 1) return 0;
 #endif
-    return 0;
+    struct addrinfo hints;
+    ZERO(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *res = NULL;
+    if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) return -1;
+    int ok = -1;
+    for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
+        if (ai->ai_family == AF_INET && ai->ai_addrlen >= sizeof(struct sockaddr_in)) {
+            struct sockaddr_in *r = (struct sockaddr_in *)ai->ai_addr;
+            sin->sin_addr = r->sin_addr;
+            ok = 0;
+            break;
+        }
+    }
+    freeaddrinfo(res);
+    return ok;
 }
 
 int speer_tcp_listen(int *out_listen_fd, const char *host, uint16_t port) {
@@ -79,7 +98,18 @@ int speer_tcp_dial(int *out_fd, const char *host, uint16_t port) {
         return -1;
     }
     if (connect(fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+        /* Capture errno before CLOSESOCKET clobbers it (Windows). */
+#if defined(_WIN32)
+        int saved = WSAGetLastError();
+#else
+        int saved = errno;
+#endif
         CLOSESOCKET(fd);
+#if defined(_WIN32)
+        WSASetLastError(saved);
+#else
+        errno = saved;
+#endif
         return -1;
     }
     if (out_fd) *out_fd = fd;
@@ -168,6 +198,79 @@ int speer_tcp_set_nonblocking(int fd, int yes) {
         fl &= ~O_NONBLOCK;
     return fcntl(fd, F_SETFL, fl);
 #endif
+}
+
+int speer_tcp_set_io_timeout(int fd, int timeout_ms) {
+    if (fd < 0 || timeout_ms < 0) return -1;
+#if defined(_WIN32)
+    DWORD tv = (DWORD)timeout_ms;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv)) != 0) return -1;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof(tv)) != 0) return -1;
+#else
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv)) != 0) return -1;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof(tv)) != 0) return -1;
+#endif
+    return 0;
+}
+
+int speer_tcp_dial_timeout(int *out_fd, const char *host, uint16_t port, int connect_ms) {
+    if (connect_ms <= 0) return speer_tcp_dial(out_fd, host, port);
+#if defined(_WIN32)
+    winsock_init_tcp();
+#endif
+    int fd = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0) return -1;
+    struct sockaddr_in sin;
+    if (sock_v4_addr(&sin, host, port) != 0) {
+        CLOSESOCKET(fd);
+        return -1;
+    }
+    if (speer_tcp_set_nonblocking(fd, 1) != 0) {
+        CLOSESOCKET(fd);
+        return -1;
+    }
+    int rc = connect(fd, (struct sockaddr *)&sin, sizeof(sin));
+    if (rc != 0) {
+#if defined(_WIN32)
+        int err = WSAGetLastError();
+        int in_progress = (err == WSAEWOULDBLOCK || err == WSAEINPROGRESS);
+#else
+        int err = errno;
+        int in_progress = (err == EINPROGRESS);
+#endif
+        if (!in_progress) {
+            CLOSESOCKET(fd);
+            return -1;
+        }
+        fd_set wset, eset;
+        FD_ZERO(&wset);
+        FD_ZERO(&eset);
+        FD_SET((unsigned)fd, &wset);
+        FD_SET((unsigned)fd, &eset);
+        struct timeval tv;
+        tv.tv_sec = connect_ms / 1000;
+        tv.tv_usec = (connect_ms % 1000) * 1000;
+        int sr = select(fd + 1, NULL, &wset, &eset, &tv);
+        if (sr <= 0) {
+            CLOSESOCKET(fd);
+            return -1;
+        }
+        int soerr = 0;
+        socklen_t slen = sizeof(soerr);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (char *)&soerr, &slen) != 0 || soerr != 0) {
+            CLOSESOCKET(fd);
+            return -1;
+        }
+    }
+    if (speer_tcp_set_nonblocking(fd, 0) != 0) {
+        CLOSESOCKET(fd);
+        return -1;
+    }
+    if (out_fd) *out_fd = fd;
+    return 0;
 }
 
 struct speer_transport_endpoint_s {

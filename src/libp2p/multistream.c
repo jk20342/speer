@@ -6,16 +6,21 @@
 
 #include "varint.h"
 
-static int write_lp_string(void *user, speer_ms_send_fn send_fn, const char *s) {
+static size_t encode_lp_line(uint8_t *buf, size_t cap, const char *s) {
     size_t slen = strlen(s);
     size_t total_len = slen + 1;
-    uint8_t hdr[10];
-    size_t hl = speer_uvarint_encode(hdr, sizeof(hdr), total_len);
-    if (hl == 0) return -1;
-    if (send_fn(user, hdr, hl) != 0) return -1;
-    if (send_fn(user, (const uint8_t *)s, slen) != 0) return -1;
-    uint8_t nl = (uint8_t)'\n';
-    return send_fn(user, &nl, 1);
+    size_t hl = speer_uvarint_encode(buf, cap, total_len);
+    if (hl == 0 || hl + total_len > cap) return 0;
+    memcpy(buf + hl, s, slen);
+    buf[hl + slen] = '\n';
+    return hl + total_len;
+}
+
+static int write_lp_string(void *user, speer_ms_send_fn send_fn, const char *s) {
+    uint8_t buf[10 + 256];
+    size_t n = encode_lp_line(buf, sizeof(buf), s);
+    if (n == 0) return -1;
+    return send_fn(user, buf, n);
 }
 
 static int read_lp_string(void *user, speer_ms_recv_fn recv_fn, char *out, size_t cap) {
@@ -46,8 +51,14 @@ int speer_ms_recv_protocol(void *user, speer_ms_recv_fn recv_fn, char *out, size
 
 int speer_ms_negotiate_initiator(void *user, speer_ms_send_fn send_fn, speer_ms_recv_fn recv_fn,
                                  const char *protocol) {
-    if (write_lp_string(user, send_fn, MULTISTREAM_PROTO) != 0) return -1;
-    if (write_lp_string(user, send_fn, protocol) != 0) return -1;
+    uint8_t out[2 * (10 + 256)];
+    size_t off = 0;
+    size_t n;
+    if ((n = encode_lp_line(out + off, sizeof(out) - off, MULTISTREAM_PROTO)) == 0) return -1;
+    off += n;
+    if ((n = encode_lp_line(out + off, sizeof(out) - off, protocol)) == 0) return -1;
+    off += n;
+    if (send_fn(user, out, off) != 0) return -1;
 
     char buf[256];
     if (read_lp_string(user, recv_fn, buf, sizeof(buf)) != 0) return -1;

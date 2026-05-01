@@ -11,18 +11,20 @@
 #define LIBP2P_NOISE_PROTOCOL       "/noise"
 #define LIBP2P_NOISE_PAYLOAD_PREFIX "noise-libp2p-static-key:"
 
+#define SPEER_LIBP2P_PUBKEY_MAX 1024
+
 typedef struct {
     speer_handshake_t hs;
     uint8_t local_static_pub[32];
     uint8_t local_static_priv[32];
-    uint8_t local_libp2p_pub[64];
+    uint8_t local_libp2p_pub[SPEER_LIBP2P_PUBKEY_MAX];
     size_t local_libp2p_pub_len;
     uint8_t local_libp2p_priv[64];
     size_t local_libp2p_priv_len;
     speer_libp2p_keytype_t local_keytype;
 
     uint8_t remote_static_pub[32];
-    uint8_t remote_libp2p_pub[64];
+    uint8_t remote_libp2p_pub[SPEER_LIBP2P_PUBKEY_MAX];
     size_t remote_libp2p_pub_len;
     speer_libp2p_keytype_t remote_keytype;
 

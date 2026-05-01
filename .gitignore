@@ -8,7 +8,8 @@
 *.dylib
 *.dll
 *.exe
-
+*.err
+*.out
 # Build directories
 build/
 build-*/
