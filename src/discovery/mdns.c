@@ -59,12 +59,6 @@ typedef struct {
 #define DNS_CLASS_IN          1
 #define DNS_CLASS_FLUSH_CACHE 0x8001
 
-static void mdns_format_ipv4(char out[16], uint32_t addr_be) {
-    const uint8_t *b = (const uint8_t *)&addr_be;
-    snprintf(out, 16, "%u.%u.%u.%u", (unsigned)b[0], (unsigned)b[1], (unsigned)b[2],
-             (unsigned)b[3]);
-}
-
 static uint16_t read_u16(const uint8_t *p) {
     return ((uint16_t)p[0] << 8) | p[1];
 }
@@ -625,10 +619,6 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         }
         pos += rdlen;
     }
-    /* Only accept responses that yield an actual libp2p peer id, i.e. the
-     * TXT record contains a `dnsaddr=.../p2p/<peerid>` value. Anything else
-     * (Oculus advertisements, generic DNS-SD records, etc.) is filtered out
-     * here so callers don't have to deal with bogus peer-ids. */
     if (txt_peer_id[0] && txt_dnsaddr[0]) {
         size_t id_len = strlen(txt_peer_id);
         size_t addr_len = strlen(txt_dnsaddr);
