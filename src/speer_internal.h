@@ -31,15 +31,15 @@ typedef int socklen_t;
 #define IPV6_V6ONLY 27
 #endif
 #else
-#include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <netdb.h>
 
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <time.h>
 #include <unistd.h>
 #define CLOSESOCKET close

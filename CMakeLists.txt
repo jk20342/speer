@@ -74,6 +74,14 @@ if(WIN32)
     set(SPEER_PLATFORM_LIBS ws2_32 iphlpapi advapi32)
 else()
     set(SPEER_PLATFORM_LIBS m)
+    # POSIX feature-test macro must be defined before ANY system header is
+    # processed, otherwise glibc <features.h> latches its symbol-visibility
+    # mask in strict-C99 mode and hides getaddrinfo/select/struct timeval/etc.
+    # Setting it in CMake guarantees it lands before any #include in any TU,
+    # which is more reliable than defining it inside speer_internal.h
+    # (which can be pulled in after another header has already included
+    # <features.h>).
+    add_definitions(-D_POSIX_C_SOURCE=200112L)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # Linux-specific if needed
     endif()
