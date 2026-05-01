@@ -5,8 +5,106 @@
 #define MASK51 ((uint64_t)0x0007FFFFFFFFFFFFULL)
 
 #if defined(__SIZEOF_INT128__)
+
 typedef unsigned __int128 u128;
+
+static INLINE u128 u128_mul64(uint64_t a, uint64_t b) {
+    return (u128)a * (u128)b;
+}
+static INLINE u128 u128_add(u128 a, u128 b) {
+    return a + b;
+}
+static INLINE u128 u128_add_u64(u128 a, uint64_t b) {
+    return a + (u128)b;
+}
+static INLINE uint64_t u128_shr51(u128 a) {
+    return (uint64_t)(a >> 51);
+}
+static INLINE uint64_t u128_lo51(u128 a) {
+    return (uint64_t)a & MASK51;
+}
+
 #define HAVE_U128 1
+
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_AMD64))
+
+#include <intrin.h>
+#pragma intrinsic(_umul128)
+
+typedef struct {
+    uint64_t lo;
+    uint64_t hi;
+} u128;
+
+static INLINE u128 u128_mul64(uint64_t a, uint64_t b) {
+    u128 r;
+    r.lo = _umul128(a, b, &r.hi);
+    return r;
+}
+static INLINE u128 u128_add(u128 a, u128 b) {
+    u128 r;
+    r.lo = a.lo + b.lo;
+    r.hi = a.hi + b.hi + (r.lo < a.lo ? 1u : 0u);
+    return r;
+}
+static INLINE u128 u128_add_u64(u128 a, uint64_t b) {
+    u128 r;
+    r.lo = a.lo + b;
+    r.hi = a.hi + (r.lo < b ? 1u : 0u);
+    return r;
+}
+static INLINE uint64_t u128_shr51(u128 a) {
+    return (a.lo >> 51) | (a.hi << 13);
+}
+static INLINE uint64_t u128_lo51(u128 a) {
+    return a.lo & MASK51;
+}
+
+#define HAVE_U128 1
+
+#else
+
+typedef struct {
+    uint64_t lo;
+    uint64_t hi;
+} u128;
+
+static INLINE u128 u128_mul64(uint64_t a, uint64_t b) {
+    uint64_t a_lo = a & 0xFFFFFFFFu;
+    uint64_t a_hi = a >> 32;
+    uint64_t b_lo = b & 0xFFFFFFFFu;
+    uint64_t b_hi = b >> 32;
+    uint64_t ll = a_lo * b_lo;
+    uint64_t lh = a_lo * b_hi;
+    uint64_t hl = a_hi * b_lo;
+    uint64_t hh = a_hi * b_hi;
+    uint64_t mid = (ll >> 32) + (lh & 0xFFFFFFFFu) + (hl & 0xFFFFFFFFu);
+    u128 r;
+    r.lo = (mid << 32) | (ll & 0xFFFFFFFFu);
+    r.hi = hh + (lh >> 32) + (hl >> 32) + (mid >> 32);
+    return r;
+}
+static INLINE u128 u128_add(u128 a, u128 b) {
+    u128 r;
+    r.lo = a.lo + b.lo;
+    r.hi = a.hi + b.hi + (r.lo < a.lo ? 1u : 0u);
+    return r;
+}
+static INLINE u128 u128_add_u64(u128 a, uint64_t b) {
+    u128 r;
+    r.lo = a.lo + b;
+    r.hi = a.hi + (r.lo < b ? 1u : 0u);
+    return r;
+}
+static INLINE uint64_t u128_shr51(u128 a) {
+    return (a.lo >> 51) | (a.hi << 13);
+}
+static INLINE uint64_t u128_lo51(u128 a) {
+    return a.lo & MASK51;
+}
+
+#define HAVE_U128 1
+
 #endif
 
 void fe25519_0(fe25519 r) {
@@ -53,20 +151,18 @@ void fe25519_neg(fe25519 r, const fe25519 a) {
     r[4] = FOUR_PN - a[4];
 }
 
-#if defined(HAVE_U128)
 static INLINE void fe25519_reduce_u128(fe25519 r, u128 t[5]) {
-    u128 c;
-    t[1] += (uint64_t)(t[0] >> 51);
-    uint64_t r0 = (uint64_t)t[0] & MASK51;
-    t[2] += (uint64_t)(t[1] >> 51);
-    uint64_t r1 = (uint64_t)t[1] & MASK51;
-    t[3] += (uint64_t)(t[2] >> 51);
-    uint64_t r2 = (uint64_t)t[2] & MASK51;
-    t[4] += (uint64_t)(t[3] >> 51);
-    uint64_t r3 = (uint64_t)t[3] & MASK51;
-    c = t[4] >> 51;
-    uint64_t r4 = (uint64_t)t[4] & MASK51;
-    r0 += (uint64_t)(c * 19);
+    t[1] = u128_add_u64(t[1], u128_shr51(t[0]));
+    uint64_t r0 = u128_lo51(t[0]);
+    t[2] = u128_add_u64(t[2], u128_shr51(t[1]));
+    uint64_t r1 = u128_lo51(t[1]);
+    t[3] = u128_add_u64(t[3], u128_shr51(t[2]));
+    uint64_t r2 = u128_lo51(t[2]);
+    t[4] = u128_add_u64(t[4], u128_shr51(t[3]));
+    uint64_t r3 = u128_lo51(t[3]);
+    uint64_t c = u128_shr51(t[4]);
+    uint64_t r4 = u128_lo51(t[4]);
+    r0 += c * 19;
     r1 += r0 >> 51;
     r0 &= MASK51;
     r[0] = r0;
@@ -85,12 +181,35 @@ void fe25519_mul(fe25519 r, const fe25519 a, const fe25519 b) {
     uint64_t b4_19 = b4 * 19;
 
     u128 t[5];
-    t[0] = (u128)a0 * b0 + (u128)a1 * b4_19 + (u128)a2 * b3_19 + (u128)a3 * b2_19 +
-           (u128)a4 * b1_19;
-    t[1] = (u128)a0 * b1 + (u128)a1 * b0 + (u128)a2 * b4_19 + (u128)a3 * b3_19 + (u128)a4 * b2_19;
-    t[2] = (u128)a0 * b2 + (u128)a1 * b1 + (u128)a2 * b0 + (u128)a3 * b4_19 + (u128)a4 * b3_19;
-    t[3] = (u128)a0 * b3 + (u128)a1 * b2 + (u128)a2 * b1 + (u128)a3 * b0 + (u128)a4 * b4_19;
-    t[4] = (u128)a0 * b4 + (u128)a1 * b3 + (u128)a2 * b2 + (u128)a3 * b1 + (u128)a4 * b0;
+    t[0] = u128_mul64(a0, b0);
+    t[0] = u128_add(t[0], u128_mul64(a1, b4_19));
+    t[0] = u128_add(t[0], u128_mul64(a2, b3_19));
+    t[0] = u128_add(t[0], u128_mul64(a3, b2_19));
+    t[0] = u128_add(t[0], u128_mul64(a4, b1_19));
+
+    t[1] = u128_mul64(a0, b1);
+    t[1] = u128_add(t[1], u128_mul64(a1, b0));
+    t[1] = u128_add(t[1], u128_mul64(a2, b4_19));
+    t[1] = u128_add(t[1], u128_mul64(a3, b3_19));
+    t[1] = u128_add(t[1], u128_mul64(a4, b2_19));
+
+    t[2] = u128_mul64(a0, b2);
+    t[2] = u128_add(t[2], u128_mul64(a1, b1));
+    t[2] = u128_add(t[2], u128_mul64(a2, b0));
+    t[2] = u128_add(t[2], u128_mul64(a3, b4_19));
+    t[2] = u128_add(t[2], u128_mul64(a4, b3_19));
+
+    t[3] = u128_mul64(a0, b3);
+    t[3] = u128_add(t[3], u128_mul64(a1, b2));
+    t[3] = u128_add(t[3], u128_mul64(a2, b1));
+    t[3] = u128_add(t[3], u128_mul64(a3, b0));
+    t[3] = u128_add(t[3], u128_mul64(a4, b4_19));
+
+    t[4] = u128_mul64(a0, b4);
+    t[4] = u128_add(t[4], u128_mul64(a1, b3));
+    t[4] = u128_add(t[4], u128_mul64(a2, b2));
+    t[4] = u128_add(t[4], u128_mul64(a3, b1));
+    t[4] = u128_add(t[4], u128_mul64(a4, b0));
 
     fe25519_reduce_u128(r, t);
 }
@@ -99,31 +218,35 @@ void fe25519_sq(fe25519 r, const fe25519 a) {
     uint64_t a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3], a4 = a[4];
     uint64_t a0_2 = a0 * 2;
     uint64_t a1_2 = a1 * 2;
+    uint64_t a2_2 = a2 * 2;
+    uint64_t a3_2 = a3 * 2;
     uint64_t a3_19 = a3 * 19;
     uint64_t a4_19 = a4 * 19;
+    uint64_t a4_19_2 = a4_19 * 2;
 
     u128 t[5];
-    t[0] = (u128)a0 * a0 + (u128)a1_2 * a4_19 + (u128)(a2 * 2) * a3_19;
-    t[1] = (u128)a0_2 * a1 + (u128)a2 * a4_19 * 2 + (u128)a3 * a3_19;
-    t[2] = (u128)a0_2 * a2 + (u128)a1 * a1 + (u128)(a3 * 2) * a4_19;
-    t[3] = (u128)a0_2 * a3 + (u128)a1_2 * a2 + (u128)a4 * a4_19;
-    t[4] = (u128)a0_2 * a4 + (u128)a1_2 * a3 + (u128)a2 * a2;
+    t[0] = u128_mul64(a0, a0);
+    t[0] = u128_add(t[0], u128_mul64(a1_2, a4_19));
+    t[0] = u128_add(t[0], u128_mul64(a2_2, a3_19));
+
+    t[1] = u128_mul64(a0_2, a1);
+    t[1] = u128_add(t[1], u128_mul64(a2, a4_19_2));
+    t[1] = u128_add(t[1], u128_mul64(a3, a3_19));
+
+    t[2] = u128_mul64(a0_2, a2);
+    t[2] = u128_add(t[2], u128_mul64(a1, a1));
+    t[2] = u128_add(t[2], u128_mul64(a3_2, a4_19));
+
+    t[3] = u128_mul64(a0_2, a3);
+    t[3] = u128_add(t[3], u128_mul64(a1_2, a2));
+    t[3] = u128_add(t[3], u128_mul64(a4, a4_19));
+
+    t[4] = u128_mul64(a0_2, a4);
+    t[4] = u128_add(t[4], u128_mul64(a1_2, a3));
+    t[4] = u128_add(t[4], u128_mul64(a2, a2));
 
     fe25519_reduce_u128(r, t);
 }
-
-#else
-
-void fe25519_mul(fe25519 r, const fe25519 a, const fe25519 b) {
-    (void)r;
-    (void)a;
-    (void)b;
-}
-void fe25519_sq(fe25519 r, const fe25519 a) {
-    fe25519_mul(r, a, a);
-}
-
-#endif
 
 void fe25519_cswap(fe25519 a, fe25519 b, int swap) {
     uint64_t mask = (uint64_t)(0 - (int64_t)(swap & 1));

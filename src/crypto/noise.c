@@ -1,5 +1,6 @@
 #include "speer_internal.h"
 
+#include "aead_iface.h"
 #include "ct_helpers.h"
 
 static const uint8_t noise_protocol_name[] = "Noise_XX_25519_ChaChaPoly_SHA256";
@@ -37,19 +38,11 @@ static void encrypt_and_hash(speer_handshake_t *hs, uint8_t *out, const uint8_t 
                              size_t len) {
     uint8_t nonce[12];
     cipher_nonce(nonce, hs->cipher_n);
-    speer_chacha_ctx_t ctx;
-    speer_chacha_init(&ctx, hs->send_key, nonce);
 
-    uint8_t poly_block[64];
-    speer_chacha_block(&ctx, poly_block);
-
-    uint8_t *ciphertext = out;
-    speer_chacha_crypt(&ctx, ciphertext, plaintext, len);
-
-    uint8_t mac[16];
-    speer_poly1305(mac, ciphertext, len, poly_block);
-
-    COPY(out + len, mac, 16);
+    uint8_t tag[16];
+    speer_aead_chacha20_poly1305.seal(hs->send_key, nonce, hs->handshake_hash, 32, plaintext, len,
+                                      out, tag);
+    COPY(out + len, tag, 16);
     hs->cipher_n++;
 
     mix_hash(hs->handshake_hash, out, len + 16);
@@ -60,26 +53,18 @@ static int decrypt_and_hash(speer_handshake_t *hs, uint8_t *out, const uint8_t *
     if (len < 16) return -1;
 
     size_t plaintext_len = len - 16;
-    const uint8_t *mac = ciphertext + plaintext_len;
+    const uint8_t *tag = ciphertext + plaintext_len;
 
     uint8_t nonce[12];
     cipher_nonce(nonce, hs->cipher_n);
-    speer_chacha_ctx_t ctx;
-    speer_chacha_init(&ctx, hs->send_key, nonce);
 
-    uint8_t poly_block[64];
-    speer_chacha_block(&ctx, poly_block);
-
-    uint8_t computed_mac[16];
-    speer_poly1305(computed_mac, ciphertext, plaintext_len, poly_block);
-
-    if (!speer_ct_memeq(mac, computed_mac, 16)) return -1;
-
-    speer_chacha_crypt(&ctx, out, ciphertext, plaintext_len);
+    if (speer_aead_chacha20_poly1305.open(hs->recv_key, nonce, hs->handshake_hash, 32, ciphertext,
+                                          plaintext_len, tag, out) != 0) {
+        return -1;
+    }
     hs->cipher_n++;
 
     mix_hash(hs->handshake_hash, ciphertext, len);
-
     return 0;
 }
 
@@ -97,12 +82,17 @@ int speer_noise_xx_init(speer_handshake_t *hs, const uint8_t local_pubkey[32],
     COPY(hs->local_pubkey, local_pubkey, 32);
     COPY(hs->local_privkey, local_privkey, 32);
 
-    COPY(hs->handshake_hash, noise_protocol_name, 32);
+    /* InitializeSymmetric sets h = protocol_name (since the name
+       is exactly HASHLEN = 32 bytes here), ck = h. Then HandshakeState.Initialize
+       calls MixHash(prologue) which, for libp2p's empty prologue, computes
+       SHA256(protocol_name || "") = SHA256(protocol_name). We fold the two
+       into a single SHA256 here. ck stays at protocol_name -- MixHash does
+       not touch ck. */
     COPY(hs->chaining_key, noise_protocol_name, 32);
+    speer_sha256(hs->handshake_hash, noise_protocol_name, 32);
 
     hs->state = SPEER_STATE_HANDSHAKE;
     hs->step = 0;
-
     return 0;
 }
 
@@ -169,12 +159,24 @@ void speer_noise_xx_split(speer_handshake_t *hs, uint8_t send_key[32], uint8_t r
 
 int speer_noise_xx_write_msg1(speer_handshake_t *hs, uint8_t out[32]) {
     size_t len = 0;
-    return speer_noise_xx_write_e(hs, out, &len);
+    int rc = speer_noise_xx_write_e(hs, out, &len);
+    if (rc == 0) {
+        /* Per Noise spec: EncryptAndHash() runs on the (here empty) payload
+         * after the `e` token. With no key set this reduces to MixHash("").
+         * Without this step, h diverges from a spec-compliant peer (e.g.
+         * rust-libp2p / snow) and the AEAD MAC on msg2's static key fails. */
+        mix_hash(hs->handshake_hash, NULL, 0);
+    }
+    hs->step = 1;
+    return rc;
 }
 
 int speer_noise_xx_read_msg1(speer_handshake_t *hs, const uint8_t in[32]) {
     COPY(hs->remote_ephemeral, in, 32);
     mix_hash(hs->handshake_hash, in, 32);
+    /* Per Noise spec: DecryptAndHash() on the (empty) payload of msg1.
+     * With no key set, plaintext == ciphertext and we just MixHash(""). */
+    mix_hash(hs->handshake_hash, NULL, 0);
     hs->step = 1;
     return 0;
 }

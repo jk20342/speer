@@ -14,6 +14,7 @@ build/
 build-*/
 cmake-build-*/
 obj/
+obj-bench/
 out/
 bin/
 lib/
@@ -90,3 +91,12 @@ graph_info.json
 corpus/
 crashes/
 findings/
+
+# libp2p interop test driver (local-only, not committed)
+tests/interop/
+examples/libp2p_interop.c
+
+# Rust / Cargo (anywhere in the tree)
+**/target/
+Cargo.lock
+*.rs.bk
