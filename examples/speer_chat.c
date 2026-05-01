@@ -1,6 +1,11 @@
+#if defined(_WIN32)
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "speer_internal.h"
 
 #include <stdarg.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +26,7 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <conio.h>
+#include <direct.h>
 #include <fcntl.h>
 #include <io.h>
 #define THREAD_T HANDLE
@@ -40,6 +46,7 @@ static void thread_sleep_ms(int ms) {
 #else
 #include <sys/time.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <signal.h>
 #include <termios.h>
 #include <unistd.h>
@@ -72,8 +79,13 @@ static void thread_sleep_ms(int ms) {
 #define CHAT_TYPE_HELLO     1
 #define CHAT_TYPE_MSG       2
 #define CHAT_TYPE_BYE       3
+#define CHAT_TYPE_FILE_META 4
+#define CHAT_TYPE_FILE_CHUNK 5
+#define CHAT_TYPE_FILE_DONE 6
 
 #define MAX_NOISE_FRAME     65535
+#define FILE_CHUNK_BYTES    384
+#define MAX_RX_FILES        8
 
 /* ============================================================
  * Theme System - Catppuccin Mocha & Nord palettes
@@ -187,6 +199,7 @@ typedef struct {
     rect_t header;      /* Title bar */
     rect_t messages;    /* Scrollable message area */
     rect_t input;       /* Input bar */
+    rect_t netlog;      /* Verbose network console */
     rect_t status;      /* Status bar */
 } layout_t;
 
@@ -215,6 +228,40 @@ typedef struct {
     int scroll;      /* Scroll offset from bottom */
 } msg_history_t;
 
+#define MAX_NETLOG 256
+#define NETLOG_TEXT 160
+
+typedef enum {
+    NETLOG_INFO,
+    NETLOG_OK,
+    NETLOG_WARN,
+    NETLOG_ERROR,
+    NETLOG_TRAFFIC
+} netlog_level_t;
+
+typedef struct {
+    time_t timestamp;
+    netlog_level_t level;
+    char text[NETLOG_TEXT];
+} netlog_entry_t;
+
+typedef struct {
+    netlog_entry_t entries[MAX_NETLOG];
+    int head;
+    int count;
+} netlog_t;
+
+typedef struct {
+    int active;
+    uint32_t id;
+    unsigned long long expected;
+    unsigned long long received;
+    FILE *fp;
+    char sender[64];
+    char name[128];
+    char path[260];
+} rx_file_t;
+
 /* Input state */
 typedef struct {
     char buf[MAX_TEXT_LEN];
@@ -226,6 +273,10 @@ typedef struct {
 static screen_buf_t g_screen;
 static layout_t g_layout;
 static msg_history_t g_history;
+static netlog_t g_netlog;
+static MUTEX_T g_log_mu;
+static MUTEX_T g_file_mu;
+static rx_file_t g_rx_files[MAX_RX_FILES];
 static input_state_t g_input;
 static volatile int g_screen_resized = 0;
 static int g_alt_screen = 0;
@@ -411,6 +462,12 @@ static int ui_sidebar_width(void) {
     return 0;
 }
 
+static int ui_netlog_width(void) {
+    if (g_screen.cols > 138) return 42;
+    if (g_screen.cols > 116) return 34;
+    return 0;
+}
+
 /* Diff and render to terminal */
 static void screen_present(void) {
     /* Build output string with minimal escape sequences */
@@ -502,6 +559,7 @@ static void layout_calc(void) {
     int rows = g_screen.rows;
     int cols = g_screen.cols;
     int sidebar_w = ui_sidebar_width();
+    int netlog_w = ui_netlog_width();
     int header_h = rows >= 10 ? 3 : 1;
     int input_h = rows >= 10 ? 3 : 1;
     
@@ -516,17 +574,22 @@ static void layout_calc(void) {
     g_layout.status.y = rows - 1;
     g_layout.status.w = cols;
     g_layout.status.h = 1;
+
+    g_layout.netlog.x = cols - netlog_w;
+    g_layout.netlog.y = header_h;
+    g_layout.netlog.w = netlog_w;
+    g_layout.netlog.h = rows - header_h - 1;
     
     /* Input panel above status, starts after sidebar */
     g_layout.input.x = sidebar_w;
     g_layout.input.y = rows - 1 - input_h;
-    g_layout.input.w = cols - sidebar_w;
+    g_layout.input.w = cols - sidebar_w - netlog_w;
     g_layout.input.h = input_h;
     
     /* Message area: starts after sidebar */
     g_layout.messages.x = sidebar_w;
     g_layout.messages.y = header_h;
-    g_layout.messages.w = cols - sidebar_w;
+    g_layout.messages.w = cols - sidebar_w - netlog_w;
     g_layout.messages.h = g_layout.input.y - g_layout.messages.y;
 }
 
@@ -536,6 +599,29 @@ static void layout_calc(void) {
 
 static void history_init(void) {
     memset(&g_history, 0, sizeof(g_history));
+}
+
+static void netlog_clear(void) {
+    MUTEX_LOCK(&g_log_mu);
+    memset(&g_netlog, 0, sizeof(g_netlog));
+    MUTEX_UNLOCK(&g_log_mu);
+}
+
+static void netlog_add(netlog_level_t level, const char *fmt, ...) {
+    char buf[NETLOG_TEXT];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    MUTEX_LOCK(&g_log_mu);
+    netlog_entry_t *e = &g_netlog.entries[g_netlog.head];
+    e->timestamp = time(NULL);
+    e->level = level;
+    snprintf(e->text, sizeof(e->text), "%s", buf);
+    g_netlog.head = (g_netlog.head + 1) % MAX_NETLOG;
+    if (g_netlog.count < MAX_NETLOG) g_netlog.count++;
+    MUTEX_UNLOCK(&g_log_mu);
 }
 
 static void history_add(msg_type_t type, const char *nick, const char *pid, const char *text) {
@@ -593,6 +679,12 @@ typedef struct peer_s {
     char remote_nick[MAX_NICK_LEN];
     char remote_pid_short[64];
     char remote_pid_full[64];
+    time_t connected_at;
+    time_t last_seen;
+    unsigned long long msgs_rx;
+    unsigned long long msgs_tx;
+    unsigned long long bytes_rx;
+    unsigned long long bytes_tx;
 
     speer_libp2p_noise_t noise;
     speer_yamux_session_t mux;
@@ -620,17 +712,21 @@ typedef struct {
 
 /* Global variables needed by UI */
 static peer_table_t g_peers;
-static MUTEX_T g_log_mu;
 static volatile int g_quit = 0;
 static char g_my_nick[MAX_NICK_LEN] = "anon";
 static char g_my_pid_b58[64] = "";
+static char g_lan_ip[64] = "127.0.0.1";
+static time_t g_started_at = 0;
 static uint16_t g_listen_port = 0;
 static uint8_t g_my_static_pub[32], g_my_static_priv[32];
 static uint8_t g_my_ed_pub[32], g_my_ed_seed[32];
+static uint32_t g_next_file_id = 1;
 
 /* ============================================================
  * Rendering Functions
  * ============================================================ */
+
+static void format_timestamp(time_t t, char *out, size_t cap);
 
 static void draw_gradient_title(int x, int y, const char *t, int start_r, int start_g, int start_b,
                                   int end_r, int end_g, int end_b) {
@@ -646,6 +742,49 @@ static void draw_gradient_title(int x, int y, const char *t, int start_r, int st
     }
 }
 
+static void format_duration(time_t since, char *out, size_t cap) {
+    long secs = 0;
+    if (since != 0) secs = (long)difftime(time(NULL), since);
+    if (secs < 0) secs = 0;
+    if (secs >= 3600) {
+        snprintf(out, cap, "%ldh%02ldm", secs / 3600, (secs / 60) % 60);
+    } else if (secs >= 60) {
+        snprintf(out, cap, "%ldm%02lds", secs / 60, secs % 60);
+    } else {
+        snprintf(out, cap, "%lds", secs);
+    }
+}
+
+static void collect_peer_stats(int *connected, unsigned long long *rx_msgs,
+                               unsigned long long *tx_msgs, unsigned long long *rx_bytes,
+                               unsigned long long *tx_bytes) {
+    *connected = 0;
+    *rx_msgs = *tx_msgs = *rx_bytes = *tx_bytes = 0;
+    MUTEX_LOCK(&g_peers.mu);
+    for (int i = 0; i < MAX_PEERS; i++) {
+        peer_t *p = &g_peers.peers[i];
+        if (p->active && !p->dead && p->handshake_done) {
+            (*connected)++;
+            *rx_msgs += p->msgs_rx;
+            *tx_msgs += p->msgs_tx;
+            *rx_bytes += p->bytes_rx;
+            *tx_bytes += p->bytes_tx;
+        }
+    }
+    MUTEX_UNLOCK(&g_peers.mu);
+}
+
+static uint32_t netlog_level_color(netlog_level_t level) {
+    switch (level) {
+        case NETLOG_OK: return 0x35f7c8;
+        case NETLOG_WARN: return 0xffc857;
+        case NETLOG_ERROR: return g_theme->peer_colors[0];
+        case NETLOG_TRAFFIC: return 0x61d6ff;
+        case NETLOG_INFO:
+        default: return g_theme->fg_dim;
+    }
+}
+
 static void render_header(void) {
     screen_fill_rect(&g_layout.header, g_theme->bg_panel);
     
@@ -654,12 +793,8 @@ static void render_header(void) {
     /* Connection info on right */
     char info[64];
     int peer_count = 0;
-    MUTEX_LOCK(&g_peers.mu);
-    for (int i = 0; i < MAX_PEERS; i++) {
-        if (g_peers.peers[i].active && !g_peers.peers[i].dead && g_peers.peers[i].handshake_done)
-            peer_count++;
-    }
-    MUTEX_UNLOCK(&g_peers.mu);
+    unsigned long long rx_msgs = 0, tx_msgs = 0, rx_bytes = 0, tx_bytes = 0;
+    collect_peer_stats(&peer_count, &rx_msgs, &tx_msgs, &rx_bytes, &tx_bytes);
     
     snprintf(info, sizeof(info), " %d connected ", peer_count);
     
@@ -671,8 +806,8 @@ static void render_header(void) {
     
     if (g_layout.header.h > 1) {
         char room[96];
-        snprintf(room, sizeof(room), " /speer/chat/1.0.0   port %u   nick %s ",
-                 (unsigned)g_listen_port, g_my_nick);
+        snprintf(room, sizeof(room), " Noise XX + Yamux + mDNS   %s:%u   rx %llu / tx %llu ",
+                 g_lan_ip, (unsigned)g_listen_port, rx_msgs, tx_msgs);
         screen_put_string_clipped(2, 1, room, g_layout.header.w - 4,
                                   g_theme->fg_dim, g_theme->bg_panel, 0, 0);
         screen_draw_hline_bg(0, g_layout.header.h - 1, g_layout.header.w,
@@ -698,8 +833,16 @@ static void render_sidebar(void) {
         snprintf(pid_short, sizeof(pid_short), "%.16s", g_my_pid_b58);
         screen_put_string(4, sidebar.y + 4, pid_short, g_theme->fg_dim, g_theme->bg_panel, 0, 1);
     }
+    if (sidebar.h > 11) {
+        char uptime[32];
+        char line[48];
+        format_duration(g_started_at, uptime, sizeof(uptime));
+        snprintf(line, sizeof(line), "uptime %s", uptime);
+        screen_put_string_clipped(2, sidebar.y + 6, line, sidebar_w - 4,
+                                  g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+    }
     
-    int y = sidebar.y + 7;
+    int y = sidebar.y + 9;
     if (y < sidebar.y + sidebar.h - 2) {
         screen_put_string(2, y, "peers", g_theme->fg_dim, g_theme->bg_panel, 1, 0);
         y += 2;
@@ -718,6 +861,16 @@ static void render_sidebar(void) {
             screen_put_char(2, y, 0x25cf, col, g_theme->bg_panel, 0, 0);
             screen_put_string_clipped(4, y, name, sidebar_w - 6, col, g_theme->bg_panel, 1, 0);
             y++;
+            if (y < sidebar.y + sidebar.h - 3) {
+                char active_for[24];
+                char detail[48];
+                format_duration(p->connected_at, active_for, sizeof(active_for));
+                snprintf(detail, sizeof(detail), "%s  rx%llu tx%llu", active_for,
+                         p->msgs_rx, p->msgs_tx);
+                screen_put_string_clipped(4, y, detail, sidebar_w - 6,
+                                          g_theme->fg_dim, g_theme->bg_panel, 0, 1);
+                y++;
+            }
             listed++;
         }
     }
@@ -732,23 +885,83 @@ static void render_sidebar(void) {
 static void render_status(void) {
     screen_fill_rect(&g_layout.status, g_theme->bg_panel);
     
-    screen_put_string(1, g_layout.status.y, "^J Send   ^C Quit   /help Commands   PgUp/PgDn Scroll", 
+    screen_put_string(1, g_layout.status.y, "/status /inspect /id /peers /clear   PgUp/PgDn Scroll", 
                       g_theme->fg_dim, g_theme->bg_panel, 0, 0);
     
     /* Show peer count */
     int peer_count = 0;
-    MUTEX_LOCK(&g_peers.mu);
-    for (int i = 0; i < MAX_PEERS; i++) {
-        if (g_peers.peers[i].active && !g_peers.peers[i].dead && g_peers.peers[i].handshake_done)
-            peer_count++;
-    }
-    MUTEX_UNLOCK(&g_peers.mu);
+    unsigned long long rx_msgs = 0, tx_msgs = 0, rx_bytes = 0, tx_bytes = 0;
+    collect_peer_stats(&peer_count, &rx_msgs, &tx_msgs, &rx_bytes, &tx_bytes);
     
     char peers_str[32];
-    snprintf(peers_str, sizeof(peers_str), " %d connected ", peer_count);
+    snprintf(peers_str, sizeof(peers_str), " %d peers  %llu/%llu msg ", peer_count, rx_msgs, tx_msgs);
     int len = (int)strlen(peers_str);
     screen_put_string(g_layout.status.w - len - 1, g_layout.status.y, peers_str,
                       peer_count > 0 ? 0x35f7c8 : g_theme->accent, g_theme->bg_panel, 1, 0);
+}
+
+static void render_netlog(void) {
+    if (g_layout.netlog.w <= 0 || g_layout.netlog.h <= 0) return;
+
+    rect_t panel = g_layout.netlog;
+    screen_fill_rect(&panel, g_theme->bg_panel);
+    screen_draw_box(&panel, g_theme->border, g_theme->bg_panel);
+    screen_put_string(panel.x + 2, panel.y, " Network Console ",
+                      g_theme->accent, g_theme->bg_panel, 1, 0);
+
+    int inner_x = panel.x + 2;
+    int inner_w = panel.w - 4;
+    int y = panel.y + 2;
+    if (inner_w < 12) return;
+
+    int peer_count = 0;
+    unsigned long long rx_msgs = 0, tx_msgs = 0, rx_bytes = 0, tx_bytes = 0;
+    collect_peer_stats(&peer_count, &rx_msgs, &tx_msgs, &rx_bytes, &tx_bytes);
+
+    char line[NETLOG_TEXT];
+    char uptime[32];
+    format_duration(g_started_at, uptime, sizeof(uptime));
+
+    snprintf(line, sizeof(line), "mDNS  advertising");
+    screen_put_string_clipped(inner_x, y++, line, inner_w, 0x35f7c8, g_theme->bg_panel, 1, 0);
+    snprintf(line, sizeof(line), "TCP   %s:%u", g_lan_ip, (unsigned)g_listen_port);
+    screen_put_string_clipped(inner_x, y++, line, inner_w, g_theme->fg, g_theme->bg_panel, 0, 0);
+    snprintf(line, sizeof(line), "Peers %d  Up %s", peer_count, uptime);
+    screen_put_string_clipped(inner_x, y++, line, inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+    snprintf(line, sizeof(line), "RX %llu msg / %llu B", rx_msgs, rx_bytes);
+    screen_put_string_clipped(inner_x, y++, line, inner_w, 0x61d6ff, g_theme->bg_panel, 0, 0);
+    snprintf(line, sizeof(line), "TX %llu msg / %llu B", tx_msgs, tx_bytes);
+    screen_put_string_clipped(inner_x, y++, line, inner_w, 0xffc857, g_theme->bg_panel, 0, 0);
+
+    y++;
+    if (y < panel.y + panel.h - 1) {
+        screen_put_string(inner_x, y++, "stack", g_theme->accent, g_theme->bg_panel, 1, 0);
+        screen_put_string_clipped(inner_x, y++, "mDNS -> TCP", inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(inner_x, y++, "Noise XX auth", inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(inner_x, y++, "Yamux streams", inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(inner_x, y++, CHAT_PROTO, inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+    }
+
+    y++;
+    if (y < panel.y + panel.h - 1) {
+        screen_put_string(inner_x, y++, "events", g_theme->accent, g_theme->bg_panel, 1, 0);
+    }
+
+    MUTEX_LOCK(&g_log_mu);
+    int max_events = panel.y + panel.h - 1 - y;
+    if (max_events < 0) max_events = 0;
+    if (max_events > g_netlog.count) max_events = g_netlog.count;
+    for (int i = max_events - 1; i >= 0; i--) {
+        int idx = (g_netlog.head - 1 - i + MAX_NETLOG) % MAX_NETLOG;
+        netlog_entry_t *e = &g_netlog.entries[idx];
+        char ts[16];
+        format_timestamp(e->timestamp, ts, sizeof(ts));
+        snprintf(line, sizeof(line), "%s %s", ts, e->text);
+        screen_put_string_clipped(inner_x, y++, line, inner_w,
+                                  netlog_level_color(e->level), g_theme->bg_panel,
+                                  e->level == NETLOG_ERROR, e->level == NETLOG_INFO);
+    }
+    MUTEX_UNLOCK(&g_log_mu);
 }
 
 static void render_input(void) {
@@ -961,6 +1174,7 @@ static void render_full(void) {
     
     render_messages();
     render_input();
+    render_netlog();
     render_status();
     
     /* Present to terminal */
@@ -1185,22 +1399,26 @@ static void emit_chat(const char *pid, const char *nick, const char *text) {
 
 static void emit_system_msg(const char *text) {
     history_add(MSG_SYSTEM, NULL, NULL, text);
+    netlog_add(NETLOG_INFO, "%s", text);
 }
 
 static void emit_join(const char *nick, const char *pid) {
     char buf[MAX_TEXT_LEN];
     snprintf(buf, sizeof(buf), "%s joined (%s)", nick, pid);
     history_add(MSG_JOIN, nick, pid, buf);
+    netlog_add(NETLOG_OK, "peer joined %s", nick);
 }
 
 static void emit_leave(const char *nick) {
     char buf[MAX_TEXT_LEN];
     snprintf(buf, sizeof(buf), "%s left", nick);
     history_add(MSG_LEAVE, nick, NULL, buf);
+    netlog_add(NETLOG_WARN, "peer left %s", nick);
 }
 
 static void emit_error_msg(const char *text) {
     history_add(MSG_ERROR, NULL, NULL, text);
+    netlog_add(NETLOG_ERROR, "%s", text);
 }
 
 /* [All the original networking code from the previous version goes here...] */
@@ -1298,6 +1516,17 @@ static void broadcast(uint32_t type, const char *text) {
     MUTEX_UNLOCK(&g_peers.mu);
 }
 
+static int connected_peer_count(void) {
+    int n = 0;
+    MUTEX_LOCK(&g_peers.mu);
+    for (int i = 0; i < MAX_PEERS; i++) {
+        peer_t *p = &g_peers.peers[i];
+        if (p->active && !p->dead && p->handshake_done) n++;
+    }
+    MUTEX_UNLOCK(&g_peers.mu);
+    return n;
+}
+
 static int chat_frame_encode(uint8_t *out, size_t cap, size_t *out_len, uint32_t type,
                              const char *nick, const char *text) {
     speer_pb_writer_t w;
@@ -1344,6 +1573,217 @@ static int chat_frame_decode(const uint8_t *in, size_t len, uint32_t *type, char
         }
     }
     return 0;
+}
+
+static const char *path_basename(const char *path) {
+    const char *base = path;
+    for (const char *p = path; *p; p++) {
+        if (*p == '/' || *p == '\\') base = p + 1;
+    }
+    return base;
+}
+
+static void sanitize_file_name(char *out, size_t cap, const char *name) {
+    size_t j = 0;
+    if (cap == 0) return;
+    for (size_t i = 0; name[i] && j + 1 < cap; i++) {
+        char c = name[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
+            out[j++] = c;
+        } else if (c == ' ') {
+            out[j++] = '_';
+        }
+    }
+    if (j == 0) {
+        snprintf(out, cap, "blob");
+        return;
+    }
+    out[j] = 0;
+}
+
+static int ensure_recv_dir(void) {
+#if defined(_WIN32)
+    return _mkdir("speer_received") == 0 || errno == EEXIST ? 0 : -1;
+#else
+    return mkdir("speer_received", 0755) == 0 || errno == EEXIST ? 0 : -1;
+#endif
+}
+
+static void hex_encode(const uint8_t *in, size_t len, char *out, size_t cap) {
+    static const char hx[] = "0123456789abcdef";
+    size_t j = 0;
+    for (size_t i = 0; i < len && j + 2 < cap; i++) {
+        out[j++] = hx[(in[i] >> 4) & 0xf];
+        out[j++] = hx[in[i] & 0xf];
+    }
+    out[j] = 0;
+}
+
+static int hex_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static int hex_decode(const char *in, uint8_t *out, size_t cap, size_t *out_len) {
+    size_t n = strlen(in);
+    if ((n & 1) != 0 || n / 2 > cap) return -1;
+    for (size_t i = 0; i < n; i += 2) {
+        int hi = hex_val(in[i]);
+        int lo = hex_val(in[i + 1]);
+        if (hi < 0 || lo < 0) return -1;
+        out[i / 2] = (uint8_t)((hi << 4) | lo);
+    }
+    *out_len = n / 2;
+    return 0;
+}
+
+static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
+    if (type == CHAT_TYPE_FILE_META) {
+        unsigned long id = 0;
+        unsigned long long size = 0;
+        char name[128] = "";
+        if (sscanf(payload, "%lu|%llu|%127[^\n]", &id, &size, name) != 3 || id == 0) {
+            netlog_add(NETLOG_WARN, "bad file metadata");
+            return;
+        }
+        if (ensure_recv_dir() != 0) {
+            emit_error_msg("could not create speer_received directory");
+            return;
+        }
+
+        char clean_name[128];
+        char clean_sender[64];
+        sanitize_file_name(clean_name, sizeof(clean_name), name);
+        sanitize_file_name(clean_sender, sizeof(clean_sender),
+                           p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
+
+        char path[260];
+#if defined(_WIN32)
+        snprintf(path, sizeof(path), "speer_received\\%s_%lu_%s", clean_sender, id, clean_name);
+#else
+        snprintf(path, sizeof(path), "speer_received/%s_%lu_%s", clean_sender, id, clean_name);
+#endif
+
+        FILE *fp = fopen(path, "wb");
+        if (!fp) {
+            emit_error_msg("could not open receive file");
+            return;
+        }
+
+        int slot = -1;
+        MUTEX_LOCK(&g_file_mu);
+        for (int i = 0; i < MAX_RX_FILES; i++) {
+            if (!g_rx_files[i].active) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot >= 0) {
+            rx_file_t *rx = &g_rx_files[slot];
+            memset(rx, 0, sizeof(*rx));
+            rx->active = 1;
+            rx->id = (uint32_t)id;
+            rx->expected = size;
+            rx->fp = fp;
+            snprintf(rx->sender, sizeof(rx->sender), "%s", p->remote_pid_full);
+            snprintf(rx->name, sizeof(rx->name), "%s", clean_name);
+            snprintf(rx->path, sizeof(rx->path), "%s", path);
+        }
+        MUTEX_UNLOCK(&g_file_mu);
+
+        if (slot < 0) {
+            fclose(fp);
+            emit_error_msg("too many incoming files");
+            return;
+        }
+
+        emit_system_msg("incoming file transfer started");
+        netlog_add(NETLOG_OK, "file rx %s %lluB", clean_name, size);
+        return;
+    }
+
+    if (type == CHAT_TYPE_FILE_CHUNK) {
+        unsigned long id = 0;
+        const char *bar = strchr(payload, '|');
+        if (!bar || sscanf(payload, "%lu", &id) != 1 || id == 0) {
+            netlog_add(NETLOG_WARN, "bad file chunk");
+            return;
+        }
+        const char *hex = bar + 1;
+        uint8_t chunk[FILE_CHUNK_BYTES];
+        size_t chunk_len = 0;
+        if (hex_decode(hex, chunk, sizeof(chunk), &chunk_len) != 0) {
+            netlog_add(NETLOG_WARN, "bad file chunk hex");
+            return;
+        }
+
+        unsigned long long received = 0;
+        unsigned long long expected = 0;
+        char name[128] = "";
+        int found = 0;
+        MUTEX_LOCK(&g_file_mu);
+        for (int i = 0; i < MAX_RX_FILES; i++) {
+            rx_file_t *rx = &g_rx_files[i];
+            if (rx->active && rx->id == (uint32_t)id &&
+                strcmp(rx->sender, p->remote_pid_full) == 0) {
+                if (rx->fp && fwrite(chunk, 1, chunk_len, rx->fp) == chunk_len) {
+                    rx->received += chunk_len;
+                    received = rx->received;
+                    expected = rx->expected;
+                    snprintf(name, sizeof(name), "%s", rx->name);
+                    found = 1;
+                }
+                break;
+            }
+        }
+        MUTEX_UNLOCK(&g_file_mu);
+
+        if (!found) {
+            netlog_add(NETLOG_WARN, "chunk for unknown file %lu", id);
+            return;
+        }
+        netlog_add(NETLOG_TRAFFIC, "file rx %s %llu/%lluB", name, received, expected);
+        return;
+    }
+
+    if (type == CHAT_TYPE_FILE_DONE) {
+        unsigned long id = 0;
+        if (sscanf(payload, "%lu", &id) != 1 || id == 0) return;
+
+        char path[260] = "";
+        char name[128] = "";
+        unsigned long long received = 0;
+        unsigned long long expected = 0;
+        int ok = 0;
+        MUTEX_LOCK(&g_file_mu);
+        for (int i = 0; i < MAX_RX_FILES; i++) {
+            rx_file_t *rx = &g_rx_files[i];
+            if (rx->active && rx->id == (uint32_t)id &&
+                strcmp(rx->sender, p->remote_pid_full) == 0) {
+                if (rx->fp) fclose(rx->fp);
+                rx->fp = NULL;
+                snprintf(path, sizeof(path), "%s", rx->path);
+                snprintf(name, sizeof(name), "%s", rx->name);
+                received = rx->received;
+                expected = rx->expected;
+                ok = received == expected;
+                memset(rx, 0, sizeof(*rx));
+                break;
+            }
+        }
+        MUTEX_UNLOCK(&g_file_mu);
+
+        if (path[0]) {
+            char msg[MAX_TEXT_LEN];
+            snprintf(msg, sizeof(msg), "received file %s -> %s (%llu/%llu bytes)%s",
+                     name, path, received, expected, ok ? "" : " incomplete");
+            emit_system_msg(msg);
+            netlog_add(ok ? NETLOG_OK : NETLOG_WARN, "file saved %s", name);
+        }
+    }
 }
 
 static void truncate_pid(char *out, size_t cap, const char *full) {
@@ -1575,6 +2015,8 @@ static THREAD_RET peer_reader(void *arg) {
         if (ymux_recv(&sio, frame, (size_t)flen, &got) != 0 || got != flen) {
             break;
         }
+        p->bytes_rx += (unsigned long long)lp_off + (unsigned long long)flen;
+        p->last_seen = time(NULL);
         uint32_t type = 0;
         char nick[MAX_NICK_LEN], text[MAX_TEXT_LEN];
         if (chat_frame_decode(frame, (size_t)flen, &type, nick, sizeof(nick), text,
@@ -1587,10 +2029,21 @@ static THREAD_RET peer_reader(void *arg) {
             p->remote_nick[l] = 0;
         }
         if (type == CHAT_TYPE_MSG) {
+            p->msgs_rx++;
+            netlog_add(NETLOG_TRAFFIC, "rx chat %s %lluB",
+                       p->remote_nick[0] ? p->remote_nick : p->remote_pid_short,
+                       (unsigned long long)flen);
             emit_chat(p->remote_pid_full, p->remote_nick, text);
+        } else if (type == CHAT_TYPE_FILE_META || type == CHAT_TYPE_FILE_CHUNK ||
+                   type == CHAT_TYPE_FILE_DONE) {
+            handle_file_frame(p, type, text);
         } else if (type == CHAT_TYPE_HELLO) {
+            netlog_add(NETLOG_OK, "hello %s",
+                       p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
             emit_system_msg(" waved");
         } else if (type == CHAT_TYPE_BYE) {
+            netlog_add(NETLOG_WARN, "bye %s",
+                       p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
             break;
         }
     }
@@ -1610,6 +2063,7 @@ static THREAD_RET peer_writer(void *arg) {
     speer_tcp_set_io_timeout(p->fd, HANDSHAKE_TIMEOUT_S * 1000);
 
     if (p->initiator) {
+        netlog_add(NETLOG_INFO, "dial tcp %s", p->addr);
         if (speer_ms_negotiate_initiator(&p->fd, tcp_plain_send, tcp_plain_recv, "/noise") != 0) {
             emit_error_msg("noise multistream failed");
             peer_release(p);
@@ -1621,6 +2075,7 @@ static THREAD_RET peer_writer(void *arg) {
             return THREAD_RET_VAL;
         }
     } else {
+        netlog_add(NETLOG_INFO, "accept tcp %s", p->addr);
         const char *protos[1] = {"/noise"};
         size_t sel = 0;
         if (speer_ms_negotiate_listener(&p->fd, tcp_plain_send, tcp_plain_recv, protos, 1,
@@ -1635,12 +2090,14 @@ static THREAD_RET peer_writer(void *arg) {
             return THREAD_RET_VAL;
         }
     }
+    netlog_add(NETLOG_OK, "noise xx authenticated");
 
     char pid_b58[64];
     if (derive_remote_pid_b58(&p->noise, pid_b58, sizeof(pid_b58)) != 0)
         snprintf(pid_b58, sizeof(pid_b58), "(unknown)");
     snprintf(p->remote_pid_full, sizeof(p->remote_pid_full), "%s", pid_b58);
     truncate_pid(p->remote_pid_short, sizeof(p->remote_pid_short), pid_b58);
+    netlog_add(NETLOG_OK, "peer id %s", p->remote_pid_short);
 
     if (strcmp(pid_b58, g_my_pid_b58) == 0) {
         peer_release(p);
@@ -1669,6 +2126,7 @@ static THREAD_RET peer_writer(void *arg) {
             return THREAD_RET_VAL;
         }
     }
+    netlog_add(NETLOG_OK, "yamux negotiated");
 
     speer_yamux_init(&p->mux, p->initiator, io_crypt_send, io_crypt_recv, &p->io);
 
@@ -1685,6 +2143,7 @@ static THREAD_RET peer_writer(void *arg) {
             peer_release(p);
             return THREAD_RET_VAL;
         }
+        netlog_add(NETLOG_OK, "opened chat stream");
     } else {
         for (int waited_ms = 0; !p->chat_st && waited_ms < HANDSHAKE_TIMEOUT_S * 1000;
              waited_ms += 50) {
@@ -1705,6 +2164,7 @@ static THREAD_RET peer_writer(void *arg) {
             peer_release(p);
             return THREAD_RET_VAL;
         }
+        netlog_add(NETLOG_OK, "accepted chat stream");
     }
 
     {
@@ -1716,10 +2176,14 @@ static THREAD_RET peer_writer(void *arg) {
             ymux_io_t sio = {.mux = &p->mux, .st = p->chat_st};
             (void)ymux_send(&sio, lp, hl);
             (void)ymux_send(&sio, frame, fl);
+            netlog_add(NETLOG_TRAFFIC, "tx hello %lluB",
+                       (unsigned long long)(hl + fl));
         }
     }
 
     p->handshake_done = 1;
+    p->connected_at = time(NULL);
+    p->last_seen = p->connected_at;
     emit_join(p->remote_nick[0] ? p->remote_nick : "(unknown)", p->remote_pid_short);
 
     speer_tcp_set_io_timeout(p->fd, 0);
@@ -1731,6 +2195,7 @@ static THREAD_RET peer_writer(void *arg) {
         goto done;
     }
     p->reader_started = 1;
+    netlog_add(NETLOG_OK, "reader online");
 
     while (!g_quit && !p->dead) {
         outmsg_t *m;
@@ -1750,6 +2215,22 @@ static THREAD_RET peer_writer(void *arg) {
                     free(m);
                     p->dead = 1;
                     goto done;
+                }
+                p->bytes_tx += (unsigned long long)hl + (unsigned long long)fl;
+                p->last_seen = time(NULL);
+                if (m->type == CHAT_TYPE_MSG) {
+                    p->msgs_tx++;
+                    netlog_add(NETLOG_TRAFFIC, "tx chat %s %lluB",
+                               p->remote_nick[0] ? p->remote_nick : p->remote_pid_short,
+                               (unsigned long long)fl);
+                } else if (m->type == CHAT_TYPE_FILE_META || m->type == CHAT_TYPE_FILE_CHUNK ||
+                           m->type == CHAT_TYPE_FILE_DONE) {
+                    netlog_add(NETLOG_TRAFFIC, "tx file frame %s %lluB",
+                               p->remote_nick[0] ? p->remote_nick : p->remote_pid_short,
+                               (unsigned long long)fl);
+                } else if (m->type == CHAT_TYPE_BYE) {
+                    netlog_add(NETLOG_TRAFFIC, "tx bye %s",
+                               p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
                 }
             }
             free(m);
@@ -1849,9 +2330,13 @@ static void on_mdns_discover(void *user, const char *peer_id, const char *multia
     if (port <= 0 || port > 65535) return;
 
     if (strcmp(st->self_pid, peer_id) > 0) return;
+    netlog_add(NETLOG_INFO, "mDNS %s", multiaddr);
 
     int fd = -1;
-    if (speer_tcp_dial_timeout(&fd, host, (uint16_t)port, 3000) != 0) return;
+    if (speer_tcp_dial_timeout(&fd, host, (uint16_t)port, 3000) != 0) {
+        netlog_add(NETLOG_WARN, "dial failed %s:%d", host, port);
+        return;
+    }
 
     peer_t *p = peer_alloc();
     if (!p) {
@@ -1885,6 +2370,7 @@ static THREAD_RET disc_accept_thread(void *arg) {
                 p->fd = fd;
                 p->initiator = 0;
                 snprintf(p->addr, sizeof(p->addr), "%s", peer_addr);
+                netlog_add(NETLOG_INFO, "tcp accept %s", peer_addr);
                 emit_system_msg("incoming connection");
                 THREAD_CREATE(&p->writer_thread, peer_writer, p);
             }
@@ -1917,14 +2403,153 @@ static void cmd_peers(void) {
     for (int i = 0; i < MAX_PEERS; i++) {
         peer_t *p = &g_peers.peers[i];
         if (p->active && !p->dead && p->handshake_done) {
-            snprintf(buf, sizeof(buf), "%s  %s  %s",
+            char active_for[32];
+            format_duration(p->connected_at, active_for, sizeof(active_for));
+            snprintf(buf, sizeof(buf), "%s  %s  %s  up %s  rx%llu tx%llu",
                     p->remote_nick[0] ? p->remote_nick : "?",
                     p->remote_pid_short,
-                    p->addr);
+                    p->addr,
+                    active_for,
+                    p->msgs_rx,
+                    p->msgs_tx);
             emit_system_msg(buf);
         }
     }
     MUTEX_UNLOCK(&g_peers.mu);
+}
+
+static void cmd_status(void) {
+    int peer_count = 0;
+    unsigned long long rx_msgs = 0, tx_msgs = 0, rx_bytes = 0, tx_bytes = 0;
+    collect_peer_stats(&peer_count, &rx_msgs, &tx_msgs, &rx_bytes, &tx_bytes);
+    char uptime[32];
+    char buf[MAX_TEXT_LEN];
+    format_duration(g_started_at, uptime, sizeof(uptime));
+    snprintf(buf, sizeof(buf), "status: %s:%u  uptime %s  peers %d  rx %llu msg/%llu B  tx %llu msg/%llu B",
+             g_lan_ip, (unsigned)g_listen_port, uptime, peer_count,
+             rx_msgs, rx_bytes, tx_msgs, tx_bytes);
+    emit_system_msg(buf);
+    emit_system_msg("stack: mDNS discovery -> TCP -> Noise XX authenticated encryption -> Yamux stream mux -> /speer/chat/1.0.0");
+}
+
+static void cmd_id(void) {
+    char buf[MAX_TEXT_LEN];
+    snprintf(buf, sizeof(buf), "nick: %s", g_my_nick);
+    emit_system_msg(buf);
+    snprintf(buf, sizeof(buf), "peer id: %s", g_my_pid_b58);
+    emit_system_msg(buf);
+    snprintf(buf, sizeof(buf), "multiaddr: /ip4/%s/tcp/%u/p2p/%s",
+             g_lan_ip, (unsigned)g_listen_port, g_my_pid_b58);
+    emit_system_msg(buf);
+}
+
+static void cmd_inspect(void) {
+    int shown = 0;
+    char buf[MAX_TEXT_LEN];
+    MUTEX_LOCK(&g_peers.mu);
+    for (int i = 0; i < MAX_PEERS; i++) {
+        peer_t *p = &g_peers.peers[i];
+        if (p->active && !p->dead && p->handshake_done) {
+            char active_for[32];
+            char idle_for[32];
+            format_duration(p->connected_at, active_for, sizeof(active_for));
+            format_duration(p->last_seen, idle_for, sizeof(idle_for));
+            snprintf(buf, sizeof(buf), "peer %d: %s  %s", shown + 1,
+                     p->remote_nick[0] ? p->remote_nick : "?",
+                     p->remote_pid_full[0] ? p->remote_pid_full : p->remote_pid_short);
+            emit_system_msg(buf);
+            snprintf(buf, sizeof(buf), "  addr %s  role %s  up %s  idle %s  rx %llu/%lluB  tx %llu/%lluB",
+                     p->addr,
+                     p->initiator ? "dialer" : "listener",
+                     active_for,
+                     idle_for,
+                     p->msgs_rx, p->bytes_rx,
+                     p->msgs_tx, p->bytes_tx);
+            emit_system_msg(buf);
+            shown++;
+        }
+    }
+    MUTEX_UNLOCK(&g_peers.mu);
+    if (shown == 0) emit_system_msg("inspect: no connected peers yet");
+}
+
+static void trim_send_path(const char *in, char *out, size_t cap) {
+    while (*in == ' ' || *in == '\t') in++;
+    if (*in == '"') {
+        in++;
+        size_t n = 0;
+        while (*in && *in != '"' && n + 1 < cap) out[n++] = *in++;
+        out[n] = 0;
+        return;
+    }
+    snprintf(out, cap, "%s", in);
+    size_t n = strlen(out);
+    while (n > 0 && (out[n - 1] == ' ' || out[n - 1] == '\t')) out[--n] = 0;
+}
+
+static void cmd_send_file(const char *arg) {
+    char path[512];
+    trim_send_path(arg, path, sizeof(path));
+    if (!path[0]) {
+        emit_error_msg("usage: /send <path>");
+        return;
+    }
+    if (connected_peer_count() == 0) {
+        emit_error_msg("no connected peers for file transfer");
+        return;
+    }
+
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        emit_error_msg("could not open file");
+        return;
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        emit_error_msg("could not size file");
+        return;
+    }
+    long fsize_long = ftell(fp);
+    if (fsize_long < 0) {
+        fclose(fp);
+        emit_error_msg("could not size file");
+        return;
+    }
+    rewind(fp);
+
+    char clean_name[128];
+    sanitize_file_name(clean_name, sizeof(clean_name), path_basename(path));
+    uint32_t file_id = (uint32_t)time(NULL) ^ g_next_file_id++;
+    unsigned long long fsize = (unsigned long long)fsize_long;
+
+    char payload[MAX_TEXT_LEN];
+    snprintf(payload, sizeof(payload), "%lu|%llu|%s",
+             (unsigned long)file_id, fsize, clean_name);
+    broadcast(CHAT_TYPE_FILE_META, payload);
+
+    char msg[MAX_TEXT_LEN];
+    snprintf(msg, sizeof(msg), "sending file %s (%llu bytes)", clean_name, fsize);
+    emit_system_msg(msg);
+    netlog_add(NETLOG_OK, "file tx start %s %lluB", clean_name, fsize);
+
+    uint8_t chunk[FILE_CHUNK_BYTES];
+    char hex[FILE_CHUNK_BYTES * 2 + 1];
+    unsigned long long sent = 0;
+    size_t n = 0;
+    while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+        hex_encode(chunk, n, hex, sizeof(hex));
+        snprintf(payload, sizeof(payload), "%lu|%s", (unsigned long)file_id, hex);
+        broadcast(CHAT_TYPE_FILE_CHUNK, payload);
+        sent += n;
+        netlog_add(NETLOG_TRAFFIC, "file tx %s %llu/%lluB", clean_name, sent, fsize);
+    }
+    fclose(fp);
+
+    snprintf(payload, sizeof(payload), "%lu", (unsigned long)file_id);
+    broadcast(CHAT_TYPE_FILE_DONE, payload);
+    snprintf(msg, sizeof(msg), "queued file %s (%llu bytes)", clean_name, sent);
+    emit_system_msg(msg);
+    netlog_add(sent == fsize ? NETLOG_OK : NETLOG_WARN, "file tx done %s", clean_name);
 }
 
 #if defined(_WIN32)
@@ -1975,6 +2600,7 @@ int main(int argc, char **argv) {
     }
 
     MUTEX_INIT(&g_log_mu);
+    MUTEX_INIT(&g_file_mu);
     MUTEX_INIT(&g_peers.mu);
 
     if (speer_random_bytes_or_fail(g_my_static_priv, 32) != 0) return 1;
@@ -1993,6 +2619,7 @@ int main(int argc, char **argv) {
     size_t pidl = 0;
     if (speer_peer_id_from_pubkey_bytes(pid, sizeof(pid), pkproto, pkpl, &pidl) != 0) return 1;
     if (speer_peer_id_to_b58(g_my_pid_b58, sizeof(g_my_pid_b58), pid, pidl) != 0) return 1;
+    g_started_at = time(NULL);
 
     int lfd = -1;
     if (speer_tcp_listen(&lfd, NULL, 0) != 0) {
@@ -2022,6 +2649,7 @@ int main(int argc, char **argv) {
     }
     char lan_ip[64];
     discover_lan_ip(lan_ip, sizeof(lan_ip));
+    snprintf(g_lan_ip, sizeof(g_lan_ip), "%s", lan_ip);
     char multiaddr[256];
     snprintf(multiaddr, sizeof(multiaddr), "/ip4/%s/tcp/%u/p2p/%s", lan_ip, (unsigned)g_listen_port,
              g_my_pid_b58);
@@ -2058,9 +2686,13 @@ int main(int argc, char **argv) {
     screen_init();
     layout_calc();
     history_init();
+    netlog_clear();
     memset(&g_input, 0, sizeof(g_input));
 
-    emit_system_msg("Welcome to speer-chat! Type /help for commands.");
+    emit_system_msg("Welcome to speer-chat. Type /status, /inspect, or /id for the network console.");
+    netlog_add(NETLOG_OK, "identity ready %s", g_my_pid_b58);
+    netlog_add(NETLOG_OK, "tcp listen %s:%u", g_lan_ip, (unsigned)g_listen_port);
+    netlog_add(NETLOG_OK, "mDNS service %s", CHAT_SERVICE_TYPE);
     
     THREAD_T disc_thread;
     THREAD_CREATE(&disc_thread, disc_accept_thread, &dst);
@@ -2098,8 +2730,22 @@ int main(int argc, char **argv) {
                 running = 0;
             } else if (strcmp(g_input.buf, "/peers") == 0 || strcmp(g_input.buf, "/who") == 0) {
                 cmd_peers();
+            } else if (strcmp(g_input.buf, "/status") == 0) {
+                cmd_status();
+            } else if (strcmp(g_input.buf, "/id") == 0 || strcmp(g_input.buf, "/me") == 0) {
+                cmd_id();
+            } else if (strcmp(g_input.buf, "/inspect") == 0 || strcmp(g_input.buf, "/diag") == 0) {
+                cmd_inspect();
+            } else if (strcmp(g_input.buf, "/clear") == 0) {
+                history_init();
+                emit_system_msg("timeline cleared");
+            } else if (strcmp(g_input.buf, "/log clear") == 0) {
+                netlog_clear();
+                netlog_add(NETLOG_OK, "network console cleared");
             } else if (strcmp(g_input.buf, "/help") == 0) {
-                emit_system_msg("Commands: /peers /who /quit /exit /help");
+                emit_system_msg("Commands: /send <path> /status /inspect /id /peers /clear /log clear /theme modern|midnight|original /quit");
+            } else if (strncmp(g_input.buf, "/send ", 6) == 0) {
+                cmd_send_file(g_input.buf + 6);
             } else if (strncmp(g_input.buf, "/theme ", 7) == 0) {
                 const char *t = g_input.buf + 7;
                 if (strcmp(t, "midnight") == 0) g_theme = &THEME_MIDNIGHT;
