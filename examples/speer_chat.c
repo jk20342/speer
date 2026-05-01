@@ -25,7 +25,7 @@
 #include <io.h>
 #define THREAD_T HANDLE
 #define THREAD_CREATE(t, fn, arg) \
-    (*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(fn), (arg), 0, NULL))
+    ((*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(fn), (arg), 0, NULL)) != NULL ? 0 : -1)
 #define THREAD_JOIN(t)   WaitForSingleObject(t, INFINITE)
 #define THREAD_RET       DWORD WINAPI
 #define THREAD_RET_VAL   0
@@ -1725,7 +1725,7 @@ static THREAD_RET peer_writer(void *arg) {
     speer_tcp_set_io_timeout(p->fd, 0);
     p->io.send_mu = &p->send_mu;
 
-    if (THREAD_CREATE(&p->reader_thread, peer_reader, p) == 0) {
+    if (THREAD_CREATE(&p->reader_thread, peer_reader, p) != 0) {
         emit_error_msg("failed to spawn reader thread");
         p->dead = 1;
         goto done;
