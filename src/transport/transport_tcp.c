@@ -121,6 +121,11 @@ int speer_tcp_accept(int listen_fd, int *out_fd, char *peer_out, size_t peer_cap
     socklen_t sz = sizeof(sin);
     int fd = (int)accept(listen_fd, (struct sockaddr *)&sin, &sz);
     if (fd < 0) return -1;
+    /* On Windows, the accepted socket inherits the non-blocking flag from
+     * the listener (see WSAAccept docs). Force it back to blocking so
+     * SO_RCVTIMEO / SO_SNDTIMEO behave the same as on Linux/macOS and
+     * callers don't get surprise EWOULDBLOCK on their first recv. */
+    (void)speer_tcp_set_nonblocking(fd, 0);
     if (peer_out && peer_cap > 0) {
 #if defined(_WIN32)
         DWORD len = (DWORD)peer_cap;

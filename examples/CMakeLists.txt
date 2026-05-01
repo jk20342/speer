@@ -17,11 +17,23 @@ if(SPEER_ENABLE_RELAY)
     list(APPEND SPEER_EXAMPLES relay_example)
 endif()
 
+# speer_chat needs mDNS, so only build it when the discovery layer is on.
+if(SPEER_ENABLE_MDNS)
+    list(APPEND SPEER_EXAMPLES speer_chat)
+endif()
+
+find_package(Threads QUIET)
+
 foreach(example ${SPEER_EXAMPLES})
     set(example_src ${CMAKE_CURRENT_SOURCE_DIR}/${example}.c)
     if(EXISTS ${example_src})
         add_executable(${example} ${example_src})
         target_link_libraries(${example} PRIVATE speer)
+        if(Threads_FOUND)
+            # speer_chat / chat use pthread on POSIX. Linking unconditionally
+            # is harmless on Windows (resolves to nothing).
+            target_link_libraries(${example} PRIVATE Threads::Threads)
+        endif()
         target_include_directories(${example} PRIVATE
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/src/util
