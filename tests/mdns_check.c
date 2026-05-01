@@ -31,23 +31,23 @@ int main(void) {
     if (ctx.socket_ipv4 < 0) FAIL("mdns should create socket\n");
     if (ctx.num_services != 0) FAIL("mdns should start with no services\n");
 
-    uint8_t txt_data[] = "\x10"
-                         "id=test_peer_123"
-                         "\x04"
-                         "flag";
-    if (mdns_register_service(&ctx, "MyNode", "_p2p._udp", 4001, txt_data, sizeof(txt_data) - 1) !=
-        0)
+    /* libp2p-mdns format: a single dnsaddr=<multiaddr-with-/p2p/peerid> TXT
+     * record. The parser pulls the peer id out of the /p2p/ component. */
+    static const char dnsaddr_txt[] = "dnsaddr=/ip4/127.0.0.1/tcp/4001/p2p/test_peer_123";
+    uint8_t txt_data[1 + sizeof(dnsaddr_txt) - 1];
+    txt_data[0] = (uint8_t)(sizeof(dnsaddr_txt) - 1);
+    memcpy(txt_data + 1, dnsaddr_txt, sizeof(dnsaddr_txt) - 1);
+    if (mdns_register_service(&ctx, "MyNode", "_p2p._udp", 4001, txt_data, sizeof(txt_data)) != 0)
         FAIL("mdns_register_service failed\n");
     if (ctx.num_services != 1) FAIL("should have 1 service\n");
     if (strcmp(ctx.services[0].instance_name, "MyNode") != 0) FAIL("instance name mismatch\n");
     if (ctx.services[0].srv.port != 4001) FAIL("port mismatch\n");
-    if (ctx.services[0].txt.num_fields != 2) FAIL("should have 2 txt fields\n");
-    if (strcmp(ctx.services[0].txt.fields[0].key, "id") != 0) FAIL("txt key mismatch\n");
-    if (strcmp(ctx.services[0].txt.fields[0].value, "test_peer_123") != 0)
+    if (ctx.services[0].txt.num_fields != 1) FAIL("should have 1 txt field\n");
+    if (strcmp(ctx.services[0].txt.fields[0].key, "dnsaddr") != 0) FAIL("txt key mismatch\n");
+    if (strcmp(ctx.services[0].txt.fields[0].value, "/ip4/127.0.0.1/tcp/4001/p2p/test_peer_123") !=
+        0)
         FAIL("txt value mismatch\n");
     if (!ctx.services[0].txt.fields[0].has_value) FAIL("txt value marker mismatch\n");
-    if (strcmp(ctx.services[0].txt.fields[1].key, "flag") != 0) FAIL("txt flag mismatch\n");
-    if (ctx.services[0].txt.fields[1].has_value) FAIL("txt flag should be boolean\n");
 
     uint8_t packet[512];
     size_t len = sizeof(packet);
@@ -58,21 +58,13 @@ int main(void) {
     mdns_set_discovery_callback(&ctx, on_discover, NULL);
     if (ctx.on_peer_discovered != on_discover) FAIL("callback not set\n");
 
-    uint8_t test_packet[] = {0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-                             0x00, 0x06, 0x4d, 0x79, 0x4e, 0x6f, 0x64, 0x65, 0x05, 0x5f, 0x70,
-                             0x32, 0x70, 0x04, 0x5f, 0x74, 0x63, 0x70, 0x05, 0x6c, 0x6f, 0x63,
-                             0x61, 0x6c, 0x00, 0x00, 0x21, 0x80, 0x01, 0x00, 0x00, 0x00, 0x78,
-                             0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x0f, 0xa1, 0x00, 0x00};
     char peer_id[128], multiaddr[256];
-    int ret = mdns_parse_packet(&ctx, test_packet, sizeof(test_packet), peer_id, sizeof(peer_id),
-                                multiaddr, sizeof(multiaddr), htonl(0x7f000001));
-    (void)ret;
-
-    ret = mdns_parse_packet(&ctx, packet, len, peer_id, sizeof(peer_id), multiaddr,
-                            sizeof(multiaddr), htonl(0x7f000001));
+    int ret = mdns_parse_packet(&ctx, packet, len, peer_id, sizeof(peer_id), multiaddr,
+                                sizeof(multiaddr), htonl(0x7f000001));
     if (ret != 0) FAIL("mdns_parse_packet should parse built announcement\n");
-    if (strcmp(peer_id, "test_peer_123") != 0) FAIL("parsed peer id mismatch\n");
-    if (strcmp(multiaddr, "/ip4/127.0.0.1/tcp/4001") != 0) FAIL("parsed multiaddr mismatch\n");
+    if (strcmp(peer_id, "test_peer_123") != 0) FAIL("parsed peer id mismatch (got '%s')\n", peer_id);
+    if (strcmp(multiaddr, "/ip4/127.0.0.1/tcp/4001/p2p/test_peer_123") != 0)
+        FAIL("parsed multiaddr mismatch (got '%s')\n", multiaddr);
 
     uint8_t peer_pubkey[32] = {0xAB, 0xCD, 0xEF};
     char svc_name[256];
