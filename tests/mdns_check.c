@@ -62,7 +62,8 @@ int main(void) {
     int ret = mdns_parse_packet(&ctx, packet, len, peer_id, sizeof(peer_id), multiaddr,
                                 sizeof(multiaddr), htonl(0x7f000001));
     if (ret != 0) FAIL("mdns_parse_packet should parse built announcement\n");
-    if (strcmp(peer_id, "test_peer_123") != 0) FAIL("parsed peer id mismatch (got '%s')\n", peer_id);
+    if (strcmp(peer_id, "test_peer_123") != 0)
+        FAIL("parsed peer id mismatch (got '%s')\n", peer_id);
     if (strcmp(multiaddr, "/ip4/127.0.0.1/tcp/4001/p2p/test_peer_123") != 0)
         FAIL("parsed multiaddr mismatch (got '%s')\n", multiaddr);
 
