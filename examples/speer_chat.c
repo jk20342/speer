@@ -5,11 +5,11 @@
 #include "speer_internal.h"
 
 #include <stdarg.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
+#include <errno.h>
+#include <string.h>
 #include <time.h>
 
 #include "ed25519.h"
@@ -25,6 +25,7 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+
 #include <conio.h>
 #include <direct.h>
 #include <fcntl.h>
@@ -44,14 +45,15 @@ static void thread_sleep_ms(int ms) {
     Sleep((DWORD)ms);
 }
 #else
-#include <sys/time.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <pthread.h>
+
+#include <poll.h>
 #include <signal.h>
 #include <termios.h>
 #include <unistd.h>
-#include <pthread.h>
-#include <poll.h>
 #define THREAD_T                  pthread_t
 #define THREAD_CREATE(t, fn, arg) pthread_create((t), NULL, (fn), (arg))
 #define THREAD_JOIN(t)            pthread_join((t), NULL)
@@ -68,58 +70,60 @@ static void thread_sleep_ms(int ms) {
 }
 #endif
 
-#define CHAT_PROTO          "/speer/chat/1.0.0"
-#define CHAT_SERVICE_TYPE   "_speer-chat._tcp"
-#define MAX_PEERS           16
-#define MAX_NICK_LEN        32
-#define MAX_TEXT_LEN        1024
-#define WRITER_POLL_MS      50
-#define HANDSHAKE_TIMEOUT_S 10
+#define CHAT_PROTO            "/speer/chat/1.0.0"
+#define CHAT_SERVICE_TYPE     "_speer-chat._tcp"
+#define MAX_PEERS             16
+#define MAX_NICK_LEN          32
+#define MAX_TEXT_LEN          1024
+#define WRITER_POLL_MS        50
+#define HANDSHAKE_TIMEOUT_S   10
 
-#define CHAT_TYPE_HELLO     1
-#define CHAT_TYPE_MSG       2
-#define CHAT_TYPE_BYE       3
-#define CHAT_TYPE_FILE_META 4
-#define CHAT_TYPE_FILE_CHUNK 5
-#define CHAT_TYPE_FILE_DONE 6
+#define CHAT_TYPE_HELLO       1
+#define CHAT_TYPE_MSG         2
+#define CHAT_TYPE_BYE         3
+#define CHAT_TYPE_FILE_META   4
+#define CHAT_TYPE_FILE_CHUNK  5
+#define CHAT_TYPE_FILE_DONE   6
+#define CHAT_TYPE_FILE_ACCEPT 7
 
-#define MAX_NOISE_FRAME     65535
-#define FILE_CHUNK_BYTES    384
-#define MAX_RX_FILES        8
+#define MAX_NOISE_FRAME       65535
+#define FILE_CHUNK_BYTES      384
+#define MAX_RX_FILES          8
 
 /* ============================================================
  * Theme System - Catppuccin Mocha & Nord palettes
  * ============================================================ */
 
 typedef struct {
-    uint32_t bg;              /* Main background */
-    uint32_t bg_panel;        /* Panel/header backgrounds */
-    uint32_t fg;              /* Main text */
-    uint32_t fg_dim;          /* Muted/secondary text */
-    uint32_t border;          /* Border color */
-    uint32_t accent;          /* Highlight/accent */
-    uint32_t timestamp;       /* Timestamp color */
-    uint32_t peer_colors[6];  /* Peer color rotation */
+    uint32_t bg;             /* Main background */
+    uint32_t bg_panel;       /* Panel/header backgrounds */
+    uint32_t fg;             /* Main text */
+    uint32_t fg_dim;         /* Muted/secondary text */
+    uint32_t border;         /* Border color */
+    uint32_t accent;         /* Highlight/accent */
+    uint32_t timestamp;      /* Timestamp color */
+    uint32_t peer_colors[6]; /* Peer color rotation */
     const char *name;
 } theme_t;
 
 /* Modern Dark Theme - neon purple terminal UI */
 static const theme_t THEME_MODERN = {
-    .bg = 0x070711,        /* Near-black violet */
-    .bg_panel = 0x111026,  /* Inky panel purple */
-    .fg = 0xf2efff,        /* Soft white */
-    .fg_dim = 0x8a84a6,    /* Muted lavender */
-    .border = 0x9d2cff,    /* Electric violet */
-    .accent = 0xff2bd6,    /* Neon magenta */
+    .bg = 0x070711, /* Near-black violet */
+    .bg_panel = 0x111026, /* Inky panel purple */
+    .fg = 0xf2efff, /* Soft white */
+    .fg_dim = 0x8a84a6, /* Muted lavender */
+    .border = 0x9d2cff, /* Electric violet */
+    .accent = 0xff2bd6, /* Neon magenta */
     .timestamp = 0x6d668f, /* Dusty violet */
-    .peer_colors = {
-        0xff2bd6, /* Magenta */
-        0x9d2cff, /* Violet */
-        0x35f7c8, /* Mint */
-        0x61d6ff, /* Cyan */
-        0xffc857, /* Amber */
-        0xff7ab6, /* Pink */
-    },
+    .peer_colors =
+        {
+                      0xff2bd6, /* Magenta */
+            0x9d2cff, /* Violet */
+            0x35f7c8, /* Mint */
+            0x61d6ff, /* Cyan */
+            0xffc857, /* Amber */
+            0xff7ab6, /* Pink */
+        },
     .name = "modern"
 };
 
@@ -132,14 +136,15 @@ static const theme_t THEME_MIDNIGHT = {
     .border = 0x333333,
     .accent = 0x00ff88,
     .timestamp = 0x444444,
-    .peer_colors = {
-        0xff3366, /* Red-pink */
-        0x9966ff, /* Purple */
-        0x00ff88, /* Green */
-        0x3399ff, /* Blue */
-        0xffaa00, /* Orange */
-        0xff66cc, /* Pink */
-    },
+    .peer_colors =
+        {
+                      0xff3366, /* Red-pink */
+            0x9966ff, /* Purple */
+            0x00ff88, /* Green */
+            0x3399ff, /* Blue */
+            0xffaa00, /* Orange */
+            0xff66cc, /* Pink */
+        },
     .name = "midnight"
 };
 
@@ -152,14 +157,15 @@ static const theme_t THEME_ORIGINAL = {
     .border = 0x4b4b6b,
     .accent = 0xff8ab5,
     .timestamp = 0x7878a0,
-    .peer_colors = {
-        0xff8ab5, /* Pink */
-        0xc7a8ff, /* Lavender */
-        0x90e1a0, /* Mint */
-        0x88ccff, /* Sky */
-        0xffb088, /* Peach */
-        0xffe588, /* Butter */
-    },
+    .peer_colors =
+        {
+                      0xff8ab5, /* Pink */
+            0xc7a8ff, /* Lavender */
+            0x90e1a0, /* Mint */
+            0x88ccff, /* Sky */
+            0xffb088, /* Peach */
+            0xffe588, /* Butter */
+        },
     .name = "original"
 };
 
@@ -169,9 +175,9 @@ static const theme_t *g_theme = &THEME_MODERN;
  * Screen Buffer System - Double buffered with diff engine
  * ============================================================ */
 
-#define MAX_COLS 512
-#define MAX_ROWS 256
-#define MAX_HISTORY 1000
+#define MAX_COLS      512
+#define MAX_ROWS      256
+#define MAX_HISTORY   1000
 #define SIDEBAR_WIDTH 28
 
 typedef struct {
@@ -179,12 +185,12 @@ typedef struct {
     uint32_t bg;
     uint8_t bold;
     uint8_t dim;
-    uint32_t ch;  /* Unicode codepoint */
+    uint32_t ch; /* Unicode codepoint */
 } cell_t;
 
 typedef struct {
-    cell_t front[MAX_ROWS][MAX_COLS];  /* Displayed */
-    cell_t back[MAX_ROWS][MAX_COLS];   /* Being built */
+    cell_t front[MAX_ROWS][MAX_COLS]; /* Displayed */
+    cell_t back[MAX_ROWS][MAX_COLS];  /* Being built */
     int rows;
     int cols;
     int dirty;
@@ -196,21 +202,15 @@ typedef struct {
 
 /* Layout regions */
 typedef struct {
-    rect_t header;      /* Title bar */
-    rect_t messages;    /* Scrollable message area */
-    rect_t input;       /* Input bar */
-    rect_t netlog;      /* Verbose network console */
-    rect_t status;      /* Status bar */
+    rect_t header;   /* Title bar */
+    rect_t messages; /* Scrollable message area */
+    rect_t input;    /* Input bar */
+    rect_t netlog;   /* Verbose network console */
+    rect_t status;   /* Status bar */
 } layout_t;
 
 /* Message types */
-typedef enum {
-    MSG_CHAT,
-    MSG_SYSTEM,
-    MSG_JOIN,
-    MSG_LEAVE,
-    MSG_ERROR
-} msg_type_t;
+typedef enum { MSG_CHAT, MSG_SYSTEM, MSG_JOIN, MSG_LEAVE, MSG_ERROR } msg_type_t;
 
 typedef struct msg_entry {
     msg_type_t type;
@@ -223,21 +223,15 @@ typedef struct msg_entry {
 
 typedef struct {
     msg_entry_t entries[MAX_HISTORY];
-    int head;        /* Write position */
-    int count;       /* Total messages stored */
-    int scroll;      /* Scroll offset from bottom */
+    int head;   /* Write position */
+    int count;  /* Total messages stored */
+    int scroll; /* Scroll offset from bottom */
 } msg_history_t;
 
-#define MAX_NETLOG 256
+#define MAX_NETLOG  256
 #define NETLOG_TEXT 160
 
-typedef enum {
-    NETLOG_INFO,
-    NETLOG_OK,
-    NETLOG_WARN,
-    NETLOG_ERROR,
-    NETLOG_TRAFFIC
-} netlog_level_t;
+typedef enum { NETLOG_INFO, NETLOG_OK, NETLOG_WARN, NETLOG_ERROR, NETLOG_TRAFFIC } netlog_level_t;
 
 typedef struct {
     time_t timestamp;
@@ -262,6 +256,14 @@ typedef struct {
     char path[260];
 } rx_file_t;
 
+typedef struct {
+    int active;
+    uint32_t id;
+    unsigned long long size;
+    char name[128];
+    char path[512];
+} tx_file_t;
+
 /* Input state */
 typedef struct {
     char buf[MAX_TEXT_LEN];
@@ -277,6 +279,7 @@ static netlog_t g_netlog;
 static MUTEX_T g_log_mu;
 static MUTEX_T g_file_mu;
 static rx_file_t g_rx_files[MAX_RX_FILES];
+static tx_file_t g_tx_files[MAX_RX_FILES];
 static input_state_t g_input;
 static volatile int g_screen_resized = 0;
 static int g_alt_screen = 0;
@@ -392,9 +395,7 @@ static void screen_init(void) {
 
 static void screen_clear(cell_t *fill) {
     for (int y = 0; y < g_screen.rows; y++) {
-        for (int x = 0; x < g_screen.cols; x++) {
-            g_screen.back[y][x] = *fill;
-        }
+        for (int x = 0; x < g_screen.cols; x++) { g_screen.back[y][x] = *fill; }
     }
 }
 
@@ -403,19 +404,21 @@ static void screen_put_cell(int x, int y, const cell_t *c) {
     g_screen.back[y][x] = *c;
 }
 
-static void screen_put_char(int x, int y, uint32_t ch, uint32_t fg, uint32_t bg, int bold, int dim) {
+static void screen_put_char(int x, int y, uint32_t ch, uint32_t fg, uint32_t bg, int bold,
+                            int dim) {
     cell_t c = {.ch = ch, .fg = fg, .bg = bg, .bold = (uint8_t)bold, .dim = (uint8_t)dim};
     screen_put_cell(x, y, &c);
 }
 
-static void screen_put_string(int x, int y, const char *str, uint32_t fg, uint32_t bg, int bold, int dim) {
+static void screen_put_string(int x, int y, const char *str, uint32_t fg, uint32_t bg, int bold,
+                              int dim) {
     while (*str && x < g_screen.cols) {
         screen_put_char(x++, y, (uint32_t)(unsigned char)*str++, fg, bg, bold, dim);
     }
 }
 
-static void screen_put_string_clipped(int x, int y, const char *str, int max_len,
-                                      uint32_t fg, uint32_t bg, int bold, int dim) {
+static void screen_put_string_clipped(int x, int y, const char *str, int max_len, uint32_t fg,
+                                      uint32_t bg, int bold, int dim) {
     int n = 0;
     while (*str && x < g_screen.cols && n < max_len) {
         screen_put_char(x++, y, (uint32_t)(unsigned char)*str++, fg, bg, bold, dim);
@@ -426,9 +429,7 @@ static void screen_put_string_clipped(int x, int y, const char *str, int max_len
 static void screen_fill_rect(const rect_t *r, uint32_t bg) {
     cell_t c = {.ch = ' ', .fg = g_theme->fg, .bg = bg, .bold = 0, .dim = 0};
     for (int y = r->y; y < r->y + r->h && y < g_screen.rows; y++) {
-        for (int x = r->x; x < r->x + r->w && x < g_screen.cols; x++) {
-            screen_put_cell(x, y, &c);
-        }
+        for (int x = r->x; x < r->x + r->w && x < g_screen.cols; x++) { screen_put_cell(x, y, &c); }
     }
 }
 
@@ -473,12 +474,12 @@ static void screen_present(void) {
     /* Build output string with minimal escape sequences */
     static char buf[65536];
     int pos = 0;
-    
+
     uint32_t cur_fg = 0xffffffff;
     uint32_t cur_bg = 0xffffffff;
     int cur_bold = -1;
     int cur_dim = -1;
-    
+
     for (int y = 0; y < g_screen.rows; y++) {
         int line_dirty = 0;
         for (int x = 0; x < g_screen.cols; x++) {
@@ -488,13 +489,13 @@ static void screen_present(void) {
             }
         }
         if (!line_dirty) continue;
-        
+
         /* Move cursor to start of line */
         pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[%d;1H", y + 1);
-        
+
         for (int x = 0; x < g_screen.cols; x++) {
             cell_t *c = &g_screen.back[y][x];
-            
+
             /* Set attributes if changed */
             if (c->bold != cur_bold || c->dim != cur_dim) {
                 pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[22m");
@@ -511,12 +512,12 @@ static void screen_present(void) {
             }
             if (c->fg != cur_fg) {
                 pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[38;2;%u;%u;%um",
-                    (c->fg >> 16) & 0xff, (c->fg >> 8) & 0xff, c->fg & 0xff);
+                                (c->fg >> 16) & 0xff, (c->fg >> 8) & 0xff, c->fg & 0xff);
                 cur_fg = c->fg;
             }
             if (c->bg != cur_bg) {
                 pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[48;2;%u;%u;%um",
-                    (c->bg >> 16) & 0xff, (c->bg >> 8) & 0xff, c->bg & 0xff);
+                                (c->bg >> 16) & 0xff, (c->bg >> 8) & 0xff, c->bg & 0xff);
                 cur_bg = c->bg;
             }
             /* Output character */
@@ -533,21 +534,19 @@ static void screen_present(void) {
                     buf[pos++] = (char)(0x80 | (c->ch & 0x3f));
                 }
             }
-            
+
             /* Flush periodically */
             if (pos > 60000) {
                 fwrite(buf, 1, pos, stdout);
                 pos = 0;
             }
         }
-        
+
         /* Copy back to front */
         memcpy(g_screen.front[y], g_screen.back[y], g_screen.cols * sizeof(cell_t));
     }
-    
-    if (pos > 0) {
-        fwrite(buf, 1, pos, stdout);
-    }
+
+    if (pos > 0) { fwrite(buf, 1, pos, stdout); }
     fflush(stdout);
 }
 
@@ -562,13 +561,13 @@ static void layout_calc(void) {
     int netlog_w = ui_netlog_width();
     int header_h = rows >= 10 ? 3 : 1;
     int input_h = rows >= 10 ? 3 : 1;
-    
+
     /* Header: title and connection strip */
     g_layout.header.x = 0;
     g_layout.header.y = 0;
     g_layout.header.w = cols;
     g_layout.header.h = header_h;
-    
+
     /* Status bar: 1 line at bottom, full width */
     g_layout.status.x = 0;
     g_layout.status.y = rows - 1;
@@ -579,13 +578,13 @@ static void layout_calc(void) {
     g_layout.netlog.y = header_h;
     g_layout.netlog.w = netlog_w;
     g_layout.netlog.h = rows - header_h - 1;
-    
+
     /* Input panel above status, starts after sidebar */
     g_layout.input.x = sidebar_w;
     g_layout.input.y = rows - 1 - input_h;
     g_layout.input.w = cols - sidebar_w - netlog_w;
     g_layout.input.h = input_h;
-    
+
     /* Message area: starts after sidebar */
     g_layout.messages.x = sidebar_w;
     g_layout.messages.y = header_h;
@@ -631,7 +630,7 @@ static void history_add(msg_type_t type, const char *nick, const char *pid, cons
     snprintf(e->nick, sizeof(e->nick), "%s", nick ? nick : "");
     snprintf(e->pid, sizeof(e->pid), "%s", pid ? pid : "");
     snprintf(e->text, sizeof(e->text), "%s", text ? text : "");
-    
+
     /* Calculate peer color index */
     if (pid && *pid) {
         uint32_t h = 2166136261u;
@@ -643,10 +642,10 @@ static void history_add(msg_type_t type, const char *nick, const char *pid, cons
     } else {
         e->peer_color_idx = 0;
     }
-    
+
     g_history.head = (g_history.head + 1) % MAX_HISTORY;
     if (g_history.count < MAX_HISTORY) g_history.count++;
-    
+
     /* Auto-scroll to bottom if already there */
     if (g_history.scroll > 0) g_history.scroll = 0;
 }
@@ -727,9 +726,10 @@ static uint32_t g_next_file_id = 1;
  * ============================================================ */
 
 static void format_timestamp(time_t t, char *out, size_t cap);
+static void hex_encode(const uint8_t *in, size_t len, char *out, size_t cap);
 
 static void draw_gradient_title(int x, int y, const char *t, int start_r, int start_g, int start_b,
-                                  int end_r, int end_g, int end_b) {
+                                int end_r, int end_g, int end_b) {
     int n = (int)strlen(t);
     if (n <= 0) return;
     for (int i = 0; i < n && x + i < g_screen.cols; i++) {
@@ -776,58 +776,63 @@ static void collect_peer_stats(int *connected, unsigned long long *rx_msgs,
 
 static uint32_t netlog_level_color(netlog_level_t level) {
     switch (level) {
-        case NETLOG_OK: return 0x35f7c8;
-        case NETLOG_WARN: return 0xffc857;
-        case NETLOG_ERROR: return g_theme->peer_colors[0];
-        case NETLOG_TRAFFIC: return 0x61d6ff;
-        case NETLOG_INFO:
-        default: return g_theme->fg_dim;
+    case NETLOG_OK:
+        return 0x35f7c8;
+    case NETLOG_WARN:
+        return 0xffc857;
+    case NETLOG_ERROR:
+        return g_theme->peer_colors[0];
+    case NETLOG_TRAFFIC:
+        return 0x61d6ff;
+    case NETLOG_INFO:
+    default:
+        return g_theme->fg_dim;
     }
 }
 
 static void render_header(void) {
     screen_fill_rect(&g_layout.header, g_theme->bg_panel);
-    
+
     draw_gradient_title(2, 0, "speer-chat", 255, 43, 214, 97, 214, 255);
-    
+
     /* Connection info on right */
     char info[64];
     int peer_count = 0;
     unsigned long long rx_msgs = 0, tx_msgs = 0, rx_bytes = 0, tx_bytes = 0;
     collect_peer_stats(&peer_count, &rx_msgs, &tx_msgs, &rx_bytes, &tx_bytes);
-    
+
     snprintf(info, sizeof(info), " %d connected ", peer_count);
-    
+
     int info_len = (int)strlen(info);
     if (info_len < g_layout.header.w - 4) {
         screen_put_string(g_layout.header.w - info_len - 2, 0, info,
                           peer_count > 0 ? 0x35f7c8 : g_theme->fg_dim, g_theme->bg_panel, 1, 0);
     }
-    
+
     if (g_layout.header.h > 1) {
         char room[96];
         snprintf(room, sizeof(room), " Noise XX + Yamux + mDNS   %s:%u   rx %llu / tx %llu ",
                  g_lan_ip, (unsigned)g_listen_port, rx_msgs, tx_msgs);
-        screen_put_string_clipped(2, 1, room, g_layout.header.w - 4,
-                                  g_theme->fg_dim, g_theme->bg_panel, 0, 0);
-        screen_draw_hline_bg(0, g_layout.header.h - 1, g_layout.header.w,
-                             g_theme->border, g_theme->bg_panel, 0x2500);
+        screen_put_string_clipped(2, 1, room, g_layout.header.w - 4, g_theme->fg_dim,
+                                  g_theme->bg_panel, 0, 0);
+        screen_draw_hline_bg(0, g_layout.header.h - 1, g_layout.header.w, g_theme->border,
+                             g_theme->bg_panel, 0x2500);
     }
 }
 
 static void render_sidebar(void) {
     int sidebar_w = ui_sidebar_width();
     if (sidebar_w == 0) return;
-    
+
     rect_t sidebar = {0, g_layout.header.h, sidebar_w, g_layout.status.y - g_layout.header.h};
     screen_fill_rect(&sidebar, g_theme->bg_panel);
     screen_draw_box(&sidebar, g_theme->border, g_theme->bg_panel);
-    
+
     screen_put_string(2, sidebar.y, " Collection ", g_theme->accent, g_theme->bg_panel, 1, 0);
     screen_put_string(2, sidebar.y + 2, "local", g_theme->fg_dim, g_theme->bg_panel, 1, 0);
     screen_put_char(2, sidebar.y + 3, 0x25cf, g_theme->peer_colors[0], g_theme->bg_panel, 0, 0);
-    screen_put_string_clipped(4, sidebar.y + 3, g_my_nick, sidebar_w - 6,
-                              g_theme->fg, g_theme->bg_panel, 1, 0);
+    screen_put_string_clipped(4, sidebar.y + 3, g_my_nick, sidebar_w - 6, g_theme->fg,
+                              g_theme->bg_panel, 1, 0);
     if (g_my_pid_b58[0] && sidebar.h > 8) {
         char pid_short[20];
         snprintf(pid_short, sizeof(pid_short), "%.16s", g_my_pid_b58);
@@ -838,16 +843,16 @@ static void render_sidebar(void) {
         char line[48];
         format_duration(g_started_at, uptime, sizeof(uptime));
         snprintf(line, sizeof(line), "uptime %s", uptime);
-        screen_put_string_clipped(2, sidebar.y + 6, line, sidebar_w - 4,
-                                  g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(2, sidebar.y + 6, line, sidebar_w - 4, g_theme->fg_dim,
+                                  g_theme->bg_panel, 0, 0);
     }
-    
+
     int y = sidebar.y + 9;
     if (y < sidebar.y + sidebar.h - 2) {
         screen_put_string(2, y, "peers", g_theme->fg_dim, g_theme->bg_panel, 1, 0);
         y += 2;
     }
-    
+
     /* List connected peers */
     int listed = 0;
     MUTEX_LOCK(&g_peers.mu);
@@ -856,8 +861,8 @@ static void render_sidebar(void) {
         if (p->active && !p->dead && p->handshake_done) {
             uint32_t col = g_theme->peer_colors[i % 6];
             char name[32];
-            snprintf(name, sizeof(name), "%s", 
-                    p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
+            snprintf(name, sizeof(name), "%s",
+                     p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
             screen_put_char(2, y, 0x25cf, col, g_theme->bg_panel, 0, 0);
             screen_put_string_clipped(4, y, name, sidebar_w - 6, col, g_theme->bg_panel, 1, 0);
             y++;
@@ -865,17 +870,17 @@ static void render_sidebar(void) {
                 char active_for[24];
                 char detail[48];
                 format_duration(p->connected_at, active_for, sizeof(active_for));
-                snprintf(detail, sizeof(detail), "%s  rx%llu tx%llu", active_for,
-                         p->msgs_rx, p->msgs_tx);
-                screen_put_string_clipped(4, y, detail, sidebar_w - 6,
-                                          g_theme->fg_dim, g_theme->bg_panel, 0, 1);
+                snprintf(detail, sizeof(detail), "%s  rx%llu tx%llu", active_for, p->msgs_rx,
+                         p->msgs_tx);
+                screen_put_string_clipped(4, y, detail, sidebar_w - 6, g_theme->fg_dim,
+                                          g_theme->bg_panel, 0, 1);
                 y++;
             }
             listed++;
         }
     }
     MUTEX_UNLOCK(&g_peers.mu);
-    
+
     /* Show empty state */
     if (listed == 0 && y < sidebar.y + sidebar.h - 2) {
         screen_put_string(2, y, "discovering...", g_theme->fg_dim, g_theme->bg_panel, 0, 1);
@@ -884,17 +889,18 @@ static void render_sidebar(void) {
 
 static void render_status(void) {
     screen_fill_rect(&g_layout.status, g_theme->bg_panel);
-    
-    screen_put_string(1, g_layout.status.y, "/status /inspect /id /peers /clear   PgUp/PgDn Scroll", 
+
+    screen_put_string(1, g_layout.status.y, "/status /inspect /id /peers /clear   PgUp/PgDn Scroll",
                       g_theme->fg_dim, g_theme->bg_panel, 0, 0);
-    
+
     /* Show peer count */
     int peer_count = 0;
     unsigned long long rx_msgs = 0, tx_msgs = 0, rx_bytes = 0, tx_bytes = 0;
     collect_peer_stats(&peer_count, &rx_msgs, &tx_msgs, &rx_bytes, &tx_bytes);
-    
+
     char peers_str[32];
-    snprintf(peers_str, sizeof(peers_str), " %d peers  %llu/%llu msg ", peer_count, rx_msgs, tx_msgs);
+    snprintf(peers_str, sizeof(peers_str), " %d peers  %llu/%llu msg ", peer_count, rx_msgs,
+             tx_msgs);
     int len = (int)strlen(peers_str);
     screen_put_string(g_layout.status.w - len - 1, g_layout.status.y, peers_str,
                       peer_count > 0 ? 0x35f7c8 : g_theme->accent, g_theme->bg_panel, 1, 0);
@@ -906,8 +912,8 @@ static void render_netlog(void) {
     rect_t panel = g_layout.netlog;
     screen_fill_rect(&panel, g_theme->bg_panel);
     screen_draw_box(&panel, g_theme->border, g_theme->bg_panel);
-    screen_put_string(panel.x + 2, panel.y, " Network Console ",
-                      g_theme->accent, g_theme->bg_panel, 1, 0);
+    screen_put_string(panel.x + 2, panel.y, " Network Console ", g_theme->accent, g_theme->bg_panel,
+                      1, 0);
 
     int inner_x = panel.x + 2;
     int inner_w = panel.w - 4;
@@ -927,7 +933,8 @@ static void render_netlog(void) {
     snprintf(line, sizeof(line), "TCP   %s:%u", g_lan_ip, (unsigned)g_listen_port);
     screen_put_string_clipped(inner_x, y++, line, inner_w, g_theme->fg, g_theme->bg_panel, 0, 0);
     snprintf(line, sizeof(line), "Peers %d  Up %s", peer_count, uptime);
-    screen_put_string_clipped(inner_x, y++, line, inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+    screen_put_string_clipped(inner_x, y++, line, inner_w, g_theme->fg_dim, g_theme->bg_panel, 0,
+                              0);
     snprintf(line, sizeof(line), "RX %llu msg / %llu B", rx_msgs, rx_bytes);
     screen_put_string_clipped(inner_x, y++, line, inner_w, 0x61d6ff, g_theme->bg_panel, 0, 0);
     snprintf(line, sizeof(line), "TX %llu msg / %llu B", tx_msgs, tx_bytes);
@@ -936,10 +943,14 @@ static void render_netlog(void) {
     y++;
     if (y < panel.y + panel.h - 1) {
         screen_put_string(inner_x, y++, "stack", g_theme->accent, g_theme->bg_panel, 1, 0);
-        screen_put_string_clipped(inner_x, y++, "mDNS -> TCP", inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
-        screen_put_string_clipped(inner_x, y++, "Noise XX auth", inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
-        screen_put_string_clipped(inner_x, y++, "Yamux streams", inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
-        screen_put_string_clipped(inner_x, y++, CHAT_PROTO, inner_w, g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(inner_x, y++, "mDNS -> TCP", inner_w, g_theme->fg_dim,
+                                  g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(inner_x, y++, "Noise XX auth", inner_w, g_theme->fg_dim,
+                                  g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(inner_x, y++, "Yamux streams", inner_w, g_theme->fg_dim,
+                                  g_theme->bg_panel, 0, 0);
+        screen_put_string_clipped(inner_x, y++, CHAT_PROTO, inner_w, g_theme->fg_dim,
+                                  g_theme->bg_panel, 0, 0);
     }
 
     y++;
@@ -957,9 +968,9 @@ static void render_netlog(void) {
         char ts[16];
         format_timestamp(e->timestamp, ts, sizeof(ts));
         snprintf(line, sizeof(line), "%s %s", ts, e->text);
-        screen_put_string_clipped(inner_x, y++, line, inner_w,
-                                  netlog_level_color(e->level), g_theme->bg_panel,
-                                  e->level == NETLOG_ERROR, e->level == NETLOG_INFO);
+        screen_put_string_clipped(inner_x, y++, line, inner_w, netlog_level_color(e->level),
+                                  g_theme->bg_panel, e->level == NETLOG_ERROR,
+                                  e->level == NETLOG_INFO);
     }
     MUTEX_UNLOCK(&g_log_mu);
 }
@@ -973,10 +984,10 @@ static void render_input(void) {
         box.w -= 2;
         screen_draw_box(&box, g_theme->border, input_bg);
         screen_put_string(box.x + 2, box.y, " Message ", g_theme->accent, input_bg, 1, 0);
-        screen_put_string(g_layout.input.x + g_layout.input.w - 16, box.y,
-                          " Enter to send ", g_theme->fg_dim, input_bg, 0, 0);
+        screen_put_string(g_layout.input.x + g_layout.input.w - 16, box.y, " Enter to send ",
+                          g_theme->fg_dim, input_bg, 0, 0);
     }
-    
+
     /* Nick with peer color */
     uint32_t nick_col = g_theme->peer_colors[0];
     if (g_my_pid_b58[0]) {
@@ -987,24 +998,24 @@ static void render_input(void) {
         }
         nick_col = g_theme->peer_colors[h % 6];
     }
-    
+
     int input_line = g_layout.input.h > 1 ? g_layout.input.y + 1 : g_layout.input.y;
     int prompt_x = g_layout.input.x + (g_layout.input.h > 1 ? 4 : 1);
-    
+
     screen_put_string(prompt_x, input_line, g_my_nick, nick_col, input_bg, 1, 0);
-    
+
     int nick_len = (int)strlen(g_my_nick);
     screen_put_string(prompt_x + nick_len + 1, input_line, ">", g_theme->accent, input_bg, 1, 0);
     screen_put_string(prompt_x + nick_len + 3, input_line, "", g_theme->fg_dim, input_bg, 0, 0);
-    
+
     /* Input text */
     int prompt_offset = prompt_x + nick_len + 3;
-    int max_input = g_layout.input.x + g_layout.input.w - prompt_offset - (g_layout.input.h > 1 ? 4 : 1);
+    int max_input = g_layout.input.x + g_layout.input.w - prompt_offset -
+                    (g_layout.input.h > 1 ? 4 : 1);
     if (max_input < 1) max_input = 1;
     if (g_input.len > max_input) {
         /* Scroll input if too long */
-        screen_put_string(prompt_offset, input_line,
-                          g_input.buf + (g_input.len - max_input),
+        screen_put_string(prompt_offset, input_line, g_input.buf + (g_input.len - max_input),
                           g_theme->fg, input_bg, 0, 0);
     } else {
         screen_put_string(prompt_offset, input_line, g_input.buf, g_theme->fg, input_bg, 0, 0);
@@ -1031,13 +1042,13 @@ static void render_messages(void) {
         screen_draw_box(&box, g_theme->border, g_theme->bg);
         screen_put_string(box.x + 2, box.y, " Chat ", g_theme->accent, g_theme->bg, 1, 0);
     }
-    
+
     int inner_x = g_layout.messages.x + (g_layout.messages.w > 3 ? 3 : 1);
     int inner_y = g_layout.messages.y + (g_layout.messages.h > 2 ? 1 : 0);
     int inner_w = g_layout.messages.w - (g_layout.messages.w > 3 ? 6 : 2);
     int inner_h = g_layout.messages.h - (g_layout.messages.h > 2 ? 2 : 0);
     if (inner_w < 10 || inner_h <= 0) return;
-    
+
     /* Check if we have any real messages (not uninitialized) */
     int real_count = 0;
     for (int i = 0; i < g_history.count; i++) {
@@ -1047,7 +1058,7 @@ static void render_messages(void) {
             break;
         }
     }
-    
+
     if (real_count == 0) {
         /* Show welcome message in the center */
         const char *line1 = "Welcome to speer-chat!";
@@ -1059,11 +1070,11 @@ static void render_messages(void) {
         screen_put_string(x2, y + 1, line2, g_theme->fg_dim, g_theme->bg, 0, 1);
         return;
     }
-    
+
     int line = inner_y + inner_h - 1;
     int msgs_to_show = inner_h;
     int start_idx = (g_history.head - 1 + MAX_HISTORY) % MAX_HISTORY;
-    
+
     /* Apply scroll */
     if (g_history.scroll > 0) {
         for (int i = 0; i < g_history.scroll && msgs_to_show > 0; i++) {
@@ -1071,21 +1082,21 @@ static void render_messages(void) {
             if ((int)i >= g_history.count - 1) break;
         }
     }
-    
+
     for (int i = 0; i < msgs_to_show && line >= inner_y; i++) {
         msg_entry_t *e = &g_history.entries[start_idx];
-        
+
         /* Skip uninitialized entries (timestamp 0 means empty) */
         if (e->timestamp == 0) {
             start_idx = (start_idx - 1 + MAX_HISTORY) % MAX_HISTORY;
             continue;
         }
-        
+
         char ts[16];
         format_timestamp(e->timestamp, ts, sizeof(ts));
-        
+
         int x = inner_x;
-        
+
         /* Timestamp */
         screen_put_string(x, line, "[", g_theme->timestamp, g_theme->bg, 0, 1);
         x++;
@@ -1093,15 +1104,15 @@ static void render_messages(void) {
         x += 8;
         screen_put_string(x, line, "]", g_theme->timestamp, g_theme->bg, 0, 1);
         x += 2;
-        
+
         /* Color bar - simple ASCII */
         uint32_t col = g_theme->peer_colors[e->peer_color_idx];
         if (e->type == MSG_SYSTEM) col = g_theme->fg_dim;
         if (e->type == MSG_ERROR) col = g_theme->peer_colors[0]; /* Red-ish */
-        
+
         screen_put_char(x, line, 0x258c, col, g_theme->bg, 0, 0);
         x += 2;
-        
+
         /* Nick or message marker */
         if (e->type == MSG_CHAT || e->type == MSG_JOIN || e->type == MSG_LEAVE) {
             const char *display_nick = e->nick[0] ? e->nick : "unknown";
@@ -1116,12 +1127,12 @@ static void render_messages(void) {
             screen_put_string(x, line, "! ", g_theme->peer_colors[0], g_theme->bg, 0, 0);
             x += 2;
         }
-        
+
         /* Message text with wrapping */
         int avail = inner_x + inner_w - x - 1;
         const char *text = e->text;
         int first_line = 1;
-        
+
         while (*text && line >= inner_y) {
             int take = 0;
             const char *p = text;
@@ -1131,35 +1142,36 @@ static void render_messages(void) {
                 p++;
             }
             if (take == 0 && *text) take = 1; /* Force at least one char */
-            
+
             uint32_t fg = g_theme->fg;
             if (e->type == MSG_SYSTEM || e->type == MSG_JOIN || e->type == MSG_LEAVE)
                 fg = g_theme->fg_dim;
-            
+
             for (int j = 0; j < take && text[j]; j++) {
-                screen_put_char(x + j, line, (uint32_t)(unsigned char)text[j], fg, g_theme->bg, 0, 0);
+                screen_put_char(x + j, line, (uint32_t)(unsigned char)text[j], fg, g_theme->bg, 0,
+                                0);
             }
-            
+
             text += take;
             if (*text == ' ') text++; /* Skip space at break */
-            
+
             if (!first_line) line--; /* Continue on next line if wrapped */
             first_line = 0;
-            
+
             if (*text) {
                 line--;
                 x = inner_x + 15; /* Indent wrapped lines */
             }
         }
-        
+
         start_idx = (start_idx - 1 + MAX_HISTORY) % MAX_HISTORY;
         line--;
     }
-    
+
     /* Scroll indicator - ASCII */
     if (g_history.scroll > 0) {
-        screen_put_string(g_layout.messages.x + g_layout.messages.w - 7, g_layout.messages.y, "^ more",
-                          g_theme->accent, g_theme->bg, 1, 0);
+        screen_put_string(g_layout.messages.x + g_layout.messages.w - 7, g_layout.messages.y,
+                          "^ more", g_theme->accent, g_theme->bg, 1, 0);
     }
 }
 
@@ -1167,19 +1179,19 @@ static void render_full(void) {
     /* Clear back buffer with theme background */
     cell_t bg_cell = {.ch = ' ', .fg = g_theme->fg, .bg = g_theme->bg, .bold = 0, .dim = 0};
     screen_clear(&bg_cell);
-    
+
     /* Draw layout */
     render_header();
     render_sidebar();
-    
+
     render_messages();
     render_input();
     render_netlog();
     render_status();
-    
+
     /* Present to terminal */
     screen_present();
-    
+
     /* Position cursor at input */
     int input_line = g_layout.input.h > 1 ? g_layout.input.y + 1 : g_layout.input.y;
     int prompt_x = g_layout.input.x + (g_layout.input.h > 1 ? 4 : 1);
@@ -1200,23 +1212,23 @@ static void render_full(void) {
  * Input Handling
  * ============================================================ */
 
-#define KEY_CTRL_C 3
-#define KEY_CTRL_D 4
-#define KEY_CTRL_W 23
-#define KEY_CTRL_U 21
-#define KEY_ENTER 13
-#define KEY_ESC 27
+#define KEY_CTRL_C    3
+#define KEY_CTRL_D    4
+#define KEY_CTRL_W    23
+#define KEY_CTRL_U    21
+#define KEY_ENTER     13
+#define KEY_ESC       27
 #define KEY_BACKSPACE 127
-#define KEY_DELETE 126
-#define KEY_TAB 9
-#define KEY_UP 1000
-#define KEY_DOWN 1001
-#define KEY_LEFT 1002
-#define KEY_RIGHT 1003
-#define KEY_HOME 1004
-#define KEY_END 1005
-#define KEY_PGUP 1006
-#define KEY_PGDN 1007
+#define KEY_DELETE    126
+#define KEY_TAB       9
+#define KEY_UP        1000
+#define KEY_DOWN      1001
+#define KEY_LEFT      1002
+#define KEY_RIGHT     1003
+#define KEY_HOME      1004
+#define KEY_END       1005
+#define KEY_PGUP      1006
+#define KEY_PGDN      1007
 
 #if defined(_WIN32)
 static int input_read_key(void) {
@@ -1225,14 +1237,22 @@ static int input_read_key(void) {
         if (c == 0 || c == 224) {
             int ext = _getch();
             switch (ext) {
-                case 72: return KEY_UP;
-                case 80: return KEY_DOWN;
-                case 75: return KEY_LEFT;
-                case 77: return KEY_RIGHT;
-                case 73: return KEY_PGUP;
-                case 81: return KEY_PGDN;
-                case 71: return KEY_HOME;
-                case 79: return KEY_END;
+            case 72:
+                return KEY_UP;
+            case 80:
+                return KEY_DOWN;
+            case 75:
+                return KEY_LEFT;
+            case 77:
+                return KEY_RIGHT;
+            case 73:
+                return KEY_PGUP;
+            case 81:
+                return KEY_PGDN;
+            case 71:
+                return KEY_HOME;
+            case 79:
+                return KEY_END;
             }
             return 0;
         }
@@ -1245,40 +1265,55 @@ static int input_read_key(void) {
     char c;
     int n = read(STDIN_FILENO, &c, 1);
     if (n <= 0) return -1;
-    
+
     if (c == '\x1b') {
         char seq[3];
         if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
         if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
-        
+
         if (seq[0] == '[') {
             if (seq[1] >= '0' && seq[1] <= '9') {
                 if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
                 if (seq[2] == '~') {
                     switch (seq[1]) {
-                        case '1': return KEY_HOME;
-                        case '3': return KEY_DELETE;
-                        case '4': return KEY_END;
-                        case '5': return KEY_PGUP;
-                        case '6': return KEY_PGDN;
-                        case '7': return KEY_HOME;
-                        case '8': return KEY_END;
+                    case '1':
+                        return KEY_HOME;
+                    case '3':
+                        return KEY_DELETE;
+                    case '4':
+                        return KEY_END;
+                    case '5':
+                        return KEY_PGUP;
+                    case '6':
+                        return KEY_PGDN;
+                    case '7':
+                        return KEY_HOME;
+                    case '8':
+                        return KEY_END;
                     }
                 }
             } else {
                 switch (seq[1]) {
-                    case 'A': return KEY_UP;
-                    case 'B': return KEY_DOWN;
-                    case 'C': return KEY_RIGHT;
-                    case 'D': return KEY_LEFT;
-                    case 'H': return KEY_HOME;
-                    case 'F': return KEY_END;
+                case 'A':
+                    return KEY_UP;
+                case 'B':
+                    return KEY_DOWN;
+                case 'C':
+                    return KEY_RIGHT;
+                case 'D':
+                    return KEY_LEFT;
+                case 'H':
+                    return KEY_HOME;
+                case 'F':
+                    return KEY_END;
                 }
             }
         } else if (seq[0] == 'O') {
             switch (seq[1]) {
-                case 'H': return KEY_HOME;
-                case 'F': return KEY_END;
+            case 'H':
+                return KEY_HOME;
+            case 'F':
+                return KEY_END;
             }
         }
         return '\x1b';
@@ -1290,89 +1325,88 @@ static int input_read_key(void) {
 static int process_input(void) {
     int c = input_read_key();
     if (c < 0) return 0;
-    
+
     switch (c) {
-        case KEY_CTRL_C:
-        case KEY_CTRL_D:
-            return -1; /* Exit */
-            
-        case KEY_ENTER:
-            if (g_input.len > 0) {
-                g_input.buf[g_input.len] = '\0';
-                return 1; /* Have input */
-            }
-            return 0;
-            
-        case KEY_BACKSPACE:
-            if (g_input.cursor > 0) {
-                memmove(&g_input.buf[g_input.cursor - 1], &g_input.buf[g_input.cursor],
-                        g_input.len - g_input.cursor + 1);
-                g_input.cursor--;
-                g_input.len--;
-            }
-            break;
-            
-        case KEY_DELETE:
-            if (g_input.cursor < g_input.len) {
-                memmove(&g_input.buf[g_input.cursor], &g_input.buf[g_input.cursor + 1],
-                        g_input.len - g_input.cursor);
-                g_input.len--;
-            }
-            break;
-            
-        case KEY_LEFT:
-            if (g_input.cursor > 0) g_input.cursor--;
-            break;
-            
-        case KEY_RIGHT:
-            if (g_input.cursor < g_input.len) g_input.cursor++;
-            break;
-            
-        case KEY_HOME:
-            g_input.cursor = 0;
-            break;
-            
-        case KEY_END:
-            g_input.cursor = g_input.len;
-            break;
-            
-        case KEY_PGUP:
-            if (g_history.scroll < g_history.count - g_layout.messages.h + 2)
-                g_history.scroll++;
-            break;
-            
-        case KEY_PGDN:
-            if (g_history.scroll > 0) g_history.scroll--;
-            break;
-            
-        case KEY_CTRL_U:
-            g_input.len = 0;
-            g_input.cursor = 0;
-            break;
-            
-        case KEY_CTRL_W:
-            /* Delete word backward */
-            while (g_input.cursor > 0 && g_input.buf[g_input.cursor - 1] == ' ') {
-                g_input.cursor--;
-                g_input.len--;
-            }
-            while (g_input.cursor > 0 && g_input.buf[g_input.cursor - 1] != ' ') {
-                g_input.cursor--;
-                g_input.len--;
-            }
-            memmove(&g_input.buf[g_input.cursor], &g_input.buf[g_input.len],
-                    MAX_TEXT_LEN - g_input.len);
-            break;
-            
-        default:
-            if (c >= 32 && c < 127 && g_input.len < MAX_TEXT_LEN - 1) {
-                memmove(&g_input.buf[g_input.cursor + 1], &g_input.buf[g_input.cursor],
-                        g_input.len - g_input.cursor + 1);
-                g_input.buf[g_input.cursor] = (char)c;
-                g_input.cursor++;
-                g_input.len++;
-            }
-            break;
+    case KEY_CTRL_C:
+    case KEY_CTRL_D:
+        return -1; /* Exit */
+
+    case KEY_ENTER:
+        if (g_input.len > 0) {
+            g_input.buf[g_input.len] = '\0';
+            return 1; /* Have input */
+        }
+        return 0;
+
+    case KEY_BACKSPACE:
+        if (g_input.cursor > 0) {
+            memmove(&g_input.buf[g_input.cursor - 1], &g_input.buf[g_input.cursor],
+                    g_input.len - g_input.cursor + 1);
+            g_input.cursor--;
+            g_input.len--;
+        }
+        break;
+
+    case KEY_DELETE:
+        if (g_input.cursor < g_input.len) {
+            memmove(&g_input.buf[g_input.cursor], &g_input.buf[g_input.cursor + 1],
+                    g_input.len - g_input.cursor);
+            g_input.len--;
+        }
+        break;
+
+    case KEY_LEFT:
+        if (g_input.cursor > 0) g_input.cursor--;
+        break;
+
+    case KEY_RIGHT:
+        if (g_input.cursor < g_input.len) g_input.cursor++;
+        break;
+
+    case KEY_HOME:
+        g_input.cursor = 0;
+        break;
+
+    case KEY_END:
+        g_input.cursor = g_input.len;
+        break;
+
+    case KEY_PGUP:
+        if (g_history.scroll < g_history.count - g_layout.messages.h + 2) g_history.scroll++;
+        break;
+
+    case KEY_PGDN:
+        if (g_history.scroll > 0) g_history.scroll--;
+        break;
+
+    case KEY_CTRL_U:
+        g_input.len = 0;
+        g_input.cursor = 0;
+        break;
+
+    case KEY_CTRL_W:
+        /* Delete word backward */
+        while (g_input.cursor > 0 && g_input.buf[g_input.cursor - 1] == ' ') {
+            g_input.cursor--;
+            g_input.len--;
+        }
+        while (g_input.cursor > 0 && g_input.buf[g_input.cursor - 1] != ' ') {
+            g_input.cursor--;
+            g_input.len--;
+        }
+        memmove(&g_input.buf[g_input.cursor], &g_input.buf[g_input.len],
+                MAX_TEXT_LEN - g_input.len);
+        break;
+
+    default:
+        if (c >= 32 && c < 127 && g_input.len < MAX_TEXT_LEN - 1) {
+            memmove(&g_input.buf[g_input.cursor + 1], &g_input.buf[g_input.cursor],
+                    g_input.len - g_input.cursor + 1);
+            g_input.buf[g_input.cursor] = (char)c;
+            g_input.cursor++;
+            g_input.len++;
+        }
+        break;
     }
     return 0;
 }
@@ -1527,6 +1561,50 @@ static int connected_peer_count(void) {
     return n;
 }
 
+static void send_file_to_peer(peer_t *p, uint32_t file_id) {
+    tx_file_t tx;
+    int found = 0;
+
+    MUTEX_LOCK(&g_file_mu);
+    for (int i = 0; i < MAX_RX_FILES; i++) {
+        if (g_tx_files[i].active && g_tx_files[i].id == file_id) {
+            tx = g_tx_files[i];
+            found = 1;
+            break;
+        }
+    }
+    MUTEX_UNLOCK(&g_file_mu);
+
+    if (!found) {
+        netlog_add(NETLOG_WARN, "accept for unknown file %lu", (unsigned long)file_id);
+        return;
+    }
+
+    FILE *fp = fopen(tx.path, "rb");
+    if (!fp) {
+        netlog_add(NETLOG_ERROR, "could not reopen %s", tx.name);
+        return;
+    }
+
+    uint8_t chunk[FILE_CHUNK_BYTES];
+    char hex[FILE_CHUNK_BYTES * 2 + 1];
+    char payload[MAX_TEXT_LEN];
+    unsigned long long sent = 0;
+    size_t n = 0;
+    while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+        hex_encode(chunk, n, hex, sizeof(hex));
+        snprintf(payload, sizeof(payload), "%lu|%s", (unsigned long)file_id, hex);
+        peer_enqueue(p, CHAT_TYPE_FILE_CHUNK, payload);
+        sent += n;
+        netlog_add(NETLOG_TRAFFIC, "file tx %s %llu/%lluB", tx.name, sent, tx.size);
+    }
+    fclose(fp);
+
+    snprintf(payload, sizeof(payload), "%lu", (unsigned long)file_id);
+    peer_enqueue(p, CHAT_TYPE_FILE_DONE, payload);
+    netlog_add(sent == tx.size ? NETLOG_OK : NETLOG_WARN, "file tx done %s", tx.name);
+}
+
 static int chat_frame_encode(uint8_t *out, size_t cap, size_t *out_len, uint32_t type,
                              const char *nick, const char *text) {
     speer_pb_writer_t w;
@@ -1588,8 +1666,8 @@ static void sanitize_file_name(char *out, size_t cap, const char *name) {
     if (cap == 0) return;
     for (size_t i = 0; name[i] && j + 1 < cap; i++) {
         char c = name[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+            c == '.' || c == '_' || c == '-') {
             out[j++] = c;
         } else if (c == ' ') {
             out[j++] = '_';
@@ -1649,11 +1727,6 @@ static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
             netlog_add(NETLOG_WARN, "bad file metadata");
             return;
         }
-        if (ensure_recv_dir() != 0) {
-            emit_error_msg("could not create speer_received directory");
-            return;
-        }
-
         char clean_name[128];
         char clean_sender[64];
         sanitize_file_name(clean_name, sizeof(clean_name), name);
@@ -1666,12 +1739,6 @@ static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
 #else
         snprintf(path, sizeof(path), "speer_received/%s_%lu_%s", clean_sender, id, clean_name);
 #endif
-
-        FILE *fp = fopen(path, "wb");
-        if (!fp) {
-            emit_error_msg("could not open receive file");
-            return;
-        }
 
         int slot = -1;
         MUTEX_LOCK(&g_file_mu);
@@ -1687,7 +1754,7 @@ static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
             rx->active = 1;
             rx->id = (uint32_t)id;
             rx->expected = size;
-            rx->fp = fp;
+            rx->fp = NULL;
             snprintf(rx->sender, sizeof(rx->sender), "%s", p->remote_pid_full);
             snprintf(rx->name, sizeof(rx->name), "%s", clean_name);
             snprintf(rx->path, sizeof(rx->path), "%s", path);
@@ -1695,13 +1762,15 @@ static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
         MUTEX_UNLOCK(&g_file_mu);
 
         if (slot < 0) {
-            fclose(fp);
             emit_error_msg("too many incoming files");
             return;
         }
 
-        emit_system_msg("incoming file transfer started");
-        netlog_add(NETLOG_OK, "file rx %s %lluB", clean_name, size);
+        char msg[MAX_TEXT_LEN];
+        snprintf(msg, sizeof(msg), "incoming file %s (%llu bytes). type /accept %lu to receive",
+                 clean_name, size, id);
+        emit_system_msg(msg);
+        netlog_add(NETLOG_WARN, "file pending %s id %lu", clean_name, id);
         return;
     }
 
@@ -1729,7 +1798,10 @@ static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
             rx_file_t *rx = &g_rx_files[i];
             if (rx->active && rx->id == (uint32_t)id &&
                 strcmp(rx->sender, p->remote_pid_full) == 0) {
-                if (rx->fp && fwrite(chunk, 1, chunk_len, rx->fp) == chunk_len) {
+                if (!rx->fp) {
+                    snprintf(name, sizeof(name), "%s", rx->name);
+                    found = -1;
+                } else if (fwrite(chunk, 1, chunk_len, rx->fp) == chunk_len) {
                     rx->received += chunk_len;
                     received = rx->received;
                     expected = rx->expected;
@@ -1741,6 +1813,10 @@ static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
         }
         MUTEX_UNLOCK(&g_file_mu);
 
+        if (found < 0) {
+            netlog_add(NETLOG_WARN, "ignored unaccepted chunk %s", name);
+            return;
+        }
         if (!found) {
             netlog_add(NETLOG_WARN, "chunk for unknown file %lu", id);
             return;
@@ -1778,11 +1854,20 @@ static void handle_file_frame(peer_t *p, uint32_t type, const char *payload) {
 
         if (path[0]) {
             char msg[MAX_TEXT_LEN];
-            snprintf(msg, sizeof(msg), "received file %s -> %s (%llu/%llu bytes)%s",
-                     name, path, received, expected, ok ? "" : " incomplete");
+            snprintf(msg, sizeof(msg), "received file %s -> %s (%llu/%llu bytes)%s", name, path,
+                     received, expected, ok ? "" : " incomplete");
             emit_system_msg(msg);
             netlog_add(ok ? NETLOG_OK : NETLOG_WARN, "file saved %s", name);
         }
+    }
+
+    if (type == CHAT_TYPE_FILE_ACCEPT) {
+        unsigned long id = 0;
+        if (sscanf(payload, "%lu", &id) != 1 || id == 0) return;
+        netlog_add(NETLOG_OK, "file accepted by %s",
+                   p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
+        send_file_to_peer(p, (uint32_t)id);
+        return;
     }
 }
 
@@ -2007,20 +2092,17 @@ static THREAD_RET peer_reader(void *arg) {
         }
         if (!read_ok) break;
         uint64_t flen = 0;
-        if (speer_uvarint_decode(lp, lp_off, &flen) == 0 || flen == 0 ||
-            flen > MAX_TEXT_LEN + 64) {
+        if (speer_uvarint_decode(lp, lp_off, &flen) == 0 || flen == 0 || flen > MAX_TEXT_LEN + 64) {
             break;
         }
         uint8_t frame[MAX_TEXT_LEN + 256];
-        if (ymux_recv(&sio, frame, (size_t)flen, &got) != 0 || got != flen) {
-            break;
-        }
+        if (ymux_recv(&sio, frame, (size_t)flen, &got) != 0 || got != flen) { break; }
         p->bytes_rx += (unsigned long long)lp_off + (unsigned long long)flen;
         p->last_seen = time(NULL);
         uint32_t type = 0;
         char nick[MAX_NICK_LEN], text[MAX_TEXT_LEN];
-        if (chat_frame_decode(frame, (size_t)flen, &type, nick, sizeof(nick), text,
-                              sizeof(text)) != 0)
+        if (chat_frame_decode(frame, (size_t)flen, &type, nick, sizeof(nick), text, sizeof(text)) !=
+            0)
             continue;
         if (nick[0]) {
             size_t l = strlen(nick);
@@ -2035,7 +2117,7 @@ static THREAD_RET peer_reader(void *arg) {
                        (unsigned long long)flen);
             emit_chat(p->remote_pid_full, p->remote_nick, text);
         } else if (type == CHAT_TYPE_FILE_META || type == CHAT_TYPE_FILE_CHUNK ||
-                   type == CHAT_TYPE_FILE_DONE) {
+                   type == CHAT_TYPE_FILE_DONE || type == CHAT_TYPE_FILE_ACCEPT) {
             handle_file_frame(p, type, text);
         } else if (type == CHAT_TYPE_HELLO) {
             netlog_add(NETLOG_OK, "hello %s",
@@ -2078,8 +2160,8 @@ static THREAD_RET peer_writer(void *arg) {
         netlog_add(NETLOG_INFO, "accept tcp %s", p->addr);
         const char *protos[1] = {"/noise"};
         size_t sel = 0;
-        if (speer_ms_negotiate_listener(&p->fd, tcp_plain_send, tcp_plain_recv, protos, 1,
-                                        &sel) != 0) {
+        if (speer_ms_negotiate_listener(&p->fd, tcp_plain_send, tcp_plain_recv, protos, 1, &sel) !=
+            0) {
             emit_error_msg("noise multistream (listener) failed");
             peer_release(p);
             return THREAD_RET_VAL;
@@ -2176,8 +2258,7 @@ static THREAD_RET peer_writer(void *arg) {
             ymux_io_t sio = {.mux = &p->mux, .st = p->chat_st};
             (void)ymux_send(&sio, lp, hl);
             (void)ymux_send(&sio, frame, fl);
-            netlog_add(NETLOG_TRAFFIC, "tx hello %lluB",
-                       (unsigned long long)(hl + fl));
+            netlog_add(NETLOG_TRAFFIC, "tx hello %lluB", (unsigned long long)(hl + fl));
         }
     }
 
@@ -2224,7 +2305,7 @@ static THREAD_RET peer_writer(void *arg) {
                                p->remote_nick[0] ? p->remote_nick : p->remote_pid_short,
                                (unsigned long long)fl);
                 } else if (m->type == CHAT_TYPE_FILE_META || m->type == CHAT_TYPE_FILE_CHUNK ||
-                           m->type == CHAT_TYPE_FILE_DONE) {
+                           m->type == CHAT_TYPE_FILE_DONE || m->type == CHAT_TYPE_FILE_ACCEPT) {
                     netlog_add(NETLOG_TRAFFIC, "tx file frame %s %lluB",
                                p->remote_nick[0] ? p->remote_nick : p->remote_pid_short,
                                (unsigned long long)fl);
@@ -2406,12 +2487,8 @@ static void cmd_peers(void) {
             char active_for[32];
             format_duration(p->connected_at, active_for, sizeof(active_for));
             snprintf(buf, sizeof(buf), "%s  %s  %s  up %s  rx%llu tx%llu",
-                    p->remote_nick[0] ? p->remote_nick : "?",
-                    p->remote_pid_short,
-                    p->addr,
-                    active_for,
-                    p->msgs_rx,
-                    p->msgs_tx);
+                     p->remote_nick[0] ? p->remote_nick : "?", p->remote_pid_short, p->addr,
+                     active_for, p->msgs_rx, p->msgs_tx);
             emit_system_msg(buf);
         }
     }
@@ -2425,11 +2502,12 @@ static void cmd_status(void) {
     char uptime[32];
     char buf[MAX_TEXT_LEN];
     format_duration(g_started_at, uptime, sizeof(uptime));
-    snprintf(buf, sizeof(buf), "status: %s:%u  uptime %s  peers %d  rx %llu msg/%llu B  tx %llu msg/%llu B",
-             g_lan_ip, (unsigned)g_listen_port, uptime, peer_count,
-             rx_msgs, rx_bytes, tx_msgs, tx_bytes);
+    snprintf(buf, sizeof(buf),
+             "status: %s:%u  uptime %s  peers %d  rx %llu msg/%llu B  tx %llu msg/%llu B", g_lan_ip,
+             (unsigned)g_listen_port, uptime, peer_count, rx_msgs, rx_bytes, tx_msgs, tx_bytes);
     emit_system_msg(buf);
-    emit_system_msg("stack: mDNS discovery -> TCP -> Noise XX authenticated encryption -> Yamux stream mux -> /speer/chat/1.0.0");
+    emit_system_msg("stack: mDNS discovery -> TCP -> Noise XX authenticated encryption -> Yamux "
+                    "stream mux -> /speer/chat/1.0.0");
 }
 
 static void cmd_id(void) {
@@ -2438,8 +2516,8 @@ static void cmd_id(void) {
     emit_system_msg(buf);
     snprintf(buf, sizeof(buf), "peer id: %s", g_my_pid_b58);
     emit_system_msg(buf);
-    snprintf(buf, sizeof(buf), "multiaddr: /ip4/%s/tcp/%u/p2p/%s",
-             g_lan_ip, (unsigned)g_listen_port, g_my_pid_b58);
+    snprintf(buf, sizeof(buf), "multiaddr: /ip4/%s/tcp/%u/p2p/%s", g_lan_ip,
+             (unsigned)g_listen_port, g_my_pid_b58);
     emit_system_msg(buf);
 }
 
@@ -2458,13 +2536,10 @@ static void cmd_inspect(void) {
                      p->remote_nick[0] ? p->remote_nick : "?",
                      p->remote_pid_full[0] ? p->remote_pid_full : p->remote_pid_short);
             emit_system_msg(buf);
-            snprintf(buf, sizeof(buf), "  addr %s  role %s  up %s  idle %s  rx %llu/%lluB  tx %llu/%lluB",
-                     p->addr,
-                     p->initiator ? "dialer" : "listener",
-                     active_for,
-                     idle_for,
-                     p->msgs_rx, p->bytes_rx,
-                     p->msgs_tx, p->bytes_tx);
+            snprintf(buf, sizeof(buf),
+                     "  addr %s  role %s  up %s  idle %s  rx %llu/%lluB  tx %llu/%lluB", p->addr,
+                     p->initiator ? "dialer" : "listener", active_for, idle_for, p->msgs_rx,
+                     p->bytes_rx, p->msgs_tx, p->bytes_tx);
             emit_system_msg(buf);
             shown++;
         }
@@ -2501,7 +2576,9 @@ static void cmd_send_file(const char *arg) {
 
     FILE *fp = fopen(path, "rb");
     if (!fp) {
-        emit_error_msg("could not open file");
+        char msg[MAX_TEXT_LEN];
+        snprintf(msg, sizeof(msg), "could not open file: %s", path);
+        emit_error_msg(msg);
         return;
     }
     if (fseek(fp, 0, SEEK_END) != 0) {
@@ -2521,35 +2598,109 @@ static void cmd_send_file(const char *arg) {
     sanitize_file_name(clean_name, sizeof(clean_name), path_basename(path));
     uint32_t file_id = (uint32_t)time(NULL) ^ g_next_file_id++;
     unsigned long long fsize = (unsigned long long)fsize_long;
+    fclose(fp);
+
+    int stored = 0;
+    MUTEX_LOCK(&g_file_mu);
+    for (int i = 0; i < MAX_RX_FILES; i++) {
+        if (!g_tx_files[i].active) {
+            tx_file_t *tx = &g_tx_files[i];
+            memset(tx, 0, sizeof(*tx));
+            tx->active = 1;
+            tx->id = file_id;
+            tx->size = fsize;
+            snprintf(tx->name, sizeof(tx->name), "%s", clean_name);
+            snprintf(tx->path, sizeof(tx->path), "%s", path);
+            stored = 1;
+            break;
+        }
+    }
+    MUTEX_UNLOCK(&g_file_mu);
+
+    if (!stored) {
+        emit_error_msg("too many outgoing files pending");
+        return;
+    }
 
     char payload[MAX_TEXT_LEN];
-    snprintf(payload, sizeof(payload), "%lu|%llu|%s",
-             (unsigned long)file_id, fsize, clean_name);
+    snprintf(payload, sizeof(payload), "%lu|%llu|%s", (unsigned long)file_id, fsize, clean_name);
     broadcast(CHAT_TYPE_FILE_META, payload);
 
     char msg[MAX_TEXT_LEN];
-    snprintf(msg, sizeof(msg), "sending file %s (%llu bytes)", clean_name, fsize);
+    snprintf(msg, sizeof(msg), "offered file %s (%llu bytes), waiting for peer acceptance",
+             clean_name, fsize);
     emit_system_msg(msg);
-    netlog_add(NETLOG_OK, "file tx start %s %lluB", clean_name, fsize);
+    netlog_add(NETLOG_OK, "file offered %s id %lu", clean_name, (unsigned long)file_id);
+}
 
-    uint8_t chunk[FILE_CHUNK_BYTES];
-    char hex[FILE_CHUNK_BYTES * 2 + 1];
-    unsigned long long sent = 0;
-    size_t n = 0;
-    while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
-        hex_encode(chunk, n, hex, sizeof(hex));
-        snprintf(payload, sizeof(payload), "%lu|%s", (unsigned long)file_id, hex);
-        broadcast(CHAT_TYPE_FILE_CHUNK, payload);
-        sent += n;
-        netlog_add(NETLOG_TRAFFIC, "file tx %s %llu/%lluB", clean_name, sent, fsize);
+static void cmd_accept_file(const char *arg) {
+    while (*arg == ' ' || *arg == '\t') arg++;
+    uint32_t wanted = (uint32_t)strtoul(arg, NULL, 10);
+    int chosen = -1;
+    int pending = 0;
+
+    MUTEX_LOCK(&g_file_mu);
+    for (int i = 0; i < MAX_RX_FILES; i++) {
+        rx_file_t *rx = &g_rx_files[i];
+        if (rx->active && !rx->fp) {
+            pending++;
+            if ((wanted != 0 && rx->id == wanted) || (wanted == 0 && chosen < 0)) { chosen = i; }
+        }
     }
-    fclose(fp);
+    MUTEX_UNLOCK(&g_file_mu);
 
-    snprintf(payload, sizeof(payload), "%lu", (unsigned long)file_id);
-    broadcast(CHAT_TYPE_FILE_DONE, payload);
-    snprintf(msg, sizeof(msg), "queued file %s (%llu bytes)", clean_name, sent);
+    if (chosen < 0 || (wanted == 0 && pending > 1)) {
+        emit_error_msg(wanted == 0 && pending > 1 ? "multiple pending files; use /accept <id>"
+                                                  : "no pending file to accept");
+        return;
+    }
+
+    if (ensure_recv_dir() != 0) {
+        emit_error_msg("could not create speer_received directory");
+        return;
+    }
+
+    char sender[64] = "";
+    char path[260] = "";
+    char name[128] = "";
+    uint32_t id = 0;
+    FILE *fp = NULL;
+
+    MUTEX_LOCK(&g_file_mu);
+    rx_file_t *rx = &g_rx_files[chosen];
+    if (rx->active && !rx->fp) {
+        fp = fopen(rx->path, "wb");
+        if (fp) {
+            rx->fp = fp;
+            id = rx->id;
+            snprintf(sender, sizeof(sender), "%s", rx->sender);
+            snprintf(path, sizeof(path), "%s", rx->path);
+            snprintf(name, sizeof(name), "%s", rx->name);
+        }
+    }
+    MUTEX_UNLOCK(&g_file_mu);
+
+    if (!fp) {
+        emit_error_msg("could not open receive file");
+        return;
+    }
+
+    char payload[32];
+    snprintf(payload, sizeof(payload), "%lu", (unsigned long)id);
+    MUTEX_LOCK(&g_peers.mu);
+    for (int i = 0; i < MAX_PEERS; i++) {
+        peer_t *p = &g_peers.peers[i];
+        if (p->active && !p->dead && p->handshake_done && strcmp(p->remote_pid_full, sender) == 0) {
+            peer_enqueue(p, CHAT_TYPE_FILE_ACCEPT, payload);
+            break;
+        }
+    }
+    MUTEX_UNLOCK(&g_peers.mu);
+
+    char msg[MAX_TEXT_LEN];
+    snprintf(msg, sizeof(msg), "accepted file %s -> %s", name, path);
     emit_system_msg(msg);
-    netlog_add(sent == fsize ? NETLOG_OK : NETLOG_WARN, "file tx done %s", clean_name);
+    netlog_add(NETLOG_OK, "file accept %s id %lu", name, (unsigned long)id);
 }
 
 #if defined(_WIN32)
@@ -2585,9 +2736,12 @@ int main(int argc, char **argv) {
             arg = arg + 7;
         } else if (strcmp(arg, "--theme") == 0 && i + 1 < argc) {
             const char *theme = argv[++i];
-            if (strcmp(theme, "midnight") == 0) g_theme = &THEME_MIDNIGHT;
-            else if (strcmp(theme, "original") == 0) g_theme = &THEME_ORIGINAL;
-            else g_theme = &THEME_MODERN;
+            if (strcmp(theme, "midnight") == 0)
+                g_theme = &THEME_MIDNIGHT;
+            else if (strcmp(theme, "original") == 0)
+                g_theme = &THEME_ORIGINAL;
+            else
+                g_theme = &THEME_MODERN;
             continue;
         } else if (arg[0] == '-') {
             continue;
@@ -2689,11 +2843,12 @@ int main(int argc, char **argv) {
     netlog_clear();
     memset(&g_input, 0, sizeof(g_input));
 
-    emit_system_msg("Welcome to speer-chat. Type /status, /inspect, or /id for the network console.");
+    emit_system_msg(
+        "Welcome to speer-chat. Type /status, /inspect, or /id for the network console.");
     netlog_add(NETLOG_OK, "identity ready %s", g_my_pid_b58);
     netlog_add(NETLOG_OK, "tcp listen %s:%u", g_lan_ip, (unsigned)g_listen_port);
     netlog_add(NETLOG_OK, "mDNS service %s", CHAT_SERVICE_TYPE);
-    
+
     THREAD_T disc_thread;
     THREAD_CREATE(&disc_thread, disc_accept_thread, &dst);
 
@@ -2707,9 +2862,7 @@ int main(int argc, char **argv) {
 #if defined(_WIN32)
         int old_rows = g_screen.rows, old_cols = g_screen.cols;
         term_get_size(&g_screen.rows, &g_screen.cols);
-        if (old_rows != g_screen.rows || old_cols != g_screen.cols) {
-            layout_calc();
-        }
+        if (old_rows != g_screen.rows || old_cols != g_screen.cols) { layout_calc(); }
 #else
         if (g_got_sigwinch) {
             g_got_sigwinch = 0;
@@ -2743,14 +2896,24 @@ int main(int argc, char **argv) {
                 netlog_clear();
                 netlog_add(NETLOG_OK, "network console cleared");
             } else if (strcmp(g_input.buf, "/help") == 0) {
-                emit_system_msg("Commands: /send <path> /status /inspect /id /peers /clear /log clear /theme modern|midnight|original /quit");
+                emit_system_msg("Commands: /send <path> /accept [id] /status /inspect /id /peers "
+                                "/clear /log clear /theme modern|midnight|original /quit");
             } else if (strncmp(g_input.buf, "/send ", 6) == 0) {
                 cmd_send_file(g_input.buf + 6);
+            } else if (strncmp(g_input.buf, "send ", 5) == 0) {
+                cmd_send_file(g_input.buf + 5);
+            } else if (strcmp(g_input.buf, "/accept") == 0) {
+                cmd_accept_file("");
+            } else if (strncmp(g_input.buf, "/accept ", 8) == 0) {
+                cmd_accept_file(g_input.buf + 8);
             } else if (strncmp(g_input.buf, "/theme ", 7) == 0) {
                 const char *t = g_input.buf + 7;
-                if (strcmp(t, "midnight") == 0) g_theme = &THEME_MIDNIGHT;
-                else if (strcmp(t, "original") == 0) g_theme = &THEME_ORIGINAL;
-                else if (strcmp(t, "modern") == 0) g_theme = &THEME_MODERN;
+                if (strcmp(t, "midnight") == 0)
+                    g_theme = &THEME_MIDNIGHT;
+                else if (strcmp(t, "original") == 0)
+                    g_theme = &THEME_ORIGINAL;
+                else if (strcmp(t, "modern") == 0)
+                    g_theme = &THEME_MODERN;
                 emit_system_msg("Theme changed");
             } else if (g_input.buf[0] == '/') {
                 emit_error_msg("Unknown command");
@@ -2764,7 +2927,7 @@ int main(int argc, char **argv) {
 
         /* Render */
         render_full();
-        
+
         /* Small delay to prevent busy looping */
         thread_sleep_ms(10);
     }
@@ -2780,7 +2943,7 @@ int main(int argc, char **argv) {
 
     term_altscreen_exit();
     term_raw_mode_exit();
-    
+
     printf("  - bye\n");
     return 0;
 }
