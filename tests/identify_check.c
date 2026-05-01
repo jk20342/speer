@@ -14,10 +14,10 @@
     } while (0)
 
 static int test_field_oversize(uint32_t field, size_t pad_len) {
-    uint8_t buf[1024];
+    uint8_t buf[IDENTIFY_PUBKEY_PROTO_MAX + 64];
     speer_pb_writer_t w;
     speer_pb_writer_init(&w, buf, sizeof(buf));
-    uint8_t big[600];
+    uint8_t big[IDENTIFY_PUBKEY_PROTO_MAX + 32];
     memset(big, 'A', sizeof(big));
     if (pad_len > sizeof(big)) pad_len = sizeof(big);
     if (speer_pb_write_bytes_field(&w, field, big, pad_len) != 0) return 0;
@@ -28,7 +28,7 @@ static int test_field_oversize(uint32_t field, size_t pad_len) {
 }
 
 int main(void) {
-    if (test_field_oversize(1, 600)) return 1;
+    if (test_field_oversize(1, IDENTIFY_PUBKEY_PROTO_MAX + 1)) return 1;
     if (test_field_oversize(2, 600)) return 1;
     if (test_field_oversize(4, 600)) return 1;
 

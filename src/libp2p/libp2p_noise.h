@@ -11,7 +11,7 @@
 #define LIBP2P_NOISE_PROTOCOL       "/noise"
 #define LIBP2P_NOISE_PAYLOAD_PREFIX "noise-libp2p-static-key:"
 
-#define SPEER_LIBP2P_PUBKEY_MAX 1024
+#define SPEER_LIBP2P_PUBKEY_MAX     1024
 
 typedef struct {
     speer_handshake_t hs;

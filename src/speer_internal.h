@@ -5,6 +5,10 @@
 #define _WIN32_WINNT 0x0600
 #endif
 
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200112L
+#endif
+
 #include "speer.h"
 
 #include <stdlib.h>
@@ -28,12 +32,14 @@ typedef int socklen_t;
 #endif
 #else
 #include <sys/socket.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 
 #include <errno.h>
 #include <fcntl.h>
-#include <netdb.h>
 #include <time.h>
 #include <unistd.h>
 #define CLOSESOCKET close
