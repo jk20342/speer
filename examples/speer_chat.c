@@ -91,22 +91,22 @@ typedef struct {
     const char *name;
 } theme_t;
 
-/* Modern Dark Theme - Clean, vibrant, professional */
+/* Modern Dark Theme - neon purple terminal UI */
 static const theme_t THEME_MODERN = {
-    .bg = 0x0d0d12,        /* Deep black-blue */
-    .bg_panel = 0x181825, /* Slightly lighter panel bg */
-    .fg = 0xe2e2e8,       /* Soft white */
-    .fg_dim = 0x6b6b7b,   /* Muted gray */
-    .border = 0x2a2a3a,   /* Subtle border */
-    .accent = 0xff6b9d,   /* Vibrant pink */
-    .timestamp = 0x5a5a6a, /* Dark timestamp */
+    .bg = 0x070711,        /* Near-black violet */
+    .bg_panel = 0x111026,  /* Inky panel purple */
+    .fg = 0xf2efff,        /* Soft white */
+    .fg_dim = 0x8a84a6,    /* Muted lavender */
+    .border = 0x9d2cff,    /* Electric violet */
+    .accent = 0xff2bd6,    /* Neon magenta */
+    .timestamp = 0x6d668f, /* Dusty violet */
     .peer_colors = {
-        0xff6b9d, /* Hot pink */
-        0xc084fc, /* Purple */
-        0x4ade80, /* Green */
-        0x60a5fa, /* Blue */
-        0xfbbf24, /* Amber */
-        0xf472b6, /* Light pink */
+        0xff2bd6, /* Magenta */
+        0x9d2cff, /* Violet */
+        0x35f7c8, /* Mint */
+        0x61d6ff, /* Cyan */
+        0xffc857, /* Amber */
+        0xff7ab6, /* Pink */
     },
     .name = "modern"
 };
@@ -160,7 +160,7 @@ static const theme_t *g_theme = &THEME_MODERN;
 #define MAX_COLS 512
 #define MAX_ROWS 256
 #define MAX_HISTORY 1000
-#define SIDEBAR_WIDTH 22
+#define SIDEBAR_WIDTH 28
 
 typedef struct {
     uint32_t fg;
@@ -363,6 +363,15 @@ static void screen_put_string(int x, int y, const char *str, uint32_t fg, uint32
     }
 }
 
+static void screen_put_string_clipped(int x, int y, const char *str, int max_len,
+                                      uint32_t fg, uint32_t bg, int bold, int dim) {
+    int n = 0;
+    while (*str && x < g_screen.cols && n < max_len) {
+        screen_put_char(x++, y, (uint32_t)(unsigned char)*str++, fg, bg, bold, dim);
+        n++;
+    }
+}
+
 static void screen_fill_rect(const rect_t *r, uint32_t bg) {
     cell_t c = {.ch = ' ', .fg = g_theme->fg, .bg = bg, .bold = 0, .dim = 0};
     for (int y = r->y; y < r->y + r->h && y < g_screen.rows; y++) {
@@ -372,46 +381,34 @@ static void screen_fill_rect(const rect_t *r, uint32_t bg) {
     }
 }
 
-static void screen_draw_hline(int x, int y, int len, uint32_t fg, uint32_t ch) {
+static void screen_draw_hline_bg(int x, int y, int len, uint32_t fg, uint32_t bg, uint32_t ch) {
     for (int i = 0; i < len && x + i < g_screen.cols; i++) {
-        screen_put_char(x + i, y, ch, fg, g_theme->bg, 0, 1);
+        screen_put_char(x + i, y, ch, fg, bg, 0, 0);
     }
 }
 
-static void screen_draw_vline(int x, int y, int len, uint32_t fg, uint32_t ch) {
+static void screen_draw_vline_bg(int x, int y, int len, uint32_t fg, uint32_t bg, uint32_t ch) {
     for (int i = 0; i < len && y + i < g_screen.rows; i++) {
-        screen_put_char(x, y + i, ch, fg, g_theme->bg, 0, 1);
+        screen_put_char(x, y + i, ch, fg, bg, 0, 0);
     }
 }
 
-static void screen_draw_border(const rect_t *r, uint32_t fg) {
-    /* Simple ASCII borders - works everywhere */
-    /* Corners */
-    screen_put_char(r->x, r->y, '+', fg, g_theme->bg, 0, 0);
-    screen_put_char(r->x + r->w - 1, r->y, '+', fg, g_theme->bg, 0, 0);
-    screen_put_char(r->x, r->y + r->h - 1, '+', fg, g_theme->bg, 0, 0);
-    screen_put_char(r->x + r->w - 1, r->y + r->h - 1, '+', fg, g_theme->bg, 0, 0);
-    /* Horizontal lines */
-    for (int i = 1; i < r->w - 1; i++) {
-        screen_put_char(r->x + i, r->y, '-', fg, g_theme->bg, 0, 0);
-        screen_put_char(r->x + i, r->y + r->h - 1, '-', fg, g_theme->bg, 0, 0);
-    }
-    /* Vertical lines */
-    for (int i = 1; i < r->h - 1; i++) {
-        screen_put_char(r->x, r->y + i, '|', fg, g_theme->bg, 0, 0);
-        screen_put_char(r->x + r->w - 1, r->y + i, '|', fg, g_theme->bg, 0, 0);
-    }
+static void screen_draw_box(const rect_t *r, uint32_t fg, uint32_t bg) {
+    if (r->w < 2 || r->h < 2) return;
+    screen_put_char(r->x, r->y, 0x250c, fg, bg, 0, 0);
+    screen_put_char(r->x + r->w - 1, r->y, 0x2510, fg, bg, 0, 0);
+    screen_put_char(r->x, r->y + r->h - 1, 0x2514, fg, bg, 0, 0);
+    screen_put_char(r->x + r->w - 1, r->y + r->h - 1, 0x2518, fg, bg, 0, 0);
+    screen_draw_hline_bg(r->x + 1, r->y, r->w - 2, fg, bg, 0x2500);
+    screen_draw_hline_bg(r->x + 1, r->y + r->h - 1, r->w - 2, fg, bg, 0x2500);
+    screen_draw_vline_bg(r->x, r->y + 1, r->h - 2, fg, bg, 0x2502);
+    screen_draw_vline_bg(r->x + r->w - 1, r->y + 1, r->h - 2, fg, bg, 0x2502);
 }
 
-/* ANSI color helpers */
-static void put_ansi_fg(uint32_t rgb) {
-    printf("\x1b[38;2;%u;%u;%um",
-           (rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
-}
-
-static void put_ansi_bg(uint32_t rgb) {
-    printf("\x1b[48;2;%u;%u;%um",
-           (rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
+static int ui_sidebar_width(void) {
+    if (g_screen.cols > 96) return SIDEBAR_WIDTH;
+    if (g_screen.cols > 68) return 23;
+    return 0;
 }
 
 /* Diff and render to terminal */
@@ -442,35 +439,29 @@ static void screen_present(void) {
             cell_t *c = &g_screen.back[y][x];
             
             /* Set attributes if changed */
-            if (c->bold != cur_bold) {
-                if (c->bold) pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[1m");
-                cur_bold = c->bold;
-            }
-            if (c->dim != cur_dim) {
-                if (c->dim) pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[2m");
-                cur_dim = c->dim;
+            if (c->bold != cur_bold || c->dim != cur_dim) {
+                pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[22m");
+                cur_bold = 0;
+                cur_dim = 0;
+                if (c->bold) {
+                    pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[1m");
+                    cur_bold = 1;
+                }
+                if (c->dim) {
+                    pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[2m");
+                    cur_dim = 1;
+                }
             }
             if (c->fg != cur_fg) {
-                put_ansi_fg(c->fg);
                 pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[38;2;%u;%u;%um",
                     (c->fg >> 16) & 0xff, (c->fg >> 8) & 0xff, c->fg & 0xff);
                 cur_fg = c->fg;
             }
             if (c->bg != cur_bg) {
-                put_ansi_bg(c->bg);
                 pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[48;2;%u;%u;%um",
                     (c->bg >> 16) & 0xff, (c->bg >> 8) & 0xff, c->bg & 0xff);
                 cur_bg = c->bg;
             }
-            if (!c->bold && !c->dim && cur_bold) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[22m");
-                cur_bold = 0;
-            }
-            if (!c->dim && cur_dim) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[22m");
-                cur_dim = 0;
-            }
-            
             /* Output character */
             if (c->ch < 128) {
                 buf[pos++] = (char)c->ch;
@@ -510,13 +501,15 @@ static void screen_present(void) {
 static void layout_calc(void) {
     int rows = g_screen.rows;
     int cols = g_screen.cols;
-    int sidebar_w = (cols > 60) ? SIDEBAR_WIDTH : 0; /* Hide sidebar on small screens */
+    int sidebar_w = ui_sidebar_width();
+    int header_h = rows >= 10 ? 3 : 1;
+    int input_h = rows >= 10 ? 3 : 1;
     
-    /* Header: 1 line, full width */
+    /* Header: title and connection strip */
     g_layout.header.x = 0;
     g_layout.header.y = 0;
     g_layout.header.w = cols;
-    g_layout.header.h = 1;
+    g_layout.header.h = header_h;
     
     /* Status bar: 1 line at bottom, full width */
     g_layout.status.x = 0;
@@ -524,17 +517,17 @@ static void layout_calc(void) {
     g_layout.status.w = cols;
     g_layout.status.h = 1;
     
-    /* Input bar: 1 line above status, starts after sidebar */
+    /* Input panel above status, starts after sidebar */
     g_layout.input.x = sidebar_w;
-    g_layout.input.y = rows - 2;
+    g_layout.input.y = rows - 1 - input_h;
     g_layout.input.w = cols - sidebar_w;
-    g_layout.input.h = 1;
+    g_layout.input.h = input_h;
     
     /* Message area: starts after sidebar */
     g_layout.messages.x = sidebar_w;
-    g_layout.messages.y = 1;
+    g_layout.messages.y = header_h;
     g_layout.messages.w = cols - sidebar_w;
-    g_layout.messages.h = rows - 3;
+    g_layout.messages.h = g_layout.input.y - g_layout.messages.y;
 }
 
 /* ============================================================
@@ -656,8 +649,7 @@ static void draw_gradient_title(int x, int y, const char *t, int start_r, int st
 static void render_header(void) {
     screen_fill_rect(&g_layout.header, g_theme->bg_panel);
     
-    /* Title with accent color */
-    screen_put_string(2, 0, "speer-chat", g_theme->accent, g_theme->bg_panel, 1, 0);
+    draw_gradient_title(2, 0, "speer-chat", 255, 43, 214, 97, 214, 255);
     
     /* Connection info on right */
     char info[64];
@@ -669,55 +661,78 @@ static void render_header(void) {
     }
     MUTEX_UNLOCK(&g_peers.mu);
     
-    snprintf(info, sizeof(info), "%d peers  port %u", peer_count, (unsigned)g_listen_port);
+    snprintf(info, sizeof(info), " %d connected ", peer_count);
     
     int info_len = (int)strlen(info);
     if (info_len < g_layout.header.w - 4) {
         screen_put_string(g_layout.header.w - info_len - 2, 0, info,
-                          g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+                          peer_count > 0 ? 0x35f7c8 : g_theme->fg_dim, g_theme->bg_panel, 1, 0);
+    }
+    
+    if (g_layout.header.h > 1) {
+        char room[96];
+        snprintf(room, sizeof(room), " /speer/chat/1.0.0   port %u   nick %s ",
+                 (unsigned)g_listen_port, g_my_nick);
+        screen_put_string_clipped(2, 1, room, g_layout.header.w - 4,
+                                  g_theme->fg_dim, g_theme->bg_panel, 0, 0);
+        screen_draw_hline_bg(0, g_layout.header.h - 1, g_layout.header.w,
+                             g_theme->border, g_theme->bg_panel, 0x2500);
     }
 }
 
 static void render_sidebar(void) {
-    /* Sidebar background */
-    rect_t sidebar = {0, 1, 20, g_screen.rows - 2};
-    screen_fill_rect(&sidebar, g_theme->bg_panel);
+    int sidebar_w = ui_sidebar_width();
+    if (sidebar_w == 0) return;
     
-    /* Sidebar title */
-    screen_put_string(2, 1, "PEERS", g_theme->fg_dim, g_theme->bg_panel, 1, 0);
+    rect_t sidebar = {0, g_layout.header.h, sidebar_w, g_layout.status.y - g_layout.header.h};
+    screen_fill_rect(&sidebar, g_theme->bg_panel);
+    screen_draw_box(&sidebar, g_theme->border, g_theme->bg_panel);
+    
+    screen_put_string(2, sidebar.y, " Collection ", g_theme->accent, g_theme->bg_panel, 1, 0);
+    screen_put_string(2, sidebar.y + 2, "local", g_theme->fg_dim, g_theme->bg_panel, 1, 0);
+    screen_put_char(2, sidebar.y + 3, 0x25cf, g_theme->peer_colors[0], g_theme->bg_panel, 0, 0);
+    screen_put_string_clipped(4, sidebar.y + 3, g_my_nick, sidebar_w - 6,
+                              g_theme->fg, g_theme->bg_panel, 1, 0);
+    if (g_my_pid_b58[0] && sidebar.h > 8) {
+        char pid_short[20];
+        snprintf(pid_short, sizeof(pid_short), "%.16s", g_my_pid_b58);
+        screen_put_string(4, sidebar.y + 4, pid_short, g_theme->fg_dim, g_theme->bg_panel, 0, 1);
+    }
+    
+    int y = sidebar.y + 7;
+    if (y < sidebar.y + sidebar.h - 2) {
+        screen_put_string(2, y, "peers", g_theme->fg_dim, g_theme->bg_panel, 1, 0);
+        y += 2;
+    }
     
     /* List connected peers */
-    int y = 3;
+    int listed = 0;
     MUTEX_LOCK(&g_peers.mu);
-    for (int i = 0; i < MAX_PEERS && y < g_screen.rows - 3; i++) {
+    for (int i = 0; i < MAX_PEERS && y < sidebar.y + sidebar.h - 3; i++) {
         peer_t *p = &g_peers.peers[i];
         if (p->active && !p->dead && p->handshake_done) {
             uint32_t col = g_theme->peer_colors[i % 6];
-            char name[18];
-            snprintf(name, sizeof(name), " %-16s", 
+            char name[32];
+            snprintf(name, sizeof(name), "%s", 
                     p->remote_nick[0] ? p->remote_nick : p->remote_pid_short);
-            screen_put_string(0, y, name, col, g_theme->bg_panel, 0, 0);
+            screen_put_char(2, y, 0x25cf, col, g_theme->bg_panel, 0, 0);
+            screen_put_string_clipped(4, y, name, sidebar_w - 6, col, g_theme->bg_panel, 1, 0);
             y++;
+            listed++;
         }
     }
     MUTEX_UNLOCK(&g_peers.mu);
     
     /* Show empty state */
-    if (y == 3) {
-        screen_put_string(2, 4, "(no peers)", g_theme->fg_dim, g_theme->bg_panel, 0, 1);
-    }
-    
-    /* Draw vertical separator */
-    for (int row = 1; row < g_screen.rows - 1; row++) {
-        screen_put_char(20, row, '|', g_theme->border, g_theme->bg, 0, 0);
+    if (listed == 0 && y < sidebar.y + sidebar.h - 2) {
+        screen_put_string(2, y, "discovering...", g_theme->fg_dim, g_theme->bg_panel, 0, 1);
     }
 }
 
 static void render_status(void) {
     screen_fill_rect(&g_layout.status, g_theme->bg_panel);
     
-    /* Simple ASCII-based status bar */
-    screen_put_string(1, g_layout.status.y, "[ /help | /peers | /quit ]", 
+    screen_put_string(1, g_layout.status.y, "^J Send   ^C Quit   /help Commands   PgUp/PgDn Scroll", 
                       g_theme->fg_dim, g_theme->bg_panel, 0, 0);
     
     /* Show peer count */
@@ -730,15 +745,24 @@ static void render_status(void) {
     MUTEX_UNLOCK(&g_peers.mu);
     
     char peers_str[32];
-    snprintf(peers_str, sizeof(peers_str), "%d %s ", peer_count,
-             peer_count == 1 ? "connected" : "connected");
+    snprintf(peers_str, sizeof(peers_str), " %d connected ", peer_count);
     int len = (int)strlen(peers_str);
     screen_put_string(g_layout.status.w - len - 1, g_layout.status.y, peers_str,
-                      g_theme->accent, g_theme->bg_panel, 0, 0);
+                      peer_count > 0 ? 0x35f7c8 : g_theme->accent, g_theme->bg_panel, 1, 0);
 }
 
 static void render_input(void) {
-    screen_fill_rect(&g_layout.input, g_theme->bg);
+    uint32_t input_bg = g_layout.input.h > 1 ? g_theme->bg_panel : g_theme->bg;
+    screen_fill_rect(&g_layout.input, input_bg);
+    if (g_layout.input.h > 1) {
+        rect_t box = g_layout.input;
+        box.x += 1;
+        box.w -= 2;
+        screen_draw_box(&box, g_theme->border, input_bg);
+        screen_put_string(box.x + 2, box.y, " Message ", g_theme->accent, input_bg, 1, 0);
+        screen_put_string(g_layout.input.x + g_layout.input.w - 16, box.y,
+                          " Enter to send ", g_theme->fg_dim, input_bg, 0, 0);
+    }
     
     /* Nick with peer color */
     uint32_t nick_col = g_theme->peer_colors[0];
@@ -751,21 +775,26 @@ static void render_input(void) {
         nick_col = g_theme->peer_colors[h % 6];
     }
     
-    screen_put_string(1, g_layout.input.y, g_my_nick, nick_col, g_theme->bg, 1, 0);
+    int input_line = g_layout.input.h > 1 ? g_layout.input.y + 1 : g_layout.input.y;
+    int prompt_x = g_layout.input.x + (g_layout.input.h > 1 ? 4 : 1);
+    
+    screen_put_string(prompt_x, input_line, g_my_nick, nick_col, input_bg, 1, 0);
     
     int nick_len = (int)strlen(g_my_nick);
-    screen_put_string(2 + nick_len, g_layout.input.y, "> ", g_theme->fg_dim, g_theme->bg, 0, 0);
+    screen_put_string(prompt_x + nick_len + 1, input_line, ">", g_theme->accent, input_bg, 1, 0);
+    screen_put_string(prompt_x + nick_len + 3, input_line, "", g_theme->fg_dim, input_bg, 0, 0);
     
     /* Input text */
-    int prompt_offset = nick_len + 4;
-    int max_input = g_layout.input.w - prompt_offset - 1;
+    int prompt_offset = prompt_x + nick_len + 3;
+    int max_input = g_layout.input.x + g_layout.input.w - prompt_offset - (g_layout.input.h > 1 ? 4 : 1);
+    if (max_input < 1) max_input = 1;
     if (g_input.len > max_input) {
         /* Scroll input if too long */
-        screen_put_string(prompt_offset, g_layout.input.y,
+        screen_put_string(prompt_offset, input_line,
                           g_input.buf + (g_input.len - max_input),
-                          g_theme->fg, g_theme->bg, 0, 0);
+                          g_theme->fg, input_bg, 0, 0);
     } else {
-        screen_put_string(prompt_offset, g_layout.input.y, g_input.buf, g_theme->fg, g_theme->bg, 0, 0);
+        screen_put_string(prompt_offset, input_line, g_input.buf, g_theme->fg, input_bg, 0, 0);
     }
 }
 
@@ -782,6 +811,19 @@ static void format_timestamp(time_t t, char *out, size_t cap) {
 static void render_messages(void) {
     /* Fill background */
     screen_fill_rect(&g_layout.messages, g_theme->bg);
+    if (g_layout.messages.w > 3 && g_layout.messages.h > 2) {
+        rect_t box = g_layout.messages;
+        box.x += 1;
+        box.w -= 2;
+        screen_draw_box(&box, g_theme->border, g_theme->bg);
+        screen_put_string(box.x + 2, box.y, " Chat ", g_theme->accent, g_theme->bg, 1, 0);
+    }
+    
+    int inner_x = g_layout.messages.x + (g_layout.messages.w > 3 ? 3 : 1);
+    int inner_y = g_layout.messages.y + (g_layout.messages.h > 2 ? 1 : 0);
+    int inner_w = g_layout.messages.w - (g_layout.messages.w > 3 ? 6 : 2);
+    int inner_h = g_layout.messages.h - (g_layout.messages.h > 2 ? 2 : 0);
+    if (inner_w < 10 || inner_h <= 0) return;
     
     /* Check if we have any real messages (not uninitialized) */
     int real_count = 0;
@@ -796,17 +838,17 @@ static void render_messages(void) {
     if (real_count == 0) {
         /* Show welcome message in the center */
         const char *line1 = "Welcome to speer-chat!";
-        const char *line2 = "Type /help for commands";
-        int x1 = g_layout.messages.x + (g_layout.messages.w - (int)strlen(line1)) / 2;
-        int x2 = g_layout.messages.x + (g_layout.messages.w - (int)strlen(line2)) / 2;
-        int y = g_layout.messages.y + g_layout.messages.h / 2;
+        const char *line2 = "Type /help for commands or just start typing.";
+        int x1 = inner_x + (inner_w - (int)strlen(line1)) / 2;
+        int x2 = inner_x + (inner_w - (int)strlen(line2)) / 2;
+        int y = inner_y + inner_h / 2;
         screen_put_string(x1, y, line1, g_theme->accent, g_theme->bg, 1, 0);
         screen_put_string(x2, y + 1, line2, g_theme->fg_dim, g_theme->bg, 0, 1);
         return;
     }
     
-    int line = g_layout.messages.y + g_layout.messages.h - 1;
-    int msgs_to_show = g_layout.messages.h;
+    int line = inner_y + inner_h - 1;
+    int msgs_to_show = inner_h;
     int start_idx = (g_history.head - 1 + MAX_HISTORY) % MAX_HISTORY;
     
     /* Apply scroll */
@@ -817,7 +859,7 @@ static void render_messages(void) {
         }
     }
     
-    for (int i = 0; i < msgs_to_show && line >= g_layout.messages.y; i++) {
+    for (int i = 0; i < msgs_to_show && line >= inner_y; i++) {
         msg_entry_t *e = &g_history.entries[start_idx];
         
         /* Skip uninitialized entries (timestamp 0 means empty) */
@@ -829,7 +871,7 @@ static void render_messages(void) {
         char ts[16];
         format_timestamp(e->timestamp, ts, sizeof(ts));
         
-        int x = 1;
+        int x = inner_x;
         
         /* Timestamp */
         screen_put_string(x, line, "[", g_theme->timestamp, g_theme->bg, 0, 1);
@@ -844,10 +886,10 @@ static void render_messages(void) {
         if (e->type == MSG_SYSTEM) col = g_theme->fg_dim;
         if (e->type == MSG_ERROR) col = g_theme->peer_colors[0]; /* Red-ish */
         
-        screen_put_char(x, line, '|', col, g_theme->bg, 0, 0);
+        screen_put_char(x, line, 0x258c, col, g_theme->bg, 0, 0);
         x += 2;
         
-        /* Nick or icon - ASCII only */
+        /* Nick or message marker */
         if (e->type == MSG_CHAT || e->type == MSG_JOIN || e->type == MSG_LEAVE) {
             const char *display_nick = e->nick[0] ? e->nick : "unknown";
             char nick_buf[32];
@@ -863,11 +905,11 @@ static void render_messages(void) {
         }
         
         /* Message text with wrapping */
-        int avail = g_layout.messages.w - x - 1;
+        int avail = inner_x + inner_w - x - 1;
         const char *text = e->text;
         int first_line = 1;
         
-        while (*text && line >= g_layout.messages.y) {
+        while (*text && line >= inner_y) {
             int take = 0;
             const char *p = text;
             while (*p && take < avail) {
@@ -893,7 +935,7 @@ static void render_messages(void) {
             
             if (*text) {
                 line--;
-                x = 15; /* Indent wrapped lines */
+                x = inner_x + 15; /* Indent wrapped lines */
             }
         }
         
@@ -903,7 +945,8 @@ static void render_messages(void) {
     
     /* Scroll indicator - ASCII */
     if (g_history.scroll > 0) {
-        screen_put_string(g_layout.messages.w - 4, g_layout.messages.y, "^..", g_theme->accent, g_theme->bg, 0, 0);
+        screen_put_string(g_layout.messages.x + g_layout.messages.w - 7, g_layout.messages.y, "^ more",
+                          g_theme->accent, g_theme->bg, 1, 0);
     }
 }
 
@@ -916,13 +959,6 @@ static void render_full(void) {
     render_header();
     render_sidebar();
     
-    /* Horizontal separator lines - only in main content area */
-    int sidebar_w = (g_screen.cols > 60) ? SIDEBAR_WIDTH : 0;
-    screen_draw_hline(sidebar_w, g_layout.messages.y - 1, g_screen.cols - sidebar_w, 
-                      g_theme->border, '-');
-    screen_draw_hline(sidebar_w, g_layout.input.y - 1, g_screen.cols - sidebar_w, 
-                      g_theme->border, '-');
-    
     render_messages();
     render_input();
     render_status();
@@ -931,13 +967,17 @@ static void render_full(void) {
     screen_present();
     
     /* Position cursor at input */
-    int cursor_x = g_layout.input.x + 1 + (int)strlen(g_my_nick) + 2;
-    if (g_input.len > g_layout.input.w - (int)strlen(g_my_nick) - 4) {
-        cursor_x = g_layout.input.x + g_layout.input.w - 1;
+    int input_line = g_layout.input.h > 1 ? g_layout.input.y + 1 : g_layout.input.y;
+    int prompt_x = g_layout.input.x + (g_layout.input.h > 1 ? 4 : 1);
+    int cursor_x = prompt_x + (int)strlen(g_my_nick) + 3;
+    int max_input = g_layout.input.x + g_layout.input.w - cursor_x - (g_layout.input.h > 1 ? 4 : 1);
+    if (max_input < 1) max_input = 1;
+    if (g_input.len > max_input) {
+        cursor_x = g_layout.input.x + g_layout.input.w - (g_layout.input.h > 1 ? 4 : 1);
     } else {
         cursor_x += g_input.cursor;
     }
-    printf("\x1b[%d;%dH", g_layout.input.y + 1, cursor_x + 1);
+    printf("\x1b[%d;%dH", input_line + 1, cursor_x + 1);
     printf("\x1b[?25h"); /* Show cursor */
     fflush(stdout);
 }
