@@ -12,19 +12,19 @@
 #if defined(_WIN32)
 #include <winsock2.h>
 
-#include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <ws2tcpip.h>
 typedef int socklen_t;
 #define CLOSESOCKET closesocket
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <ifaddrs.h>
-#include <net/if.h>
 
 #include <errno.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <unistd.h>
 #define CLOSESOCKET close
 #endif
@@ -247,7 +247,7 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     write_u16(out + 4, 0);
     write_u16(out + 6, 1);
     write_u16(out + 8, 0);
-    uint16_t txt_count = svc->txt.num_fields ? svc->txt.num_fields : 1;
+    uint16_t txt_count = svc->txt.num_fields ? (uint16_t)svc->txt.num_fields : (uint16_t)1;
     write_u16(out + 10, txt_count);
     pos += 12;
 
@@ -322,9 +322,7 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
 
 static int mdns_enum_local_ipv4(uint32_t *out, int cap) {
     int count = 0;
-    if (cap > 0) {
-        out[count++] = htonl(INADDR_LOOPBACK);
-    }
+    if (cap > 0) { out[count++] = htonl(INADDR_LOOPBACK); }
 #if defined(_WIN32)
     ULONG buf_len = 16 * 1024;
     IP_ADAPTER_ADDRESSES *addrs = (IP_ADAPTER_ADDRESSES *)malloc(buf_len);
