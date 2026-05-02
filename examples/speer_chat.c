@@ -19,6 +19,7 @@
 #include "multistream.h"
 #include "peer_id.h"
 #include "protobuf.h"
+#include "speer_libp2p_tcp.h"
 #include "transport_tcp.h"
 #include "varint.h"
 #include "yamux.h"
@@ -2078,31 +2079,15 @@ static THREAD_RET peer_reader(void *arg) {
     ymux_io_t sio = {.mux = &p->mux, .st = p->chat_st};
 
     while (!g_quit && !p->dead) {
-        uint8_t lp[10];
-        size_t lp_off = 0;
-        size_t got = 0;
-        int read_ok = 1;
-        while (lp_off < sizeof(lp)) {
-            if (ymux_recv(&sio, lp + lp_off, 1, &got) != 0 || got != 1) {
-                read_ok = 0;
-                break;
-            }
-            lp_off++;
-            if ((lp[lp_off - 1] & 0x80) == 0) break;
-        }
-        if (!read_ok) break;
-        uint64_t flen = 0;
-        if (speer_uvarint_decode(lp, lp_off, &flen) == 0 || flen == 0 || flen > MAX_TEXT_LEN + 64) {
-            break;
-        }
         uint8_t frame[MAX_TEXT_LEN + 256];
-        if (ymux_recv(&sio, frame, (size_t)flen, &got) != 0 || got != flen) { break; }
-        p->bytes_rx += (unsigned long long)lp_off + (unsigned long long)flen;
+        size_t flen = 0;
+        if (speer_libp2p_uvar_frame_recv(&sio, ymux_recv, frame, sizeof(frame), &flen) != 0) break;
+        p->bytes_rx += (unsigned long long)speer_uvarint_size((uint64_t)flen) +
+                       (unsigned long long)flen;
         p->last_seen = time(NULL);
         uint32_t type = 0;
         char nick[MAX_NICK_LEN], text[MAX_TEXT_LEN];
-        if (chat_frame_decode(frame, (size_t)flen, &type, nick, sizeof(nick), text, sizeof(text)) !=
-            0)
+        if (chat_frame_decode(frame, flen, &type, nick, sizeof(nick), text, sizeof(text)) != 0)
             continue;
         if (nick[0]) {
             size_t l = strlen(nick);
@@ -2253,12 +2238,11 @@ static THREAD_RET peer_writer(void *arg) {
         uint8_t frame[256 + MAX_NICK_LEN];
         size_t fl = 0;
         if (chat_frame_encode(frame, sizeof(frame), &fl, CHAT_TYPE_HELLO, g_my_nick, NULL) == 0) {
-            uint8_t lp[10];
-            size_t hl = speer_uvarint_encode(lp, sizeof(lp), fl);
             ymux_io_t sio = {.mux = &p->mux, .st = p->chat_st};
-            (void)ymux_send(&sio, lp, hl);
-            (void)ymux_send(&sio, frame, fl);
-            netlog_add(NETLOG_TRAFFIC, "tx hello %lluB", (unsigned long long)(hl + fl));
+            if (speer_libp2p_uvar_frame_send(&sio, ymux_send, frame, fl) == 0) {
+                netlog_add(NETLOG_TRAFFIC, "tx hello %lluB",
+                           (unsigned long long)(speer_uvarint_size((uint64_t)fl) + fl));
+            }
         }
     }
 
@@ -2284,20 +2268,14 @@ static THREAD_RET peer_writer(void *arg) {
             uint8_t frame[MAX_TEXT_LEN + 256];
             size_t fl = 0;
             if (chat_frame_encode(frame, sizeof(frame), &fl, m->type, g_my_nick, m->text) == 0) {
-                uint8_t lp[10];
-                size_t hl = speer_uvarint_encode(lp, sizeof(lp), fl);
                 ymux_io_t sio = {.mux = &p->mux, .st = p->chat_st};
-                if (ymux_send(&sio, lp, hl) != 0) {
+                if (speer_libp2p_uvar_frame_send(&sio, ymux_send, frame, fl) != 0) {
                     free(m);
                     p->dead = 1;
                     goto done;
                 }
-                if (ymux_send(&sio, frame, fl) != 0) {
-                    free(m);
-                    p->dead = 1;
-                    goto done;
-                }
-                p->bytes_tx += (unsigned long long)hl + (unsigned long long)fl;
+                p->bytes_tx += (unsigned long long)speer_uvarint_size((uint64_t)fl) +
+                               (unsigned long long)fl;
                 p->last_seen = time(NULL);
                 if (m->type == CHAT_TYPE_MSG) {
                     p->msgs_tx++;

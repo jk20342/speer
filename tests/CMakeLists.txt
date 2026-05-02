@@ -31,6 +31,7 @@ set(SPEER_UNIT_TESTS
     ecdsa_p256_check
     quic_pkt_robustness_check
     identify_check
+    libp2p_tcp_primitives_check
     dht_check_negative
 )
 

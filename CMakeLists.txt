@@ -192,7 +192,9 @@ install(TARGETS speer
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(FILES ${SPEER_INCDIR}/speer.h
+install(FILES
+    ${SPEER_INCDIR}/speer.h
+    ${SPEER_INCDIR}/speer_libp2p_tcp.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 

@@ -76,7 +76,8 @@ UNIT_TESTS = \
 	parser_robustness_check \
 	chacha_counter_check \
 	ecdsa_p256_check \
-	identify_check
+	identify_check \
+	libp2p_tcp_primitives_check
 
 TEST_PROGS = $(patsubst %,tests/%$(EXEEXT),$(UNIT_TESTS))
 
@@ -131,6 +132,7 @@ install: all
 	install -d $(DESTDIR)/usr/local/include
 	install -m 644 $(STATIC) $(DESTDIR)/usr/local/lib/
 	install -m 644 $(INCDIR)/speer.h $(DESTDIR)/usr/local/include/
+	install -m 644 $(INCDIR)/speer_libp2p_tcp.h $(DESTDIR)/usr/local/include/
 
 # Development/debug build
 debug: CFLAGS = -std=c99 -Wall -Wextra -g -O0 -DDEBUG -fsanitize=address,undefined
