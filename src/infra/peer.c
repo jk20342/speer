@@ -54,11 +54,7 @@ void speer_peer_destroy(speer_peer_t *peer) {
 
     speer_transport_cleanup(peer);
 
-    while (peer->streams) {
-        speer_stream_internal_t *s = peer->streams;
-        peer->streams = s->next;
-        free(s);
-    }
+    while (peer->streams) { speer_stream_destroy(peer, peer->streams); }
 
     WIPE(&peer->handshake, sizeof(peer->handshake));
     WIPE(&peer->send_cipher, sizeof(peer->send_cipher));
