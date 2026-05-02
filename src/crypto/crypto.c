@@ -252,13 +252,13 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
     h2 = ((h2 >> 12) | (h3 << 14)) & 0xffffffff;
     h3 = ((h3 >> 18) | (h4 << 8)) & 0xffffffff;
 
-    uint64_t f = (uint64_t)h0 + load32(s + 0);
+    uint64_t f = (uint64_t)h0 + LOAD32_LE(s + 0);
     h0 = (uint32_t)f;
-    f = (uint64_t)h1 + load32(s + 4) + (f >> 32);
+    f = (uint64_t)h1 + LOAD32_LE(s + 4) + (f >> 32);
     h1 = (uint32_t)f;
-    f = (uint64_t)h2 + load32(s + 8) + (f >> 32);
+    f = (uint64_t)h2 + LOAD32_LE(s + 8) + (f >> 32);
     h2 = (uint32_t)f;
-    f = (uint64_t)h3 + load32(s + 12) + (f >> 32);
+    f = (uint64_t)h3 + LOAD32_LE(s + 12) + (f >> 32);
     h3 = (uint32_t)f;
 
     STORE32_LE(mac + 0, h0);
