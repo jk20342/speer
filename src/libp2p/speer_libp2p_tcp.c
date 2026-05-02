@@ -20,7 +20,10 @@ static void sleep_ms(int ms) {
 #if defined(_WIN32)
     Sleep((DWORD)ms);
 #else
-    usleep((useconds_t)ms * 1000u);
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (long)(ms % 1000) * 1000000L;
+    nanosleep(&ts, NULL);
 #endif
 }
 
