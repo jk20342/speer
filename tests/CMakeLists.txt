@@ -1,4 +1,53 @@
-# Unit tests for speer
+enable_testing()
+
+set(CRYPTO_TEST_SOURCES
+    test_crypto.c
+    test_sha.c
+    test_chacha20_poly1305.c
+    test_aes_gcm.c
+    test_aes.c
+    test_ed25519.c
+    test_x25519.c
+    test_hkdf.c
+    test_hmac.c
+    test_poly1305.c
+)
+
+add_executable(crypto_tests ${CRYPTO_TEST_SOURCES})
+
+set(SPEER_TEST_INCLUDE_DIRS
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/crypto
+    ${CMAKE_SOURCE_DIR}/src/discovery
+    ${CMAKE_SOURCE_DIR}/src/infra
+    ${CMAKE_SOURCE_DIR}/src/libp2p
+    ${CMAKE_SOURCE_DIR}/src/quic
+    ${CMAKE_SOURCE_DIR}/src/relay
+    ${CMAKE_SOURCE_DIR}/src/tls
+    ${CMAKE_SOURCE_DIR}/src/transport
+    ${CMAKE_SOURCE_DIR}/src/util
+    ${CMAKE_SOURCE_DIR}/src/wire
+)
+
+if(WIN32)
+    set(SPEER_TEST_PLATFORM_LIBS ws2_32 iphlpapi advapi32)
+else()
+    set(SPEER_TEST_PLATFORM_LIBS m)
+endif()
+
+function(add_speer_test target)
+    add_executable(${target} ${ARGN})
+    target_include_directories(${target} PRIVATE ${SPEER_TEST_INCLUDE_DIRS})
+    target_link_libraries(${target} PRIVATE speer ${SPEER_TEST_PLATFORM_LIBS})
+    add_test(NAME ${target} COMMAND ${target})
+    set_tests_properties(${target} PROPERTIES TIMEOUT 60)
+endfunction()
+
+target_include_directories(crypto_tests PRIVATE ${SPEER_TEST_INCLUDE_DIRS})
+target_link_libraries(crypto_tests PRIVATE speer ${SPEER_TEST_PLATFORM_LIBS})
+add_test(NAME crypto_tests COMMAND crypto_tests)
+set_tests_properties(crypto_tests PROPERTIES TIMEOUT 60)
 
 set(SPEER_UNIT_TESTS
     varint_length_prefix_check
@@ -18,65 +67,44 @@ set(SPEER_UNIT_TESTS
     noise_check
     x25519_check
     quic_initial_check
+    quic_pkt_robustness_check
     dht_check
+    dht_check_negative
+    dht_iterative_check
+    dht_maintenance_check
+    dht_libp2p_check
+    dht_libp2p_stream_check
+    libp2p_facade_check
     mdns_check
+    integration_echo
     dcutr_check
     dcutr_relay_integration_check
     relay_client_check
     cpu_features_check
-    parser_robustness_check
-    rng_failure_check
     poly1305_kat_check
+    rng_failure_check
+    parser_robustness_check
     chacha_counter_check
     ecdsa_p256_check
-    quic_pkt_robustness_check
     identify_check
-    libp2p_facade_check
     libp2p_tcp_primitives_check
-    dht_check_negative
 )
 
 if(SPEER_ENABLE_WEBPKI)
-    list(APPEND SPEER_UNIT_TESTS webpki_check)
-    list(APPEND SPEER_UNIT_TESTS tls13_auth_check)
-endif()
-
-foreach(test_name ${SPEER_UNIT_TESTS})
-    set(test_src ${CMAKE_CURRENT_SOURCE_DIR}/${test_name}.c)
-    if(EXISTS ${test_src})
-        add_executable(${test_name} ${test_src})
-        target_link_libraries(${test_name} PRIVATE speer)
-        target_include_directories(${test_name} PRIVATE
-            ${CMAKE_SOURCE_DIR}/src
-            ${CMAKE_SOURCE_DIR}/src/util
-            ${CMAKE_SOURCE_DIR}/src/crypto
-            ${CMAKE_SOURCE_DIR}/src/wire
-            ${CMAKE_SOURCE_DIR}/src/infra
-            ${CMAKE_SOURCE_DIR}/src/libp2p
-            ${CMAKE_SOURCE_DIR}/src/transport
-            ${CMAKE_SOURCE_DIR}/src/tls
-            ${CMAKE_SOURCE_DIR}/src/quic
-            ${CMAKE_SOURCE_DIR}/src/relay
-            ${CMAKE_SOURCE_DIR}/src/discovery
-        )
-        add_test(NAME ${test_name} COMMAND ${test_name})
-    endif()
-endforeach()
-
-# Integration test
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration_echo.c)
-    add_executable(integration_echo integration_echo.c)
-    target_link_libraries(integration_echo PRIVATE speer)
-    target_include_directories(integration_echo PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/src/util
-        ${CMAKE_SOURCE_DIR}/src/crypto
-        ${CMAKE_SOURCE_DIR}/src/wire
-        ${CMAKE_SOURCE_DIR}/src/infra
+    list(APPEND SPEER_UNIT_TESTS
+        tls13_full_handshake_check
+        tls13_negotiation_check
+        tls13_negative_vectors_check
+        tls13_hrr_check
+        tls13_key_update_check
+        tls13_psk_ticket_check
+        tls13_record_handshake_check
+        tls13_openssl_smoke_check
+        tls13_auth_check
+        webpki_check
     )
 endif()
 
-# Fuzzing targets
-if(SPEER_BUILD_FUZZ)
-    add_subdirectory(fuzz)
-endif()
+foreach(test_name ${SPEER_UNIT_TESTS})
+    add_speer_test(${test_name} ${test_name}.c)
+endforeach()
