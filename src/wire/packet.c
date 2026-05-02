@@ -217,10 +217,8 @@ size_t speer_frame_encode_padding(uint8_t *out, size_t len) {
 }
 
 size_t speer_frame_encode_ping(uint8_t *out) {
-    frame_buf_t f;
-    frame_init(&f, out, 1);
-    frame_write_u8(&f, FRAME_PING);
-    return f.len;
+    out[0] = FRAME_PING;
+    return 1;
 }
 
 size_t speer_frame_encode_ack(uint8_t *out, uint64_t largest_acked, uint64_t ack_delay,

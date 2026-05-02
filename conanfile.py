@@ -5,7 +5,7 @@ from conan.tools.files import copy
 
 class SpeerConan(ConanFile):
     name = "speer"
-    version = "0.1.0"
+    version = "0.2.0"
     license = "MIT"
     author = "speer contributors"
     url = "https://github.com/speer/speer"

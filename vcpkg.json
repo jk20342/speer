@@ -1,6 +1,6 @@
 {
   "name": "speer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A tiny libp2p implementation in C",
   "homepage": "https://github.com/speer/speer",
   "license": "MIT",

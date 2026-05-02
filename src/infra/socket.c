@@ -23,16 +23,6 @@
 #endif
 
 #if defined(_WIN32)
-static int winsock_initialized = 0;
-
-static void init_winsock(void) {
-    if (!winsock_initialized) {
-        WSADATA wsaData;
-        WSAStartup(MAKEWORD(2, 2), &wsaData);
-        winsock_initialized = 1;
-    }
-}
-
 static int my_inet_pton(int af, const char *src, void *dst) {
     struct sockaddr_storage ss;
     char src_copy[256];
@@ -56,9 +46,7 @@ static int my_inet_pton(int af, const char *src, void *dst) {
 #endif
 
 int speer_socket_create(uint16_t port, const char *bind_addr) {
-#if defined(_WIN32)
-    init_winsock();
-#endif
+    SPEER_INIT_WINSOCK();
 
     int sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) return -1;

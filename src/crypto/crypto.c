@@ -11,28 +11,16 @@ void speer_chacha20_avx2_8blocks(const uint32_t state[16], const uint8_t *in, ui
 
 static const uint32_t chacha_const[4] = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
 
-static INLINE uint32_t load32(const uint8_t *p) {
-    return LOAD32_LE(p);
-}
-
-static INLINE void store32(uint8_t *p, uint32_t v) {
-    STORE32_LE(p, v);
-}
-
-static INLINE uint32_t rotl32(uint32_t x, int n) {
-    return ROTL32(x, n);
-}
-
 #define QR(a, b, c, d)         \
     do {                       \
         a += b;                \
-        d = rotl32(d ^ a, 16); \
+        d = ROTL32(d ^ a, 16); \
         c += d;                \
-        b = rotl32(b ^ c, 12); \
+        b = ROTL32(b ^ c, 12); \
         a += b;                \
-        d = rotl32(d ^ a, 8);  \
+        d = ROTL32(d ^ a, 8);  \
         c += d;                \
-        b = rotl32(b ^ c, 7);  \
+        b = ROTL32(b ^ c, 7);  \
     } while (0)
 
 #define ROUNDS 20
@@ -42,18 +30,18 @@ void speer_chacha_init(speer_chacha_ctx_t *ctx, const uint8_t key[32], const uin
     ctx->state[1] = chacha_const[1];
     ctx->state[2] = chacha_const[2];
     ctx->state[3] = chacha_const[3];
-    ctx->state[4] = load32(key + 0);
-    ctx->state[5] = load32(key + 4);
-    ctx->state[6] = load32(key + 8);
-    ctx->state[7] = load32(key + 12);
-    ctx->state[8] = load32(key + 16);
-    ctx->state[9] = load32(key + 20);
-    ctx->state[10] = load32(key + 24);
-    ctx->state[11] = load32(key + 28);
+    ctx->state[4] = LOAD32_LE(key + 0);
+    ctx->state[5] = LOAD32_LE(key + 4);
+    ctx->state[6] = LOAD32_LE(key + 8);
+    ctx->state[7] = LOAD32_LE(key + 12);
+    ctx->state[8] = LOAD32_LE(key + 16);
+    ctx->state[9] = LOAD32_LE(key + 20);
+    ctx->state[10] = LOAD32_LE(key + 24);
+    ctx->state[11] = LOAD32_LE(key + 28);
     ctx->state[12] = 0;
-    ctx->state[13] = load32(nonce + 0);
-    ctx->state[14] = load32(nonce + 4);
-    ctx->state[15] = load32(nonce + 8);
+    ctx->state[13] = LOAD32_LE(nonce + 0);
+    ctx->state[14] = LOAD32_LE(nonce + 4);
+    ctx->state[15] = LOAD32_LE(nonce + 8);
     ctx->idx = 64;
 }
 
@@ -76,7 +64,7 @@ void speer_chacha_block(speer_chacha_ctx_t *ctx, uint8_t out[64]) {
 
     for (int i = 0; i < 16; i++) x[i] += s[i];
 
-    for (int i = 0; i < 16; i++) store32(out + 4 * i, x[i]);
+    for (int i = 0; i < 16; i++) STORE32_LE(out + 4 * i, x[i]);
 
     s[12]++;
 }
@@ -86,15 +74,7 @@ int speer_chacha_block_counter_at_max(const speer_chacha_ctx_t *ctx) {
 }
 
 #if defined(SPEER_HAS_CHACHA_AVX2)
-static int g_chacha_avx2_init = 0;
-static int g_chacha_avx2 = 0;
-static int chacha_use_avx2(void) {
-    if (!g_chacha_avx2_init) {
-        g_chacha_avx2 = speer_cpu_has_avx2();
-        g_chacha_avx2_init = 1;
-    }
-    return g_chacha_avx2;
-}
+SPEER_CACHED_DETECT(chacha_use_avx2, speer_cpu_has_avx2())
 #endif
 
 void speer_chacha_crypt(speer_chacha_ctx_t *ctx, uint8_t *out, const uint8_t *in, size_t len) {
@@ -140,10 +120,10 @@ static void poly1305_blocks(uint32_t h[5], uint32_t r[5], const uint8_t *m, size
     uint32_t h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3], h4 = h[4];
 
     while (len >= 16) {
-        uint64_t t0 = load32(m + 0);
-        uint64_t t1 = load32(m + 4);
-        uint64_t t2 = load32(m + 8);
-        uint64_t t3 = load32(m + 12);
+        uint64_t t0 = LOAD32_LE(m + 0);
+        uint64_t t1 = LOAD32_LE(m + 4);
+        uint64_t t2 = LOAD32_LE(m + 8);
+        uint64_t t3 = LOAD32_LE(m + 12);
 
         h0 += (t0) & 0x3ffffff;
         h1 += ((((t1) << 32) | (t0)) >> 26) & 0x3ffffff;
@@ -196,11 +176,11 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
     uint32_t r[5], h[5] = {0};
     uint8_t s[16];
 
-    r[0] = (load32(key + 0) >> 0) & 0x3ffffff;
-    r[1] = (load32(key + 3) >> 2) & 0x3ffff03;
-    r[2] = (load32(key + 6) >> 4) & 0x3ffc0ff;
-    r[3] = (load32(key + 9) >> 6) & 0x3f03fff;
-    r[4] = (load32(key + 12) >> 8) & 0x00fffff;
+    r[0] = (LOAD32_LE(key + 0) >> 0) & 0x3ffffff;
+    r[1] = (LOAD32_LE(key + 3) >> 2) & 0x3ffff03;
+    r[2] = (LOAD32_LE(key + 6) >> 4) & 0x3ffc0ff;
+    r[3] = (LOAD32_LE(key + 9) >> 6) & 0x3f03fff;
+    r[4] = (LOAD32_LE(key + 12) >> 8) & 0x00fffff;
 
     COPY(s, key + 16, 16);
 
@@ -281,10 +261,10 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
     f = (uint64_t)h3 + load32(s + 12) + (f >> 32);
     h3 = (uint32_t)f;
 
-    store32(mac + 0, h0);
-    store32(mac + 4, h1);
-    store32(mac + 8, h2);
-    store32(mac + 12, h3);
+    STORE32_LE(mac + 0, h0);
+    STORE32_LE(mac + 4, h1);
+    STORE32_LE(mac + 8, h2);
+    STORE32_LE(mac + 12, h3);
 }
 
 static const fe25519 fe_121665 = {121665ULL, 0, 0, 0, 0};

@@ -17,7 +17,7 @@ int main(void) {
     id.pubkey_proto_len = 3;
     snprintf(id.protocols[0], sizeof(id.protocols[0]), "%s", SPEER_LIBP2P_KAD_PROTOCOL_STR);
     id.num_protocols = 1;
-    snprintf(id.agent_version, sizeof(id.agent_version), "%s", "speer/0.1");
+    snprintf(id.agent_version, sizeof(id.agent_version), "%s", "speer/0.2");
     snprintf(id.protocol_version, sizeof(id.protocol_version), "%s", "ipfs/0.1.0");
 
     uint8_t encoded[512];

@@ -6,7 +6,7 @@
 #include <string.h>
 
 #define PROGRAM_NAME "speer-keygen"
-#define VERSION      "0.1.0"
+#define VERSION      "0.2.0"
 
 typedef enum {
     FORMAT_HEX,

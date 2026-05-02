@@ -6,16 +6,7 @@
 
 #include "transport_iface.h"
 
-#if defined(_WIN32)
-static int winsock_init_done_tcp = 0;
-static void winsock_init_tcp(void) {
-    if (!winsock_init_done_tcp) {
-        WSADATA d;
-        WSAStartup(MAKEWORD(2, 2), &d);
-        winsock_init_done_tcp = 1;
-    }
-}
-#else
+#if !defined(_WIN32)
 #include <sys/types.h>
 #endif
 
@@ -61,9 +52,7 @@ static int sock_v4_addr(struct sockaddr_in *sin, const char *host, uint16_t port
 }
 
 int speer_tcp_listen(int *out_listen_fd, const char *host, uint16_t port) {
-#if defined(_WIN32)
-    winsock_init_tcp();
-#endif
+    SPEER_INIT_WINSOCK();
     int fd = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd < 0) return -1;
     int reuse = 1;
@@ -87,9 +76,7 @@ int speer_tcp_listen(int *out_listen_fd, const char *host, uint16_t port) {
 }
 
 int speer_tcp_dial(int *out_fd, const char *host, uint16_t port) {
-#if defined(_WIN32)
-    winsock_init_tcp();
-#endif
+    SPEER_INIT_WINSOCK();
     int fd = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd < 0) return -1;
     struct sockaddr_in sin;
@@ -223,9 +210,7 @@ int speer_tcp_set_io_timeout(int fd, int timeout_ms) {
 
 int speer_tcp_dial_timeout(int *out_fd, const char *host, uint16_t port, int connect_ms) {
     if (connect_ms <= 0) return speer_tcp_dial(out_fd, host, port);
-#if defined(_WIN32)
-    winsock_init_tcp();
-#endif
+    SPEER_INIT_WINSOCK();
     int fd = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd < 0) return -1;
     struct sockaddr_in sin;

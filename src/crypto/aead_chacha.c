@@ -14,8 +14,8 @@ static int chacha20_poly1305_seal(const uint8_t *key, const uint8_t *nonce, cons
 
     speer_chacha_crypt(&ctx, out_ct, pt, pt_len);
 
-    size_t aad_pad = (16 - (aad_len & 15)) & 15;
-    size_t ct_pad = (16 - (pt_len & 15)) & 15;
+    size_t aad_pad = PAD16(aad_len);
+    size_t ct_pad = PAD16(pt_len);
     size_t mac_len = aad_len + aad_pad + pt_len + ct_pad + 16;
     uint8_t *mac_in = (uint8_t *)malloc(mac_len);
     if (!mac_in) return -1;
@@ -57,8 +57,8 @@ static int chacha20_poly1305_open(const uint8_t *key, const uint8_t *nonce, cons
     uint8_t poly_key[64];
     speer_chacha_block(&ctx, poly_key);
 
-    size_t aad_pad = (16 - (aad_len & 15)) & 15;
-    size_t ct_pad = (16 - (ct_len & 15)) & 15;
+    size_t aad_pad = PAD16(aad_len);
+    size_t ct_pad = PAD16(ct_len);
     size_t mac_len = aad_len + aad_pad + ct_len + ct_pad + 16;
     uint8_t *mac_in = (uint8_t *)malloc(mac_len);
     if (!mac_in) return -1;

@@ -44,16 +44,6 @@ static int mdns_strcasecmp(const char *a, const char *b) {
     return (int)(unsigned char)*a - (int)(unsigned char)*b;
 }
 
-#if defined(_WIN32)
-static void mdns_ensure_wsa(void) {
-    static int done;
-    if (!done) {
-        WSADATA wsa;
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) == 0) done = 1;
-    }
-}
-#endif
-
 typedef struct {
     uint16_t id;
     uint16_t flags;
@@ -157,9 +147,7 @@ static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, cha
 }
 
 int mdns_init(mdns_ctx_t *ctx) {
-#if defined(_WIN32)
-    mdns_ensure_wsa();
-#endif
+    SPEER_INIT_WINSOCK();
     memset(ctx, 0, sizeof(mdns_ctx_t));
     ctx->socket_ipv4 = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (ctx->socket_ipv4 < 0) return -1;

@@ -43,9 +43,7 @@ speer_peer_t *speer_peer_create(speer_host_t *host, const uint8_t pubkey[SPEER_P
     peer->next_stream_id = 0;
     peer->max_streams = host->config.max_streams;
 
-    peer->next = host->peers;
-    if (host->peers) host->peers->prev = peer;
-    host->peers = peer;
+    DLIST_INSERT_HEAD(host->peers, peer, next, prev);
     host->peer_count++;
 
     return peer;
@@ -66,11 +64,8 @@ void speer_peer_destroy(speer_peer_t *peer) {
     WIPE(&peer->send_cipher, sizeof(peer->send_cipher));
     WIPE(&peer->recv_cipher, sizeof(peer->recv_cipher));
 
-    if (peer->prev) peer->prev->next = peer->next;
-    if (peer->next) peer->next->prev = peer->prev;
-    if (peer->host->peers == peer) peer->host->peers = peer->next;
-
     peer->host->peer_count--;
+    DLIST_REMOVE(peer->host->peers, peer, next, prev);
     free(peer);
 }
 
@@ -102,18 +97,13 @@ speer_stream_internal_t *speer_stream_create(speer_peer_t *peer, uint32_t stream
     s->id = stream_id;
     s->state = 1;
 
-    s->next = peer->streams;
-    if (peer->streams) peer->streams->prev = s;
-    peer->streams = s;
-
+    DLIST_INSERT_HEAD(peer->streams, s, next, prev);
     return s;
 }
 
 void speer_stream_destroy(speer_peer_t *peer, speer_stream_internal_t *stream) {
     if (!stream) return;
-    if (stream->prev) stream->prev->next = stream->next;
-    if (stream->next) stream->next->prev = stream->prev;
-    if (peer->streams == stream) peer->streams = stream->next;
+    DLIST_REMOVE(peer->streams, stream, next, prev);
     if (stream->recv_buf) {
         WIPE(stream->recv_buf, stream->recv_buf_cap);
         free(stream->recv_buf);

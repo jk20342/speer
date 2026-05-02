@@ -35,15 +35,7 @@ static INLINE uint32_t rotr(uint32_t x, int n) {
 static void sha256_transform_scalar(sha256_ctx_t *ctx, const uint8_t *data);
 
 #if defined(SPEER_SHA_HAS_SHANI)
-static int g_sha256_use_shani_init = 0;
-static int g_sha256_use_shani = 0;
-static int sha256_use_shani(void) {
-    if (!g_sha256_use_shani_init) {
-        g_sha256_use_shani = speer_cpu_has_sha();
-        g_sha256_use_shani_init = 1;
-    }
-    return g_sha256_use_shani;
-}
+SPEER_CACHED_DETECT(sha256_use_shani, speer_cpu_has_sha())
 #endif
 
 static INLINE void sha256_transform(sha256_ctx_t *ctx, const uint8_t *data) {

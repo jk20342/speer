@@ -147,6 +147,64 @@ typedef int socklen_t;
         while (_n--) *_p++ = 0;                           \
     } while (0)
 
+#define DLIST_INSERT_HEAD(head, node, next_field, prev_field) \
+    do {                                                      \
+        (node)->next_field = (head);                          \
+        if (head) (head)->prev_field = (node);                \
+        (head) = (node);                                      \
+    } while (0)
+
+#define DLIST_REMOVE(head, node, next_field, prev_field)                             \
+    do {                                                                             \
+        if ((node)->prev_field) (node)->prev_field->next_field = (node)->next_field; \
+        if ((node)->next_field) (node)->next_field->prev_field = (node)->prev_field; \
+        if ((head) == (node)) (head) = (node)->next_field;                           \
+    } while (0)
+
+/* Cached feature detection */
+#define SPEER_CACHED_DETECT(name, detect_expr) \
+    static int g_##name##_init = 0;            \
+    static int g_##name = 0;                   \
+    static INLINE int name(void) {             \
+        if (!g_##name##_init) {                \
+            g_##name = (detect_expr);          \
+            g_##name##_init = 1;               \
+        }                                      \
+        return g_##name;                       \
+    }
+
+/* Alignment padding */
+#define PAD16(len) ((16 - ((len) & 15)) & 15)
+
+/* Winsock initialization */
+#if defined(_WIN32)
+#define SPEER_INIT_WINSOCK()                 \
+    do {                                     \
+        static int _done = 0;                \
+        if (!_done) {                        \
+            WSADATA _d;                      \
+            WSAStartup(MAKEWORD(2, 2), &_d); \
+            _done = 1;                       \
+        }                                    \
+    } while (0)
+#else
+#define SPEER_INIT_WINSOCK()
+#endif
+
+/* error checking helpers */
+#define CHECK(expr)                 \
+    do {                            \
+        if ((expr) != 0) return -1; \
+    } while (0)
+#define CHECK_NULL(ptr)                 \
+    do {                                \
+        if ((ptr) == NULL) return NULL; \
+    } while (0)
+#define CHECK_NEG(val)            \
+    do {                          \
+        if ((val) < 0) return -1; \
+    } while (0)
+
 typedef struct {
     uint8_t data[32];
 } ALIGN(32) speer_key_t;
