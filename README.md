@@ -5,8 +5,8 @@ a small libp2p-ish stack in c.
 it has noise xx, libp2p over tcp, yamux, mdns, dht bits, partial quic, and a
 tls 1.3 core. no external deps.
 
-source size: 17,791 lines across 111 `.c`/`.h` files in `src/` and `include/`
-(15,550 nonblank). tests, examples, rust, and build output are not counted.
+source size: 17,941 lines across 111 `.c`/`.h` files in `src/` and `include/`
+(15,682 nonblank). tests, examples, rust, and build output are not counted.
 
 more detail:
 
