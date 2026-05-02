@@ -5,7 +5,7 @@ speer is a small p2p stack in c. the project has two main surfaces:
 - the public `speer.h` host / peer / stream api
 - lower-level libp2p-ish pieces that examples and the rust ffi can use directly
 
-the library is intentionally small and mostly self-contained. crypto, wire
+the library is intentionally small self-contained. crypto, wire
 encoding, transports, discovery, relay helpers, and protocol experiments live in
 this repo instead of being glued together from big external dependencies.
 
