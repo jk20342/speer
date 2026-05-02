@@ -352,8 +352,10 @@ int speer_peer_set_address(speer_peer_t *peer, const char *address) {
     char host[256];
     char *port_str = NULL;
 
-    COPY(host, address, sizeof(host) - 1);
-    host[sizeof(host) - 1] = 0;
+    size_t address_len = strlen(address);
+    if (address_len >= sizeof(host)) address_len = sizeof(host) - 1;
+    COPY(host, address, address_len);
+    host[address_len] = 0;
 
     char *colon = strrchr(host, ':');
     if (colon) {
