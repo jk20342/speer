@@ -1,133 +1,119 @@
-# Security Policy
+# security
 
-## Supported Versions
+speer is still young, so treat it like experimental networking code. it has
+real crypto and a real threat model, but it has not had a third-party security
+audit.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+## supported versions
 
-## Reporting a Vulnerability
+`0.1.x` is the only supported line right now.
 
-Please report security vulnerabilities to the project maintainers via email or private issue. Do not disclose publicly until a fix is released.
+## reporting
 
-## Threat Model
+please report security issues privately to the maintainers first. do not post a
+public issue with exploit details until there is a fix or mitigation.
 
-### Assets Protected
+## what speer tries to protect
 
-1. **Private Keys**: Ed25519 signing keys and Noise ephemeral keys
-2. **Data Confidentiality**: Payload data in transit
-3. **Data Integrity**: Protection against tampering
-4. **Peer Identity**: Verification of remote peer identity
+- private identity keys, mainly ed25519/libp2p keys and noise static keys
+- payload confidentiality and integrity after the handshake
+- peer identity binding, so a session is tied to the expected key or peer id
+- protocol state, so malformed packets do not casually walk the state machines
 
-### Trust Assumptions
+## threat model
 
-- The local machine is not compromised
-- The peer's public key is correctly obtained out-of-band, **or** when
-  speer is acting as a Web PKI TLS client the application has supplied
-  a valid `speer_ca_bundle_t` with the trusted root certificates that
-  should be used to terminate the chain. Without a CA bundle the TLS
-  layer falls back to libp2p-only authentication: the leaf certificate
-  is authenticated by the embedded libp2p extension only, which
-  authenticates the peer's libp2p identity (PeerID) but not a DNS name.
-- Network attackers can read, modify, and replay packets
+assume the network is hostile. attackers can read packets, modify packets,
+replay packets, race discovery records, and open lots of connections.
 
-### Trust model for discovery and relay
+do not assume discovery is trust. mdns and dht records are hints. a peer still
+needs to complete noise xx or tls/libp2p authentication before the app should
+treat it as that peer.
 
-- **mDNS** records are treated as **untrusted hints**. A peer that
-  appears in mDNS must still complete a Noise XX or TLS 1.3 handshake
-  before the application should associate any data with that PeerID.
-- **DHT** STORE/PROVIDE records are likewise untrusted hints. The
-  STORE RPC is gated by an HMAC token that is bound to the requester's
-  source address (per Kademlia BEP 5). Values are rejected when length
-  is zero or above `DHT_VALUE_MAX_SIZE`.
-- **Circuit Relay** requires that the relay be authenticated through
-  Noise; reservations and `STOP` messages are bound to the
-  authenticated PeerID, and reservation-less `STOP` is rejected.
-- **DCUtR** punching candidates that are received over the relayed
-  control stream are restricted to the same /24 (IPv4) or /48 (IPv6)
-  prefix as the authenticated session address, so a relay cannot
-  redirect the connection to a third-party host.
+do assume the local machine is trusted. speer does not try to defend against a
+compromised host process, debugger, swap inspection, or a malicious app using
+the library incorrectly.
 
-### Attackers
+## crypto used
 
-- Passive network observers
-- Active network attackers (MITM)
-- Malicious peers
-- Resource exhaustion attackers
+- ed25519 for identity signatures
+- x25519 for key agreement
+- chacha20-poly1305 for noise traffic
+- aes-gcm for quic/tls paths, with accelerated code where available
+- sha-256 / sha-384 / sha-512 and hkdf for hashing and key schedule work
+- rsa and ecdsa-p256 support for the optional web pki path
 
-## Security Features
+the project keeps these implementations in-tree and does not depend on openssl
+or libsodium for the core library.
 
-### Cryptographic Primitives
+## protocol security
 
-| Primitive | Usage | Standard |
-|-----------|-------|----------|
-| Ed25519 | Peer identity, signatures | RFC 8032 |
-| X25519 | ECDH key exchange | RFC 7748 |
-| ChaCha20-Poly1305 | AEAD encryption | RFC 8439 |
-| AES-256-GCM | AEAD encryption (QUIC) | NIST SP 800-38D |
-| SHA-256/512 | Hashing, KDF | FIPS 180-4 |
-| HKDF-SHA256 | Key derivation | RFC 5869 |
+- noise xx is used for the main authenticated key exchange.
+- libp2p noise carries the signed libp2p payload in `write_s` / `read_s`, so the
+  session binds to the peer id instead of only a raw static curve key.
+- packet numbers, stream state, and frame lengths are checked before data is
+  accepted.
+- `speer_ct_memeq` is used for constant-time tag and mac comparisons.
+- `speer_random_bytes_or_fail` is the fallible rng helper. connection ids,
+  tls/quic randomness, dht token secrets, and generated keys use the fail-closed
+  path where the code needs a hard failure.
 
-### Protocol Security
+## tls and web pki
 
-- **Noise XX**: Mutual authentication, forward secrecy, 1-RTT
-- **Identity Binding**: libp2p public key + signature payload is
-  encrypted in Noise XX messages 2/3 (`write_s` / `read_s`), so the
-  Noise transport binds to the libp2p PeerID rather than just the
-  static curve key.
-- **Perfect Forward Secrecy**: Ephemeral keys discarded after handshake
-- **Anti-replay**: Packet numbers prevent replay attacks. ChaCha20
-  block counters cannot wrap into the IETF nonce; QUIC keys reject
-  packet numbers outside the receive window.
-- **TLS 1.3**: Both the inner libp2p extension signature and the outer
-  X.509 self-signature on the leaf certificate are verified.
-  `CertificateVerify` and `Finished` are checked in constant time.
-- **Constant-time helpers**: `speer_ct_memeq` and curve-25519 branchless
-  scalar multiplication are used on secret data; field functions
-  marked "public-data-only" are only invoked on non-secret inputs
-  (signature verification).
-- **RNG hardening**: `speer_random_bytes_or_fail` returns an explicit
-  error and zeroes the buffer when the OS RNG fails. Every key
-  derivation, nonce, ephemeral, certificate, and Connection ID
-  generation path now fails closed on RNG error.
+tls 1.3 and web pki code exists, but web pki is optional in cmake:
 
-## Known Limitations
+```bash
+cmake -S . -B build -DSPEER_ENABLE_WEBPKI=ON
+```
 
-### Current Implementation
+when a ca bundle is supplied, the web pki path verifies the chain, critical
+extensions, key usage / extended key usage, and path length constraints. without
+a ca bundle, libp2p tls identity checks can authenticate the peer id, but that
+does not prove a dns name.
 
-- No certificate pinning for Web PKI mode
-- No built-in peer reputation system
-- No automatic key rotation
-- Memory protections rely on OS (no secure heap)
+certificate pinning is not built in.
 
-### Not Implemented
+## discovery, relay, and dcutr
 
-- Constant-time AES-GCM for side-channel resistance
-- Formal verification of crypto code
-- Hardware security module (HSM) integration
+- mdns records are untrusted hints.
+- dht store values are bounded by `DHT_VALUE_MAX_SIZE`, and store tokens are
+  hmac-bound to the sender address.
+- circuit relay state is tied to authenticated peer ids.
+- dcutr is partial. the current candidate trust check is ipv4-only and only
+  accepts candidates in the same `/24` as the authenticated session address.
 
-## Security Best Practices
+## resource limits
 
-### For Applications
+the public api has built-in caps like `SPEER_MAX_PACKET_SIZE`,
+`SPEER_MAX_PEERS`, and `SPEER_MAX_STREAMS`. the tcp helper layer also has
+connection and accept-rate limits.
 
-1. **Key Generation**: Use cryptographically secure random for seed values.
-   Always check the return code of the RNG; the helper that returns
-   an error is the canonical entry point:
-   ```c
-   uint8_t seed[32];
-   if (speer_random_bytes_or_fail(seed, 32) != 0) {
-       /* Refuse to derive any keys. */
-       return -1;
-   }
-   ```
+this is not full ddos protection. production apps should still add their own
+limits, logging, backoff, and firewall rules.
 
-2. **Key Storage**: Persist keys encrypted, never plaintext
-3. **Peer Verification**: Verify peer public keys out-of-band
-4. **Timeouts**: Set appropriate handshake and keepalive timeouts
+## current gaps
 
-### For Deployment
+- no formal verification
+- no third-party audit
+- no secure heap or locked memory
+- no automatic key rotation
+- no peer reputation / ban list beyond local rate limits
+- no certificate pinning
+- quic and relay/dcutr are not full production stacks yet
 
-1. Run with minimal privileges
-2. Enable ASLR and DEP/NX
-3. Use firewall rules to restrict ports
-4. Monitor for unusual connection patterns
+## app guidance
+
+use `speer_random_bytes_or_fail` for seeds and refuse to start if it fails:
+
+```c
+uint8_t seed[32];
+if (speer_random_bytes_or_fail(seed, sizeof(seed)) != 0) {
+    return -1;
+}
+```
+
+store long-term keys encrypted. verify peer ids or public keys through a channel
+your app trusts. run the host from one event-loop thread unless the specific
+component says otherwise.
+
+for deployments, run with minimal privileges, keep ports narrow, enable normal
+platform hardening like aslr/dep, and monitor connection spikes.

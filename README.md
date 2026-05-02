@@ -1,23 +1,36 @@
 # speer
 
-A tiny libp2p in C. Noise XX, libp2p over TCP, partial QUIC v1, TLS 1.3 core, optional Web PKI, practical DHT core. ~14k LOC of code, zero external dependencies.
+a small libp2p-ish stack in c.
 
-See [docs/architecture.md](docs/architecture.md) for the per-protocol status table and [docs/SECURITY.md](docs/SECURITY.md) for the trust model.
+it has noise xx, libp2p over tcp, yamux, mdns, dht bits, partial quic, and a
+tls 1.3 core. no external deps.
 
-## Build
+source size: 17,791 lines across 111 `.c`/`.h` files in `src/` and `include/`
+(15,550 nonblank). tests, examples, rust, and build output are not counted.
+
+more detail:
+
+- [architecture](docs/architecture.md)
+- [security](docs/SECURITY.md)
+
+## build
 
 ```bash
-make              # libspeer.a + libspeer.so
+make
 make examples
+make test
 ```
 
-On **Windows** with MinGW, `mingw32-make` (or GNU Make with `OS=Windows_NT`) builds `libspeer.a` and `speer.dll`; the Makefile links `-lws2_32 -liphlpapi -ladvapi32`. Unit tests: PowerShell `.\tests\run_tests.ps1` from this directory.
+windows with mingw:
 
-## Usage
+```powershell
+mingw32-make
+.\tests\run_tests.ps1
+```
 
-speer exposes the stack at every level. Pick the layer you need.
+## quick use
 
-### Layer 1: speer-native (Noise XX over UDP, framed packets)
+native speer host over udp:
 
 ```c
 #include "speer.h"
@@ -30,7 +43,7 @@ speer_stream_write(s, (uint8_t*)"hello", 5);
 while (running) speer_host_poll(host, 100);
 ```
 
-### Layer 2: libp2p over TCP (Noise XX + Yamux)
+libp2p tcp pieces are lower-level and can be used directly:
 
 ```c
 #include "transport_tcp.h"
@@ -49,78 +62,52 @@ speer_yamux_init(&mux, 1);
 speer_yamux_stream_t* stream = speer_yamux_open_stream(&mux);
 ```
 
-### Layer 3: QUIC v1 packet codec (no full connection / loss recovery yet)
-
-```c
-#include "quic_pkt.h"
-
-speer_quic_keys_t client_keys, server_keys;
-speer_quic_keys_init_initial(&client_keys, &server_keys,
-                             dcid, dcid_len, QUIC_VERSION_V1);
-
-speer_quic_pkt_t pkt = {
-    .is_long = 1, .pkt_type = QUIC_PT_INITIAL, .version = QUIC_VERSION_V1,
-    .pkt_num = 0, .pn_length = 1,
-    .payload = crypto_frame, .payload_len = crypto_frame_len,
-};
-speer_quic_pkt_encode_long(out, sizeof(out), &out_len, &pkt, &client_keys);
-```
-
-### Layer 4: TLS 1.3 + optional Web PKI
-
-CertificateVerify and Finished are verified. WebPKI chain validation requires a CA bundle; without one, trust falls back to the libp2p extension.
-
-```c
-#include "tls13_handshake.h"
-#include "x509_webpki.h"
-#include "ca_bundle.h"
-
-speer_tls13_t tls;
-speer_tls13_init_handshake(&tls, SPEER_TLS_ROLE_CLIENT,
-    cert_priv, cert_pub,
-    SPEER_LIBP2P_KEY_ED25519, libp2p_pub, 32, libp2p_priv, 32,
-    "h3", "example.com");
-
-speer_tls13_handshake_start(&tls);
-
-speer_x509_t leaf;
-speer_x509_parse(&leaf, peer_cert_der, peer_cert_der_len);
-speer_x509_verify_chain(speer_ca_bundle_default(),
-                          &leaf, intermediates, num_intermediates,
-                          "example.com", time(NULL));
-```
-
-## Examples
+## examples
 
 ```bash
-./examples/echo_server          # Layer 1
-./examples/chat <peer_pubkey>   # Layer 1
-./examples/libp2p_ping demo     # Layer 2
-./examples/libp2p_quic_ping     # Layer 3
+./examples/echo_server
+./examples/chat <peer_pubkey> <host:port>
+./examples/speer_chat
+./examples/libp2p_ping demo
+./examples/libp2p_quic_ping
 ```
 
-## Build flags
+`examples/speer_chat` is the bigger terminal chat demo. it uses mdns discovery,
+tcp, noise xx, yamux, protobuf chat frames, and basic file transfer.
 
-| Flag           | Default  | Adds                                              |
-|----------------|----------|---------------------------------------------------|
-| (none)         | on       | Layer 1 + 2: Noise + TCP + libp2p                 |
-| `SPEER_QUIC`   | on       | Layer 3: QUIC v1 packet codec + TLS 1.3 + libp2p TLS certs |
-| `SPEER_WEBPKI` | opt-in   | Layer 4: bignum, RSA, ECDSA, RFC 5280 chain verify |
-| `SPEER_RELAY`  | on       | Circuit Relay v2 + DCUtR                          |
+## install
 
-## Status
+cmake install exports both cmake and pkg-config metadata:
 
-| Protocol         | State   |
-|------------------|---------|
-| Noise XX         | full    |
-| Yamux            | full    |
-| mDNS             | full (records are untrusted hints) |
-| Kademlia DHT     | practical core (STORE tokens, iterative lookup, TTLs, bootstrap, libp2p kad protobuf + stream boundary) |
-| TLS 1.3          | core internally, record, and negative-vector tested (CV/Finished verified; KeyUpdate, HRR, mTLS, PSK/NST hooks; OpenSSL smoke skips when unavailable) |
-| QUIC v1          | partial (packet codec only; no full connection, loss recovery, migration) |
-| Circuit Relay v2 | partial (auth on RESERVE/STOP) |
-| DCUtR            | partial (per-peer state, anti-spoofed candidates) |
+```bash
+cmake -S . -B build -DSPEER_BUILD_TESTS=OFF
+cmake --build build
+cmake --install build
+```
 
-## License
+then consumers can use either `find_package(speer)` or `pkg-config speer`.
+
+## rust
+
+split repos:
+
+- [`speer-sys-rust`](https://github.com/jk20342/speer-sys-rust) - raw ffi
+- [`speer-rust`](https://github.com/jk20342/speer-rust) - safe rust wrapper
+- [`speer-rust-chat`](https://github.com/jk20342/speer-rust-chat) - terminal chat app
+
+the rust crates are developed in this workspace right now, then pushed to those
+repos when they are ready.
+
+## status
+
+- noise xx: full
+- yamux: full
+- mdns: full, but treat records as hints
+- dht: practical core
+- tls 1.3: core pieces
+- quic v1: packet codec, not a full connection stack yet
+- relay / dcutr: partial
+
+## license
 
 MIT
