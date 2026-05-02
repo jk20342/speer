@@ -123,10 +123,10 @@ typedef int socklen_t;
         (p)[3] = (uint8_t)(v);         \
     } while (0)
 
-#define STORE16_BE(p, v)              \
-    do {                              \
-        (p)[0] = (uint8_t)((v) >> 8); \
-        (p)[1] = (uint8_t)(v);        \
+#define STORE16_BE(p, v)                       \
+    do {                                       \
+        (p)[0] = (uint8_t)(((v) >> 8) & 0xFF); \
+        (p)[1] = (uint8_t)((v) & 0xFF);        \
     } while (0)
 
 #define LOAD16_BE(p)        (((uint16_t)((p)[0]) << 8) | ((uint16_t)((p)[1])))
