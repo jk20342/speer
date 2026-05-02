@@ -184,3 +184,15 @@ the rust side is split into three repos:
 `speer-sys-rust` maps to the c headers directly. `speer-rust` is the safe crate
 most rust apps should use. `speer-rust-chat` is a standalone app using the
 lower-level tcp/mdns/noise/yamux/protobuf surface.
+
+## libp2p ffi facade
+
+the exported libp2p facade keeps rust bindings on stable `speer_*` names instead
+of exposing every internal dht or relay struct. current facade coverage is
+identify encode/decode and kad message helpers, plus a `/ipfs/kad/1.0.0`
+roundtrip over an already authenticated tcp/noise/yamux session. kad ping has
+been checked against public libp2p bootstrap nodes; broader bootstrap discovery
+is still experimental.
+
+relay and dcutr remain separate experimental surfaces until the relay client is
+running over normal libp2p streams and has interop tests.

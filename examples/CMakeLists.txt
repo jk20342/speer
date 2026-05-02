@@ -10,7 +10,7 @@ set(SPEER_EXAMPLES
 )
 
 if(SPEER_ENABLE_DHT)
-    list(APPEND SPEER_EXAMPLES dht_example)
+    list(APPEND SPEER_EXAMPLES dht_example libp2p_kad_bootstrap)
 endif()
 
 if(SPEER_ENABLE_RELAY)
