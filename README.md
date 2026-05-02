@@ -89,14 +89,11 @@ then consumers can use either `find_package(speer)` or `pkg-config speer`.
 
 ## rust
 
-split repos:
+rust repos:
 
 - [`speer-sys-rust`](https://github.com/jk20342/speer-sys-rust) - raw ffi
 - [`speer-rust`](https://github.com/jk20342/speer-rust) - safe rust wrapper
 - [`speer-rust-chat`](https://github.com/jk20342/speer-rust-chat) - terminal chat app
-
-the rust crates are developed in this workspace right now, then pushed to those
-repos when they are ready.
 
 ## status
 

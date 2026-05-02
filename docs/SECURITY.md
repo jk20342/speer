@@ -6,7 +6,7 @@ audit.
 
 ## supported versions
 
-`0.1.x` is the only supported line right now.
+`0.1.x` is the supported line.
 
 ## reporting
 
