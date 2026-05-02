@@ -8,44 +8,7 @@
 #include "circuit_relay.h"
 #include "dcutr.h"
 
-#if defined(_WIN32)
-#include <winsock2.h>
-
-#include <ws2tcpip.h>
-typedef int socklen_t;
-#define CLOSESOCKET closesocket
-#else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#define CLOSESOCKET close
-#endif
-
 extern uint64_t speer_timestamp_ms(void);
-
-static uint16_t read_be16(const uint8_t *p) {
-    return ((uint16_t)p[0] << 8) | p[1];
-}
-
-static void write_be16(uint8_t *p, uint16_t v) {
-    p[0] = (v >> 8) & 0xFF;
-    p[1] = v & 0xFF;
-}
-
-static uint32_t read_be32(const uint8_t *p) {
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
-}
-
-static void write_be32(uint8_t *p, uint32_t v) {
-    p[0] = (uint8_t)((v >> 24) & 0xFF);
-    p[1] = (uint8_t)((v >> 16) & 0xFF);
-    p[2] = (uint8_t)((v >> 8) & 0xFF);
-    p[3] = (uint8_t)(v & 0xFF);
-}
 
 static int relay_frame_encode(uint8_t *out, size_t out_cap, relay_frame_type_t type,
                               uint32_t circuit_id, const uint8_t *payload, size_t payload_len) {
@@ -53,8 +16,8 @@ static int relay_frame_encode(uint8_t *out, size_t out_cap, relay_frame_type_t t
     if (payload_len > RELAY_MAX_FRAME_SIZE) return -1;
     out[0] = (uint8_t)type;
     out[1] = 0;
-    write_be16(out + 2, (uint16_t)payload_len);
-    write_be32(out + 4, circuit_id);
+    STORE16_BE(out + 2, (uint16_t)payload_len);
+    STORE32_BE(out + 4, circuit_id);
     if (payload_len > 0 && payload) { COPY(out + RELAY_FRAME_HEADER_SIZE, payload, payload_len); }
     return RELAY_FRAME_HEADER_SIZE + (int)payload_len;
 }
@@ -382,11 +345,11 @@ static void process_frame(relay_client_t *client, relay_frame_type_t type, uint3
 
 static void consume_recv_buf(relay_client_t *client) {
     while (client->recv_len >= RELAY_FRAME_HEADER_SIZE) {
-        size_t payload_len = read_be16(client->recv_buf + 2);
+        size_t payload_len = LOAD16_BE(client->recv_buf + 2);
         size_t frame_total = RELAY_FRAME_HEADER_SIZE + payload_len;
         if (client->recv_len < frame_total) break;
         relay_frame_type_t type = (relay_frame_type_t)client->recv_buf[0];
-        uint32_t circuit_id = read_be32(client->recv_buf + 4);
+        uint32_t circuit_id = LOAD32_BE(client->recv_buf + 4);
         process_frame(client, type, circuit_id, client->recv_buf + RELAY_FRAME_HEADER_SIZE,
                       payload_len);
         if (client->recv_len > frame_total) {

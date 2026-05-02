@@ -12,25 +12,11 @@
 #include <string.h>
 
 #if defined(_WIN32)
-#include <winsock2.h>
-#include <windows.h>
-
 #include <iphlpapi.h>
 #include <winerror.h>
-#include <ws2tcpip.h>
-typedef int socklen_t;
-#define CLOSESOCKET closesocket
 #else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
-#include <errno.h>
-#include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
-#include <unistd.h>
-#define CLOSESOCKET close
 #endif
 
 static int mdns_strcasecmp(const char *a, const char *b) {
@@ -59,26 +45,6 @@ typedef struct {
 #define DNS_FLAG_AA           0x0400
 #define DNS_CLASS_IN          1
 #define DNS_CLASS_FLUSH_CACHE 0x8001
-
-static uint16_t read_u16(const uint8_t *p) {
-    return ((uint16_t)p[0] << 8) | p[1];
-}
-
-static uint32_t read_u32(const uint8_t *p) {
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
-}
-
-static void write_u16(uint8_t *p, uint16_t v) {
-    p[0] = (v >> 8) & 0xFF;
-    p[1] = v & 0xFF;
-}
-
-static void write_u32(uint8_t *p, uint32_t v) {
-    p[0] = (v >> 24) & 0xFF;
-    p[1] = (v >> 16) & 0xFF;
-    p[2] = (v >> 8) & 0xFF;
-    p[3] = v & 0xFF;
-}
 
 static int append_name(uint8_t *out, size_t *pos, size_t max, const char *name) {
     size_t start = *pos;
@@ -242,12 +208,12 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     size_t max = *out_len;
     if (pos + 12 > max) return -1;
     memset(out + pos, 0, 12);
-    write_u16(out + 2, DNS_FLAG_RESPONSE | DNS_FLAG_AA);
-    write_u16(out + 4, 0);
-    write_u16(out + 6, 1);
-    write_u16(out + 8, 0);
+    STORE16_BE(out + 2, DNS_FLAG_RESPONSE | DNS_FLAG_AA);
+    STORE16_BE(out + 4, 0);
+    STORE16_BE(out + 6, 1);
+    STORE16_BE(out + 8, 0);
     uint16_t txt_count = svc->txt.num_fields ? (uint16_t)svc->txt.num_fields : (uint16_t)1;
-    write_u16(out + 10, txt_count);
+    STORE16_BE(out + 10, txt_count);
     pos += 12;
 
     char service_name[MDNS_MAX_NAME_LENGTH * 2 + 2];
@@ -262,18 +228,18 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
 
     if (append_name(out, &pos, max, service_name) != 0) return -1;
     if (pos + 10 > max) return -1;
-    write_u16(out + pos, MDNS_TYPE_PTR);
+    STORE16_BE(out + pos, MDNS_TYPE_PTR);
     pos += 2;
-    write_u16(out + pos, DNS_CLASS_IN);
+    STORE16_BE(out + pos, DNS_CLASS_IN);
     pos += 2;
-    write_u32(out + pos, svc->ttl);
+    STORE32_BE(out + pos, svc->ttl);
     pos += 4;
     size_t ptr_rdlen_pos = pos;
     pos += 2;
     size_t ptr_rdata_start = pos;
     size_t peer_name_offset = pos;
     if (append_name(out, &pos, max, svc->instance_name) != 0) return -1;
-    write_u16(out + ptr_rdlen_pos, (uint16_t)(pos - ptr_rdata_start));
+    STORE16_BE(out + ptr_rdlen_pos, (uint16_t)(pos - ptr_rdata_start));
 
     for (uint32_t i = 0; i < txt_count; i++) {
         if (peer_name_offset <= 0x3FFF) {
@@ -284,11 +250,11 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
             if (append_name(out, &pos, max, svc->instance_name) != 0) return -1;
         }
         if (pos + 10 > max) return -1;
-        write_u16(out + pos, MDNS_TYPE_TXT);
+        STORE16_BE(out + pos, MDNS_TYPE_TXT);
         pos += 2;
-        write_u16(out + pos, DNS_CLASS_FLUSH_CACHE);
+        STORE16_BE(out + pos, DNS_CLASS_FLUSH_CACHE);
         pos += 2;
-        write_u32(out + pos, svc->ttl);
+        STORE32_BE(out + pos, svc->ttl);
         pos += 4;
         size_t txt_rdlen_pos = pos;
         pos += 2;
@@ -312,7 +278,7 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
             memcpy(out + pos, txt_field, (size_t)len);
             pos += (size_t)len;
         }
-        write_u16(out + txt_rdlen_pos, (uint16_t)(pos - txt_rdata_start));
+        STORE16_BE(out + txt_rdlen_pos, (uint16_t)(pos - txt_rdata_start));
     }
 
     *out_len = pos;
@@ -377,13 +343,13 @@ int mdns_query(mdns_ctx_t *ctx, const char *service_name) {
     size_t pos = 0;
     if (pos + 12 > sizeof(pkt)) return -1;
     memset(pkt, 0, 12);
-    write_u16(pkt + 4, 1);
+    STORE16_BE(pkt + 4, 1);
     pos += 12;
     if (append_name(pkt, &pos, sizeof(pkt), service_name) != 0) return -1;
     if (pos + 4 > sizeof(pkt)) return -1;
-    write_u16(pkt + pos, MDNS_TYPE_PTR);
+    STORE16_BE(pkt + pos, MDNS_TYPE_PTR);
     pos += 2;
-    write_u16(pkt + pos, DNS_CLASS_IN);
+    STORE16_BE(pkt + pos, DNS_CLASS_IN);
     pos += 2;
     uint32_t ifaces[16];
     int n_ifaces = mdns_enum_local_ipv4(ifaces, (int)(sizeof(ifaces) / sizeof(ifaces[0])));
@@ -438,7 +404,7 @@ int mdns_announce(mdns_ctx_t *ctx) {
 static void mdns_handle_query(mdns_ctx_t *ctx, const uint8_t *data, size_t len,
                               const struct sockaddr_in *from) {
     if (len < 12) return;
-    uint16_t qcount = read_u16(data + 4);
+    uint16_t qcount = LOAD16_BE(data + 4);
     size_t pos = 12;
     int matched_any = 0;
     for (uint16_t i = 0; i < qcount && pos < len; i++) {
@@ -446,7 +412,7 @@ static void mdns_handle_query(mdns_ctx_t *ctx, const uint8_t *data, size_t len,
         size_t name_end = decode_name(data, len, pos, qname, sizeof(qname), 0);
         if (name_end == 0) return;
         if (name_end + 4 > len) return;
-        uint16_t qtype = read_u16(data + name_end);
+        uint16_t qtype = LOAD16_BE(data + name_end);
         pos = name_end + 4;
         for (uint32_t s = 0; s < ctx->num_services && !matched_any; s++) {
             const mdns_service_t *svc = &ctx->services[s];
@@ -502,8 +468,8 @@ int mdns_poll(mdns_ctx_t *ctx, int timeout_ms) {
             break;
         }
         if (n < 12) continue;
-        uint16_t flags = read_u16(ctx->recv_buffer + 2);
-        uint16_t qcount = read_u16(ctx->recv_buffer + 4);
+        uint16_t flags = LOAD16_BE(ctx->recv_buffer + 2);
+        uint16_t qcount = LOAD16_BE(ctx->recv_buffer + 4);
         if ((flags & 0x8000) == 0 && qcount > 0) {
             mdns_handle_query(ctx, ctx->recv_buffer, (size_t)n, &from);
         }
@@ -528,12 +494,12 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
     memset(out_multiaddr, 0, multiaddr_cap);
     if (len < 12) return -1;
     dns_header_t hdr;
-    hdr.id = read_u16(data);
-    hdr.flags = read_u16(data + 2);
-    hdr.questions = read_u16(data + 4);
-    hdr.answers = read_u16(data + 6);
-    hdr.authority = read_u16(data + 8);
-    hdr.additional = read_u16(data + 10);
+    hdr.id = LOAD16_BE(data);
+    hdr.flags = LOAD16_BE(data + 2);
+    hdr.questions = LOAD16_BE(data + 4);
+    hdr.answers = LOAD16_BE(data + 6);
+    hdr.authority = LOAD16_BE(data + 8);
+    hdr.additional = LOAD16_BE(data + 10);
     size_t pos = 12;
     for (uint16_t i = 0; i < hdr.questions && pos < len; i++) {
         char name[MDNS_MAX_NAME_LENGTH];
@@ -554,20 +520,20 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         if (name_len == 0 || name_len >= len) break;
         pos = name_len;
         if (pos + 10 > len) break;
-        uint16_t rtype = read_u16(data + pos);
+        uint16_t rtype = LOAD16_BE(data + pos);
         pos += 2;
-        uint16_t rclass = read_u16(data + pos);
+        uint16_t rclass = LOAD16_BE(data + pos);
         pos += 2;
         (void)rclass;
-        uint32_t ttl = read_u32(data + pos);
+        uint32_t ttl = LOAD32_BE(data + pos);
         pos += 4;
         (void)ttl;
-        uint16_t rdlen = read_u16(data + pos);
+        uint16_t rdlen = LOAD16_BE(data + pos);
         pos += 2;
         if (pos + rdlen > len) break;
         if (rtype == MDNS_TYPE_SRV) {
             if (rdlen >= 6) {
-                port = read_u16(data + pos + 4);
+                port = LOAD16_BE(data + pos + 4);
                 char *dot = strchr(name, '.');
                 if (dot) {
                     size_t svc_len = dot - name;
@@ -664,13 +630,13 @@ int mdns_build_probe(uint8_t *out, size_t *out_len, const char *service_name) {
     size_t max = *out_len;
     if (max < 12) return -1;
     memset(out, 0, 12);
-    write_u16(out + 4, 1);
+    STORE16_BE(out + 4, 1);
     pos = 12;
     if (append_name(out, &pos, max, service_name) != 0) return -1;
     if (pos + 4 > max) return -1;
-    write_u16(out + pos, MDNS_TYPE_ANY);
+    STORE16_BE(out + pos, MDNS_TYPE_ANY);
     pos += 2;
-    write_u16(out + pos, DNS_CLASS_IN);
+    STORE16_BE(out + pos, DNS_CLASS_IN);
     pos += 2;
     *out_len = pos;
     return 0;

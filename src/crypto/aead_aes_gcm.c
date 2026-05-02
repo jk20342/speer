@@ -5,6 +5,16 @@
 #include "ct_helpers.h"
 #include "ghash.h"
 
+static void aes_gcm_absorb_lengths(speer_ghash_state_t *gs, uint8_t y[16], size_t aad_len,
+                                   size_t ct_len) {
+    uint8_t lens[16];
+    uint64_t aad_bits = (uint64_t)aad_len * 8;
+    uint64_t ct_bits = (uint64_t)ct_len * 8;
+    for (int i = 0; i < 8; i++) lens[i] = (uint8_t)(aad_bits >> ((7 - i) * 8));
+    for (int i = 0; i < 8; i++) lens[8 + i] = (uint8_t)(ct_bits >> ((7 - i) * 8));
+    speer_ghash_absorb(gs, y, lens, 16);
+}
+
 static int aes_gcm_seal_n(size_t key_bits, const uint8_t *key, const uint8_t *nonce,
                           const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t pt_len,
                           uint8_t *out_ct, uint8_t *out_tag) {
@@ -35,12 +45,7 @@ static int aes_gcm_seal_n(size_t key_bits, const uint8_t *key, const uint8_t *no
     speer_ghash_absorb(&gs, y, aad, aad_len);
     speer_ghash_absorb(&gs, y, out_ct, pt_len);
 
-    uint8_t lens[16];
-    uint64_t aad_bits = (uint64_t)aad_len * 8;
-    uint64_t ct_bits = (uint64_t)pt_len * 8;
-    for (int i = 0; i < 8; i++) lens[i] = (uint8_t)(aad_bits >> ((7 - i) * 8));
-    for (int i = 0; i < 8; i++) lens[8 + i] = (uint8_t)(ct_bits >> ((7 - i) * 8));
-    speer_ghash_absorb(&gs, y, lens, 16);
+    aes_gcm_absorb_lengths(&gs, y, aad_len, pt_len);
 
     uint8_t s[16];
     speer_aes_encrypt(&k, j0, s);
@@ -74,12 +79,7 @@ static int aes_gcm_open_n(size_t key_bits, const uint8_t *key, const uint8_t *no
     speer_ghash_absorb(&gs, y, aad, aad_len);
     speer_ghash_absorb(&gs, y, ct, ct_len);
 
-    uint8_t lens[16];
-    uint64_t aad_bits = (uint64_t)aad_len * 8;
-    uint64_t ct_bits = (uint64_t)ct_len * 8;
-    for (int i = 0; i < 8; i++) lens[i] = (uint8_t)(aad_bits >> ((7 - i) * 8));
-    for (int i = 0; i < 8; i++) lens[8 + i] = (uint8_t)(ct_bits >> ((7 - i) * 8));
-    speer_ghash_absorb(&gs, y, lens, 16);
+    aes_gcm_absorb_lengths(&gs, y, aad_len, ct_len);
 
     uint8_t s[16];
     speer_aes_encrypt(&k, j0, s);
