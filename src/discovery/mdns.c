@@ -4,6 +4,8 @@
 
 #include "mdns.h"
 
+#include "speer_internal.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
