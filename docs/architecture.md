@@ -1,19 +1,13 @@
 # architecture
 
-speer is a small p2p stack in c (solo-maintained). one library, **two
-entrypoints**—pick based on who you talk to:
+speer is a small p2p stack in c. the project has two main surfaces:
 
-| if your peer is… | use | on the wire |
-| --- | --- | --- |
-| another speer `speer.h` host | `include/speer.h` | udp datagrams + `packet.c` framing (noise **xx** inside; **not** libp2p tcp/quic) |
-| kubo, py-libp2p, rust-libp2p, … on **tcp** | `include/speer_libp2p_tcp.h` | tcp → multistream `/noise` → noise xx (length-prefixed) → yamux → stream protos |
+- the public `speer.h` host / peer / stream api
+- lower-level libp2p-ish pieces that examples and the rust ffi can use directly
 
-the tcp session follows the same security/mux upgrade shape as those stacks
-(`examples/libp2p_tcp_full_session.c` has been run against a py-libp2p listener:
-noise, yamux, `/echo/1.0.0`).
-
-the public `speer.h` host / peer / stream api is the first row. the second row
-is the lower-level tcp session + helpers that examples and the rust ffi compose.
+the library is intentionally small self-contained. crypto, wire
+encoding, transports, discovery, relay helpers, and protocol experiments live in
+this repo instead of being glued together from big external dependencies.
 
 ## layout
 
@@ -79,14 +73,9 @@ on its own thread and communicate with message passing.
 
 ## native speer path
 
-the `speer.h` api drives the internal host / peer / stream code over **udp
-datagrams** (`SOCK_DGRAM`). `packet.c` wraps **noise xx** and transport data in
-custom initial / handshake / 1rtt packets (quic-ish) with cids and stream
-frames—it is **not** libp2p’s byte-stream transport (no multistream, no
-length-prefixed noise messages over tcp, and not interop with libp2p quic
-either). another kubo or py-libp2p peer will not parse these packets; interop
-with them needs `speer_libp2p_tcp_session_*` (or another stack). two speer
-native hosts agree on this packet format.
+the `speer.h` api uses the internal host / peer / stream implementation. it is a
+poll-based udp stack with noise-style handshaking, encrypted packets, connection
+ids, and stream frames.
 
 roughly:
 
@@ -104,23 +93,21 @@ exist for peers and streams.
 
 ## libp2p over tcp
 
-the tcp path is `include/speer_libp2p_tcp.h` plus `src/libp2p/`, `src/transport/`,
-`src/wire/`. it is the stack that **other libp2p implementations expect** on tcp:
-multistream, noise xx with libp2p handshake payloads, yamux, then per-stream
-multistream.
+the lower-level tcp path is exposed by `include/speer_libp2p_tcp.h` and the
+headers under `src/libp2p/`, `src/transport/`, and `src/wire/`.
 
 the chat demo and rust chat app use this path:
 
 ```text
 tcp dial/listen
-  -> multistream /noise + noise xx
-  -> multistream /yamux/1.0.0 + yamux
-  -> multistream on each stream for app protocol
+  -> libp2p noise xx
+  -> yamux session
+  -> multistream protocol selection
   -> app frames
 ```
 
-`speer_chat.c` uses mdns discovery, tcp, this path, protobuf chat frames, and
-file transfer over `/speer/chat/1.0.0`.
+`speer_chat.c` uses mdns discovery, tcp, libp2p noise, yamux, protobuf chat
+frames, and file transfer messages over `/speer/chat/1.0.0`.
 
 ## discovery
 
@@ -196,8 +183,7 @@ the rust side is split into three repos:
 
 `speer-sys-rust` maps to the c headers directly. `speer-rust` is the safe crate
 most rust apps should use. `speer-rust-chat` is a standalone app using the
-**libp2p tcp session** (not rust-libp2p crates): ffi into the same path as
-`speer_libp2p_tcp_session_*` in c.
+lower-level tcp/mdns/noise/yamux/protobuf surface.
 
 ## libp2p ffi facade
 
