@@ -212,9 +212,28 @@ int speer_dcutr_init(speer_peer_t *peer, int is_initiator) {
     return 0;
 }
 
+static void *g_dcutr_default_send_user_box = NULL;
+
 void speer_dcutr_set_transport(speer_dcutr_send_fn send_fn, void *user) {
     g_dcutr_default_send = send_fn;
-    g_dcutr_default_send_user = user;
+
+    if (g_dcutr_default_send_user_box) {
+        free(g_dcutr_default_send_user_box);
+        g_dcutr_default_send_user_box = NULL;
+    }
+
+    if (user) {
+        void **box = (void **)calloc(1, sizeof(*box));
+        if (!box) {
+            g_dcutr_default_send_user = NULL;
+            return;
+        }
+        *box = user;
+        g_dcutr_default_send_user_box = box;
+        g_dcutr_default_send_user = box;
+    } else {
+        g_dcutr_default_send_user = NULL;
+    }
 }
 
 static int send_stream(void *user, const uint8_t *data, size_t len) {
