@@ -8,8 +8,9 @@
 #include <string.h>
 
 #if !defined(_MSC_VER)
-#include <fcntl.h>
 #include <sys/stat.h>
+
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
