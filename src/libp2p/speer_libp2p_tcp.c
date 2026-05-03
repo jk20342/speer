@@ -116,8 +116,10 @@ static int verify_id_payload(speer_libp2p_noise_t *n, const uint8_t *p, size_t p
     speer_libp2p_keytype_t kt;
     const uint8_t *id = NULL, *sig = NULL;
     size_t idl = 0, sl = 0;
-    if (speer_libp2p_noise_payload_parse(p, pl, &kt, &id, &idl, &sig, &sl) != 0) return -1;
-    if (speer_libp2p_noise_verify_static(kt, id, idl, n->hs.remote_pubkey, sig, sl) != 0) return -1;
+    if (speer_libp2p_noise_payload_parse(p, pl, &kt, &id, &idl, &sig, &sl) != 0) { return -1; }
+    if (speer_libp2p_noise_verify_static(kt, id, idl, n->hs.remote_pubkey, sig, sl) != 0) {
+        return -1;
+    }
     if (idl > sizeof(n->remote_libp2p_pub)) return -1;
     memcpy(n->remote_libp2p_pub, id, idl);
     n->remote_libp2p_pub_len = idl;
@@ -139,26 +141,28 @@ static int derive_remote_pid_b58(const speer_libp2p_noise_t *n, char *out, size_
     return speer_peer_id_to_b58(out, cap, pid, pidl);
 }
 
+#define SPEER_LIBP2P_NOISE_HS_BUF (16 * 1024)
+
 static int noise_handshake_initiator(int fd, speer_libp2p_noise_t *n) {
     uint8_t m1[32];
     if (speer_noise_xx_write_msg1(&n->hs, m1) != 0) return -1;
     if (noise_send_frame(fd, m1, sizeof(m1)) != 0) return -1;
 
-    uint8_t m2[2048];
+    uint8_t m2[SPEER_LIBP2P_NOISE_HS_BUF];
     size_t m2l = 0;
-    if (noise_recv_frame(fd, m2, sizeof(m2), &m2l) != 0) return -1;
-    uint8_t pl[2048];
+    if (noise_recv_frame(fd, m2, sizeof(m2), &m2l) != 0) { return -1; }
+    uint8_t pl[SPEER_LIBP2P_NOISE_HS_BUF];
     size_t pll = 0;
-    if (speer_noise_xx_read_msg2_p(&n->hs, m2, m2l, pl, sizeof(pl), &pll) != 0) return -1;
+    if (speer_noise_xx_read_msg2_p(&n->hs, m2, m2l, pl, sizeof(pl), &pll) != 0) { return -1; }
     if (verify_id_payload(n, pl, pll) != 0) return -1;
 
     uint8_t ip[1024];
     size_t ipl = 0;
     if (build_id_payload(n, ip, sizeof(ip), &ipl) != 0) return -1;
-    uint8_t m3[2048];
+    uint8_t m3[SPEER_LIBP2P_NOISE_HS_BUF];
     size_t m3l = 0;
-    if (speer_noise_xx_write_msg3_p(&n->hs, ip, ipl, m3, sizeof(m3), &m3l) != 0) return -1;
-    if (noise_send_frame(fd, m3, m3l) != 0) return -1;
+    if (speer_noise_xx_write_msg3_p(&n->hs, ip, ipl, m3, sizeof(m3), &m3l) != 0) { return -1; }
+    if (noise_send_frame(fd, m3, m3l) != 0) { return -1; }
 
     speer_noise_xx_split(&n->hs, n->send_key, n->recv_key);
     n->send_nonce = 0;
@@ -176,15 +180,15 @@ static int noise_handshake_listener(int fd, speer_libp2p_noise_t *n) {
     uint8_t ip[1024];
     size_t ipl = 0;
     if (build_id_payload(n, ip, sizeof(ip), &ipl) != 0) return -1;
-    uint8_t m2[2048];
+    uint8_t m2[SPEER_LIBP2P_NOISE_HS_BUF];
     size_t m2l = 0;
     if (speer_noise_xx_write_msg2_p(&n->hs, ip, ipl, m2, sizeof(m2), &m2l) != 0) return -1;
     if (noise_send_frame(fd, m2, m2l) != 0) return -1;
 
-    uint8_t m3[2048];
+    uint8_t m3[SPEER_LIBP2P_NOISE_HS_BUF];
     size_t m3l = 0;
     if (noise_recv_frame(fd, m3, sizeof(m3), &m3l) != 0) return -1;
-    uint8_t pl[2048];
+    uint8_t pl[SPEER_LIBP2P_NOISE_HS_BUF];
     size_t pll = 0;
     if (speer_noise_xx_read_msg3_p(&n->hs, m3, m3l, pl, sizeof(pl), &pll) != 0) return -1;
     if (verify_id_payload(n, pl, pll) != 0) return -1;
@@ -213,11 +217,13 @@ static int session_init_common(speer_libp2p_tcp_session_t *session, int fd, int 
 int speer_libp2p_tcp_session_init_dialer(speer_libp2p_tcp_session_t *session, int fd,
                                          const speer_libp2p_identity_t *identity) {
     if (session_init_common(session, fd, 1, identity) != 0) return -1;
-    if (speer_ms_negotiate_initiator(&session->fd, tcp_plain_send, tcp_plain_recv, "/noise") != 0)
+    if (speer_ms_negotiate_initiator(&session->fd, tcp_plain_send, tcp_plain_recv, "/noise") != 0) {
         return -1;
-    if (noise_handshake_initiator(session->fd, &session->noise) != 0) return -1;
-    if (speer_ms_negotiate_initiator(session, io_crypt_send, io_crypt_recv, "/yamux/1.0.0") != 0)
+    }
+    if (noise_handshake_initiator(session->fd, &session->noise) != 0) { return -1; }
+    if (speer_ms_negotiate_initiator(session, io_crypt_send, io_crypt_recv, "/yamux/1.0.0") != 0) {
         return -1;
+    }
     speer_yamux_init(&session->mux, 1, io_crypt_send, io_crypt_recv, session);
     if (derive_remote_pid_b58(&session->noise, session->remote_peer_id_b58,
                               sizeof(session->remote_peer_id_b58)) != 0)

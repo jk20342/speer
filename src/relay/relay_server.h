@@ -14,11 +14,7 @@
 #define RELAY_SERVER_MAX_CIRCUITS_PER_CONN 4
 #define RELAY_SERVER_RESERVATION_TTL_MS    7200000
 
-/* Per-circuit packet quota. The relay decrements this once per relayed
-   packet, then tears the circuit down when it reaches zero. This is a
-   resource-limit safeguard, not a path "hop count" -- the value is
-   intentionally generous. */
-#define RELAY_CIRCUIT_PACKET_QUOTA (1u << 20)
+#define RELAY_CIRCUIT_PACKET_QUOTA         (1u << 20)
 
 typedef struct {
     uint8_t peer_id[64];

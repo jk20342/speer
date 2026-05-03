@@ -1,36 +1,29 @@
 # architecture
 
-speer is a small p2p stack in c. the project has two main surfaces:
-
-- the public `speer.h` host / peer / stream api
-- lower-level libp2p-ish pieces that examples and the rust ffi can use directly
-
-the library is intentionally small self-contained. crypto, wire
-encoding, transports, discovery, relay helpers, and protocol experiments live in
-this repo instead of being glued together from big external dependencies.
+speer is a small p2p stack in c: a public `speer.h` host / peer / stream api, plus
+lower-level libp2p-ish pieces for examples and rust ffi. crypto, wire encoding,
+transports, discovery, and relay code live here without big external deps.
 
 ## layout
 
 ```text
 speer/
-|-- include/        public headers installed for users
-|-- src/crypto/     ed25519, x25519/noise pieces, sha, hkdf, aeads, rsa/ecdsa helpers
-|-- src/wire/       packet, protobuf, asn.1, tls message, quic frame encoding
+|-- include/        public headers
+|-- src/crypto/     ed25519, noise/x25519, sha, hkdf, aeads, rsa/ecdsa helpers
+|-- src/wire/       packet, protobuf, asn.1, tls/quic framing
 |-- src/util/       varints, length prefixes, constant-time helpers
-|-- src/infra/      host, peer, stream, sockets, metrics, buffer pool
+|-- src/infra/      host, peer, stream, sockets, buffer pool
 |-- src/libp2p/     noise, yamux, multistream, peer ids, multiaddrs, identify
-|-- src/transport/  tcp helpers
-|-- src/discovery/  mdns and dht
-|-- src/relay/      circuit relay and dcutr
-|-- src/quic/       quic packets, initial keys, header protection
-|-- src/tls/        tls 1.3 and x.509/web pki, optional in cmake
-|-- examples/       small c demos (full terminal chat is rust `speer-chat`)
-`-- tests/          unit, integration, fuzz, and protocol checks
+|-- src/transport/  tcp
+|-- src/discovery/  mdns, dht
+|-- src/relay/      circuit relay, dcutr
+|-- src/quic/       quic v1 packets, keys, header protection
+|-- src/tls/        tls 1.3, x.509 (optional web pki in cmake)
+|-- examples/       c demos (full tui chat: rust `speer-chat`)
+`-- tests/          unit, integration, fuzz, protocol checks
 ```
 
 ## build-time pieces
-
-cmake controls the optional parts:
 
 ```text
 SPEER_ENABLE_MDNS    on by default
@@ -39,160 +32,100 @@ SPEER_ENABLE_RELAY   on by default
 SPEER_ENABLE_WEBPKI  off by default
 ```
 
-web pki pulls in `src/tls/`. the tls/quic code exists in the tree, but the web
-pki path is not part of the default library build unless `SPEER_ENABLE_WEBPKI`
-is turned on.
+`SPEER_ENABLE_WEBPKI` pulls in `src/tls/` for x.509-heavy paths; default builds
+can still compile other tls pieces without it.
 
 ## public api
 
-the main api is in `include/speer.h`.
+main header: `include/speer.h`.
 
 ```c
 speer_host_t *host = speer_host_new(seed, &cfg);
 speer_host_set_callback(host, on_event, user_data);
-
-while (running) {
-    speer_host_poll(host, 100);
-}
-
+while (running) speer_host_poll(host, 100);
 speer_host_free(host);
 ```
 
-the public model is:
-
-- create one host with a 32-byte seed
-- poll it from your event loop
-- handle events in the callback
-- open streams with `speer_stream_open`
-- write/read stream data with `speer_stream_write` and `speer_stream_read`
-- close streams/peers/hosts explicitly
-
-the public host api does not currently expose a socket fd. if you need tight
-integration with another event loop, poll speer with a short timeout or wrap it
-on its own thread and communicate with message passing.
+model: one host from a 32-byte seed, poll from your loop, events in the callback,
+streams via `speer_stream_open` / `speer_stream_write` / `speer_stream_read`,
+explicit closes. the host api does not expose a raw socket fd — use short poll
+timeouts or a dedicated thread if you integrate with another loop.
 
 ## native speer path
 
-the `speer.h` api uses the internal host / peer / stream implementation. it is a
-poll-based udp stack with noise-style handshaking, encrypted packets, connection
-ids, and stream frames.
-
-roughly:
+`speer.h` sits on a poll-based udp stack: noise-style handshake, encrypted
+packets, connection ids, stream frames. caps: `SPEER_MAX_PACKET_SIZE` (1350),
+plus defaults for peer/stream counts.
 
 ```text
-host poll
-  -> receive packet
-  -> find peer by connection id
-  -> advance handshake or decrypt transport packet
-  -> dispatch stream frame
-  -> call app callback
+host poll -> recv -> peer by conn id -> handshake/decrypt -> stream frame -> callback
 ```
-
-packet size is capped by `SPEER_MAX_PACKET_SIZE` (`1350`). default caps also
-exist for peers and streams.
 
 ## libp2p over tcp
 
-the lower-level tcp path is exposed by `include/speer_libp2p_tcp.h` and the
-headers under `src/libp2p/`, `src/transport/`, and `src/wire/`.
-
-the rust `speer-chat` app (and lightweight c `examples/chat`) use this path:
+`speer_libp2p_tcp.h` plus `src/libp2p/`, `src/transport/`, `src/wire/`:
 
 ```text
-tcp dial/listen
-  -> libp2p noise xx
-  -> yamux session
-  -> multistream protocol selection
-  -> app frames
+tcp -> libp2p noise xx -> yamux -> multistream -> app protocol
 ```
 
-rust `speer-chat` uses mdns discovery, tcp, noise, yamux, protobuf chat frames,
-and file transfer over `/speer/chat/1.0.0`.
+rust `speer-chat` (and c `examples/chat`) use this stack; chat uses mdns, protobuf
+frames, `/speer/chat/1.0.0`.
 
 ## discovery
 
-`src/discovery/mdns.*` handles local-network discovery. records should be
-treated as hints, not identity proof.
-
-`src/discovery/dht.*` and `dht_libp2p.*` implement a practical kademlia core:
-routing table work, iterative lookups, store/provide style values, bounded
-values, and libp2p kad protobuf/stream handling.
+mdns: local hints only, not proof of identity. dht: practical kademlia (routing,
+lookups, bounded store, libp2p kad protobuf).
 
 ## relay and dcutr
 
-`src/relay/` contains circuit relay helpers, a relay client, a relay server, and
-partial dcutr support.
-
-the dcutr code keeps per-peer state and handles connect/sync messages. the
-candidate trust check currently covers ipv4 candidates in the same `/24` as the
-known authenticated peer address. it is useful scaffolding, not a full nat
-traversal stack.
+`src/relay/`: circuit v2 protobuf, relay client/server, dcutr. speer-native path
+uses `RELAY_FRAME_*` over tcp; libp2p hop uses yamux stream
+`/libp2p/circuit/relay/0.2.0/hop`, `relay_client_attach_libp2p_hop()`, uvarint-framed
+hop/stop protobuf. `relay_public_hop_check` (network) checks reserve to
+`RELAY_STATE_RESERVED` against public relays; oversize vouchers parse but are not
+copied into the small struct buffer. dcutr state is per-`speer_peer_t`;
+`speer_host_poll_ex(..., SPEER_POLL_DCUTR)` runs `speer_dcutr_poll` by default.
 
 ## quic and tls
 
-`src/quic/` has quic v1 packet/framing pieces, initial key derivation, header
-protection, and flow helpers. it is not a full quic connection stack yet.
-
-`src/tls/` has tls 1.3 record/handshake/key-schedule code and x.509 helpers.
-tests cover the record layer, handshake paths, negative vectors, key update, hrr
-paths, auth checks, and optional openssl smoke checks when the tool is
-available.
+quic: v1 framing and crypto helpers only, not a full connection engine. tls: 1.3
+record/handshake coverage with tests; web pki optional via cmake.
 
 ## thread model
 
-use the public host / peer / stream api from one event-loop thread. the buffer
-pool has an internal lock, but that does not make the whole host api generally
-thread-safe.
-
-for multithreaded apps, keep speer on one thread and send commands/events across
-a channel or queue.
+assume one thread drives `speer_host_*` / streams. buffer pool locking does not
+make the whole api thread-safe — use a queue/channel if you multithread.
 
 ## memory model
 
-speer uses explicit ownership:
-
-- `speer_host_new` / `speer_host_free`
-- `speer_stream_open` / `speer_stream_close`
-- `speer_peer_close` for peer shutdown
-
-the library checks allocations and cleans up host-owned resources on
-`speer_host_free`. long-term key storage is still the app's job.
+explicit: `speer_host_new` / `speer_host_free`, `speer_stream_open` /
+`speer_stream_close`, `speer_peer_close`. host teardown frees library-owned
+resources; long-term key storage is the app’s responsibility.
 
 ## protocol status
 
 | area | status | notes |
 | --- | --- | --- |
-| native host api | working core | poll-based udp host, peers, streams |
-| libp2p noise xx | working core | signed libp2p payload binds peer id to noise session |
-| yamux | working core | stream mux used by tcp chat path |
-| multistream | working core | protocol selection for libp2p-style streams |
-| mdns | working core | local discovery, records are hints |
-| dht | practical core | routing table, lookups, bounded store values, libp2p protobuf |
-| tls 1.3 | core tested | optional web pki build path |
-| quic v1 | partial | packets, initial keys, frames, header protection |
-| circuit relay | partial | relay helpers/client/server |
-| dcutr | partial | per-peer state, ipv4 candidate filtering |
+| native host api | working core | udp poll, peers, streams |
+| libp2p noise xx | working core | peer id bound to noise session |
+| yamux | working core | tcp mux |
+| multistream | working core | stream protocol pick |
+| mdns | working core | hints only |
+| dht | practical core | kad + libp2p protobuf |
+| tls 1.3 | core tested | optional web pki build |
+| quic v1 | partial | packets, keys, not full stack |
+| circuit relay | partial | speer framing + v2 hop interop (`relay_public_hop_check`) |
+| dcutr | partial | host poll, stun, per-peer state |
 
 ## rust crates
 
-the rust side is split into three repos:
-
-- [`speer-sys-rust`](https://github.com/jk20342/speer-sys-rust): raw bindgen ffi
-- [`speer-rust`](https://github.com/jk20342/speer-rust): safe rust wrapper over the public api
-- [`speer-rust-chat`](https://github.com/jk20342/speer-rust-chat): ratatui chat app
-
-`speer-sys-rust` maps to the c headers directly. `speer-rust` is the safe crate
-most rust apps should use. `speer-rust-chat` is a standalone app using the
-lower-level tcp/mdns/noise/yamux/protobuf surface.
+- [`speer-sys-rust`](https://github.com/jk20342/speer-sys-rust) — ffi
+- [`speer-rust`](https://github.com/jk20342/speer-rust) — safe wrapper
+- [`speer-rust-chat`](https://github.com/jk20342/speer-rust-chat) — tui app
 
 ## libp2p ffi facade
 
-the exported libp2p facade keeps rust bindings on stable `speer_*` names instead
-of exposing every internal dht or relay struct. current facade coverage is
-identify encode/decode and kad message helpers, plus a `/ipfs/kad/1.0.0`
-roundtrip over an already authenticated tcp/noise/yamux session. kad ping has
-been checked against public libp2p bootstrap nodes; broader bootstrap discovery
-is still experimental.
-
-relay and dcutr remain separate experimental surfaces until the relay client is
-running over normal libp2p streams and has interop tests.
+stable `speer_*` entrypoints for rust: identify and kad helpers, `/ipfs/kad/1.0.0`
+roundtrip on an existing noise/yamux session; kad ping checked on public
+bootstrap nodes; wider bootstrap discovery still loose.

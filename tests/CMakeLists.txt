@@ -80,6 +80,7 @@ set(SPEER_UNIT_TESTS
     dcutr_check
     dcutr_relay_integration_check
     relay_client_check
+    relay_libp2p_hop_framing_check
     cpu_features_check
     poly1305_kat_check
     rng_failure_check
@@ -108,3 +109,9 @@ endif()
 foreach(test_name ${SPEER_UNIT_TESTS})
     add_speer_test(${test_name} ${test_name}.c)
 endforeach()
+
+if(SPEER_ENABLE_RELAY AND SPEER_NETWORK_RELAY_TEST)
+    add_speer_test(relay_public_hop_check relay_public_hop_check.c)
+    set_tests_properties(relay_public_hop_check PROPERTIES LABELS "network" TIMEOUT 120
+                                                      SKIP_RETURN_CODE 77)
+endif()

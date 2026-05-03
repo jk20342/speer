@@ -7,6 +7,7 @@
 #include "../speer_internal.h"
 #include "circuit_relay.h"
 #include "dcutr.h"
+#include "varint.h"
 
 extern uint64_t speer_timestamp_ms(void);
 
@@ -55,7 +56,7 @@ void relay_client_set_callbacks(relay_client_t *client,
 
 int relay_client_connect(relay_client_t *client, const char *relay_addr,
                          const uint8_t *relay_peer_id, size_t relay_peer_id_len) {
-    if (client->state != RELAY_STATE_DISCONNECTED) relay_client_disconnect(client);
+    relay_client_disconnect(client);
     char host[64];
     ZERO(host, sizeof(host));
     uint16_t port = 4001;
@@ -120,6 +121,9 @@ void relay_client_disconnect(relay_client_t *client) {
         }
     }
     client->num_circuits = 0;
+    client->lp_session = NULL;
+    client->lp_hop_stream = NULL;
+    ZERO(&client->lp_rx, sizeof(client->lp_rx));
     if (client->socket >= 0) {
         CLOSESOCKET(client->socket);
         client->socket = -1;
@@ -138,12 +142,40 @@ bool relay_client_has_reservation(const relay_client_t *client) {
     return client->state == RELAY_STATE_RESERVED || client->state == RELAY_STATE_ACTIVE;
 }
 
+int relay_client_attach_libp2p_hop(relay_client_t *client, speer_libp2p_tcp_session_t *session,
+                                   speer_yamux_stream_t *hop_stream) {
+    if (!client || !session || !hop_stream) return -1;
+    relay_client_disconnect(client);
+    client->lp_session = session;
+    client->lp_hop_stream = hop_stream;
+    ZERO(&client->lp_rx, sizeof(client->lp_rx));
+    client->state = RELAY_STATE_CONNECTING;
+    client->connected_ms = speer_timestamp_ms();
+    client->last_recv_ms = client->connected_ms;
+    client->last_send_ms = client->connected_ms;
+    client->recv_len = 0;
+    client->frame_len = 0;
+    return 0;
+}
+
+void relay_client_detach_libp2p_hop(relay_client_t *client) {
+    if (!client) return;
+    relay_client_disconnect(client);
+}
+
 int relay_client_reserve(relay_client_t *client) {
     if (client->state != RELAY_STATE_CONNECTING && client->state != RELAY_STATE_RESERVED) return -1;
     client->state = RELAY_STATE_RESERVING;
     uint8_t payload[256];
     size_t payload_len = 0;
     if (speer_relay_encode_hop_reserve(payload, sizeof(payload), &payload_len) != 0) return -1;
+    if (client->lp_session && client->lp_hop_stream) {
+        if (speer_libp2p_tcp_stream_send_frame(client->lp_session, client->lp_hop_stream, payload,
+                                               payload_len) != 0)
+            return -1;
+        client->last_send_ms = speer_timestamp_ms();
+        return 0;
+    }
     uint8_t frame[RELAY_MAX_FRAME_SIZE];
     int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_HOP, 0, payload,
                                        payload_len);
@@ -165,13 +197,19 @@ int relay_client_connect_to_peer(relay_client_t *client, const uint8_t *target_p
     if (speer_relay_encode_hop_connect(payload, sizeof(payload), &payload_len, target_peer_id,
                                        target_peer_id_len) != 0)
         return -1;
-    uint8_t frame[RELAY_MAX_FRAME_SIZE];
-    int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_HOP, 0, payload,
-                                       payload_len);
-    if (frame_len < 0) return -1;
-    if (client->send_fn) {
-        int ret = client->send_fn(client->user, frame, (size_t)frame_len);
-        if (ret < 0) return ret;
+    if (client->lp_session && client->lp_hop_stream) {
+        if (speer_libp2p_tcp_stream_send_frame(client->lp_session, client->lp_hop_stream, payload,
+                                               payload_len) != 0)
+            return -1;
+    } else {
+        uint8_t frame[RELAY_MAX_FRAME_SIZE];
+        int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_HOP, 0, payload,
+                                           payload_len);
+        if (frame_len < 0) return -1;
+        if (client->send_fn) {
+            int ret = client->send_fn(client->user, frame, (size_t)frame_len);
+            if (ret < 0) return ret;
+        }
     }
     client->state = RELAY_STATE_CONNECTING_TO_PEER;
     client->last_send_ms = speer_timestamp_ms();
@@ -219,6 +257,14 @@ int relay_client_send(relay_client_t *client, uint32_t circuit_id, const uint8_t
     int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_DATA, circuit_id, data,
                                        len);
     if (frame_len < 0) return -1;
+    if (client->lp_session && client->lp_hop_stream) {
+        if (speer_libp2p_tcp_stream_send_frame(client->lp_session, client->lp_hop_stream, frame,
+                                               (size_t)frame_len) != 0)
+            return -1;
+        circ->last_activity_ms = speer_timestamp_ms();
+        client->last_send_ms = circ->last_activity_ms;
+        return (int)len;
+    }
     if (client->send_fn) {
         int ret = client->send_fn(client->user, frame, (size_t)frame_len);
         if (ret >= 0) {
@@ -260,7 +306,8 @@ static void handle_hop_status(relay_client_t *client, const uint8_t *payload, si
     if (client->state == RELAY_STATE_RESERVING) {
         if (status == RELAY_STATUS_OK) {
             COPY(&client->reservation, &res, sizeof(res));
-            client->reservation_expires_ms = res.expire;
+            client->reservation_expires_ms = res.expire > 0 ? (uint64_t)res.expire * 1000ull
+                                                            : (uint64_t)0;
             client->state = RELAY_STATE_RESERVED;
         } else {
             client->state = RELAY_STATE_ERROR;
@@ -321,7 +368,9 @@ static void process_frame(relay_client_t *client, relay_frame_type_t type, uint3
         break;
     case RELAY_FRAME_DATA:
         if (client->dcutr_enabled && circuit_id == client->dcutr_circuit_id) {
-            speer_dcutr_on_msg(payload, payload_len);
+            if (client->dcutr_peer) {
+                speer_dcutr_on_msg_peer(client->dcutr_peer, payload, payload_len);
+            }
             break;
         }
         if (client->on_data && circuit_id > 0) {
@@ -352,6 +401,85 @@ static void consume_recv_buf(relay_client_t *client) {
     }
 }
 
+static int lp_pull_u8(speer_yamux_stream_t *st, uint8_t *out) {
+    if (!st || st->recv_buf_len == 0) return -1;
+    *out = st->recv_buf[0];
+    if (st->recv_buf_len > 1) { memmove(st->recv_buf, st->recv_buf + 1, st->recv_buf_len - 1); }
+    st->recv_buf_len--;
+    return 0;
+}
+
+static void relay_lp_on_payload(relay_client_t *client, const uint8_t *msg, size_t len) {
+    if (len >= RELAY_FRAME_HEADER_SIZE) {
+        uint8_t t = msg[0];
+        if (t == RELAY_FRAME_DATA || t == RELAY_FRAME_HOP || t == RELAY_FRAME_STOP ||
+            t == RELAY_FRAME_STATUS || t == RELAY_FRAME_KEEPALIVE) {
+            size_t pl = LOAD16_BE(msg + 2);
+            if (RELAY_FRAME_HEADER_SIZE + pl <= len) {
+                uint32_t cid = LOAD32_BE(msg + 4);
+                process_frame(client, (relay_frame_type_t)t, cid, msg + RELAY_FRAME_HEADER_SIZE,
+                              pl);
+                return;
+            }
+        }
+    }
+    handle_hop_status(client, msg, len);
+}
+
+static int relay_lp_pump(relay_client_t *client) {
+    if (!client->lp_session || !client->lp_hop_stream) return 0;
+
+    for (;;) {
+        speer_yamux_stream_t *st = client->lp_hop_stream;
+
+        if (client->lp_rx.phase == 0) {
+            while (client->lp_rx.varint_n < sizeof(client->lp_rx.varint)) {
+                if (lp_pull_u8(st, &client->lp_rx.varint[client->lp_rx.varint_n]) != 0) {
+                    if (speer_yamux_pump(&client->lp_session->mux) != 0) return -1;
+                    continue;
+                }
+                client->lp_rx.varint_n++;
+                if ((client->lp_rx.varint[client->lp_rx.varint_n - 1] & 0x80u) == 0) break;
+                if (client->lp_rx.varint_n >= sizeof(client->lp_rx.varint)) return -1;
+            }
+            if (speer_uvarint_decode(client->lp_rx.varint, client->lp_rx.varint_n,
+                                     &client->lp_rx.payload_len) == 0)
+                return -1;
+            if (client->lp_rx.payload_len == 0 ||
+                client->lp_rx.payload_len > sizeof(client->lp_rx.pay))
+                return -1;
+            client->lp_rx.pay_n = 0;
+            client->lp_rx.phase = 1;
+            client->lp_rx.varint_n = 0;
+        }
+
+        if (client->lp_rx.phase == 1) {
+            while (client->lp_rx.pay_n < client->lp_rx.payload_len) {
+                if (st->recv_buf_len == 0) {
+                    if (speer_yamux_pump(&client->lp_session->mux) != 0) return -1;
+                    continue;
+                }
+                size_t need = client->lp_rx.payload_len - client->lp_rx.pay_n;
+                size_t take = need < st->recv_buf_len ? need : st->recv_buf_len;
+                memcpy(client->lp_rx.pay + client->lp_rx.pay_n, st->recv_buf, take);
+                client->lp_rx.pay_n += take;
+                if (take < st->recv_buf_len) {
+                    memmove(st->recv_buf, st->recv_buf + take, st->recv_buf_len - take);
+                }
+                st->recv_buf_len -= take;
+            }
+            uint64_t plen64 = client->lp_rx.payload_len;
+            size_t pblen = (size_t)plen64;
+            relay_lp_on_payload(client, client->lp_rx.pay, pblen);
+            client->lp_rx.phase = 0;
+            client->lp_rx.varint_n = 0;
+            client->lp_rx.payload_len = 0;
+            client->lp_rx.pay_n = 0;
+            if (st->recv_buf_len == 0) return 0;
+        }
+    }
+}
+
 int relay_client_poll(relay_client_t *client, uint64_t now_ms) {
     if (client->state == RELAY_STATE_DISCONNECTED) return 0;
     if (client->state == RELAY_STATE_CONNECTING || client->state == RELAY_STATE_RESERVING ||
@@ -366,6 +494,7 @@ int relay_client_poll(relay_client_t *client, uint64_t now_ms) {
         ZERO(&client->reservation, sizeof(client->reservation));
         if (client->state == RELAY_STATE_RESERVED) client->state = RELAY_STATE_CONNECTING;
     }
+    if (client->lp_session && relay_lp_pump(client) != 0) return -1;
     if (client->recv_fn) {
         uint8_t buf[4096];
         size_t len;
@@ -384,9 +513,15 @@ int relay_client_poll(relay_client_t *client, uint64_t now_ms) {
         keepalive_now - client->last_send_ms > RELAY_KEEPALIVE_INTERVAL_MS) {
         uint8_t frame[RELAY_FRAME_HEADER_SIZE];
         int frame_len = relay_frame_encode(frame, sizeof(frame), RELAY_FRAME_KEEPALIVE, 0, NULL, 0);
-        if (frame_len > 0 && client->send_fn) {
-            client->send_fn(client->user, frame, (size_t)frame_len);
-            client->last_send_ms = keepalive_now;
+        if (frame_len > 0) {
+            if (client->lp_session && client->lp_hop_stream) {
+                speer_libp2p_tcp_stream_send_frame(client->lp_session, client->lp_hop_stream, frame,
+                                                   (size_t)frame_len);
+                client->last_send_ms = keepalive_now;
+            } else if (client->send_fn) {
+                client->send_fn(client->user, frame, (size_t)frame_len);
+                client->last_send_ms = keepalive_now;
+            }
         }
     }
     uint32_t i = 0;

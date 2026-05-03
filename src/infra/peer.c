@@ -1,5 +1,9 @@
 #include "speer_internal.h"
 
+#if SPEER_RELAY
+#include "dcutr.h"
+#endif
+
 speer_peer_t *speer_peer_lookup(speer_host_t *host, const uint8_t cid[SPEER_MAX_CID_LEN],
                                 uint8_t cid_len) {
     for (speer_peer_t *p = host->peers; p; p = p->next) {
@@ -51,6 +55,10 @@ speer_peer_t *speer_peer_create(speer_host_t *host, const uint8_t pubkey[SPEER_P
 
 void speer_peer_destroy(speer_peer_t *peer) {
     if (!peer) return;
+
+#if SPEER_RELAY
+    speer_dcutr_peer_reset(peer);
+#endif
 
     speer_transport_cleanup(peer);
 

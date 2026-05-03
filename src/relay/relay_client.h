@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "circuit_relay.h"
+#include "speer_libp2p_tcp.h"
 
 #define RELAY_MAX_RELAYS            8
 #define RELAY_MAX_CIRCUITS          16
@@ -52,11 +53,23 @@ typedef struct {
 } relay_circuit_t;
 
 typedef struct {
+    int phase;
+    uint8_t varint[10];
+    size_t varint_n;
+    uint64_t payload_len;
+    size_t pay_n;
+    uint8_t pay[65535];
+} relay_lp_rx_t;
+
+typedef struct {
     char address[64];
     uint8_t relay_peer_id[64];
     size_t relay_peer_id_len;
     relay_state_t state;
     int socket;
+    speer_libp2p_tcp_session_t *lp_session;
+    speer_yamux_stream_t *lp_hop_stream;
+    relay_lp_rx_t lp_rx;
     speer_relay_reservation_t reservation;
     uint64_t reservation_expires_ms;
     relay_circuit_t circuits[RELAY_MAX_CIRCUITS];
@@ -103,5 +116,9 @@ void relay_client_set_callbacks(relay_client_t *client,
                                 void (*on_circuit)(void *, uint32_t, const uint8_t *, size_t, bool),
                                 void (*on_data)(void *, uint32_t, const uint8_t *, size_t),
                                 void (*on_circuit_closed)(void *, uint32_t), void *user);
+
+int relay_client_attach_libp2p_hop(relay_client_t *client, speer_libp2p_tcp_session_t *session,
+                                   speer_yamux_stream_t *hop_stream);
+void relay_client_detach_libp2p_hop(relay_client_t *client);
 
 #endif

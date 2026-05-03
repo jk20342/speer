@@ -220,10 +220,65 @@ void speer_bn_submod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, co
     }
 }
 
+#define W129 (SPEER_BN_MAX_LIMBS + 1)
+
+static void u129_shl1_or_bit(uint32_t *rem, size_t *rn, uint32_t bit) {
+    uint32_t c = 0;
+    size_t n = *rn;
+    for (size_t i = 0; i < n && i < W129; i++) {
+        uint32_t nc = rem[i] >> 31;
+        rem[i] = (rem[i] << 1) | c;
+        c = nc;
+    }
+    if (c && n < W129) {
+        rem[n] = c;
+        n++;
+    }
+    rem[0] |= bit;
+    size_t nk = W129;
+    while (nk > 0 && rem[nk - 1] == 0) nk--;
+    *rn = nk;
+}
+
+static int u129_cmp_ge_bn(const uint32_t *rem, size_t rn, const speer_bn_t *m) {
+    if (rn > m->n) return 1;
+    if (rn < m->n) return 0;
+    for (size_t i = rn; i-- > 0;) {
+        if (rem[i] != m->limbs[i]) return rem[i] > m->limbs[i];
+    }
+    return 1;
+}
+
+static void u129_sub_bn(uint32_t *rem, size_t *rn, const speer_bn_t *m) {
+    int64_t br = 0;
+    for (size_t i = 0; i < m->n; i++) {
+        int64_t s = (int64_t)rem[i] - (int64_t)m->limbs[i] - br;
+        if (s < 0) {
+            s += (int64_t)1 << 32;
+            br = 1;
+        } else
+            br = 0;
+        rem[i] = (uint32_t)s;
+    }
+    for (size_t i = m->n; i < *rn; i++) {
+        int64_t s = (int64_t)rem[i] - br;
+        if (s < 0) {
+            s += (int64_t)1 << 32;
+            br = 1;
+        } else
+            br = 0;
+        rem[i] = (uint32_t)s;
+    }
+    size_t nk = W129;
+    while (nk > 0 && rem[nk - 1] == 0) nk--;
+    *rn = nk;
+}
+
 void speer_bn_mulmod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, const speer_bn_t *m) {
-    uint32_t prod[2 * LIMBS] = {0};
+    uint32_t prod[2 * LIMBS + 1] = {0};
+    const size_t prod_limbs = 2 * LIMBS + 1;
     size_t n = a->n + b->n;
-    if (n > 2 * LIMBS) return;
+    if (n > prod_limbs) return;
     for (size_t i = 0; i < a->n; i++) {
         uint64_t carry = 0;
         for (size_t j = 0; j < b->n; j++) {
@@ -231,7 +286,13 @@ void speer_bn_mulmod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, co
             prod[i + j] = (uint32_t)v;
             carry = v >> 32;
         }
-        prod[i + b->n] += (uint32_t)carry;
+        size_t k = i + b->n;
+        while (carry != 0 && k < prod_limbs) {
+            uint64_t v = (uint64_t)prod[k] + carry;
+            prod[k] = (uint32_t)v;
+            carry = v >> 32;
+            k++;
+        }
     }
     speer_bn_t big;
     speer_bn_zero(&big);
@@ -246,26 +307,20 @@ void speer_bn_mulmod(speer_bn_t *r, const speer_bn_t *a, const speer_bn_t *b, co
      * zero, so this matters in practice. */
     normalize(&big);
     if (n > LIMBS) {
-        speer_bn_t rem;
-        speer_bn_zero(&rem);
-        for (size_t bit = 2 * LIMBS * 32; bit-- > 0;) {
-            speer_bn_shl1(&rem);
+        uint32_t rem[W129];
+        ZERO(rem, sizeof(rem));
+        size_t rn = 0;
+        for (size_t bit = prod_limbs * 32; bit-- > 0;) {
             size_t limb = bit / 32;
             size_t b_idx = bit & 31;
             uint32_t bit_val = (prod[limb] >> b_idx) & 1u;
-            rem.limbs[0] |= bit_val;
-            if (bit_val) {
-                size_t k = LIMBS;
-                while (k > 0 && rem.limbs[k - 1] == 0) k--;
-                rem.n = k;
-            }
-            if (speer_bn_cmp(&rem, m) >= 0) {
-                speer_bn_t t;
-                speer_bn_sub(&t, &rem, m);
-                speer_bn_copy(&rem, &t);
-            }
+            u129_shl1_or_bit(rem, &rn, bit_val);
+            if (u129_cmp_ge_bn(rem, rn, m)) u129_sub_bn(rem, &rn, m);
         }
-        speer_bn_copy(r, &rem);
+        speer_bn_zero(r);
+        for (size_t i = 0; i < rn && i < LIMBS; i++) r->limbs[i] = rem[i];
+        r->n = rn;
+        normalize(r);
         return;
     }
     speer_bn_mod(r, &big, m);

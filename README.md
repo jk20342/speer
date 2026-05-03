@@ -112,7 +112,7 @@ rust repos:
 - dht: practical core
 - tls 1.3: core pieces
 - quic v1: packet codec, not a full connection stack yet
-- relay / dcutr: partial
+- relay / dcutr: partial; v2 hop reserve: `relay_public_hop_check` (network, public relays).
 
 ## license
 

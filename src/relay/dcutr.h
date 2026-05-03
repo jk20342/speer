@@ -38,7 +38,9 @@ void speer_dcutr_free(void);
 int speer_dcutr_is_active(void);
 int speer_dcutr_success(void);
 void speer_dcutr_poll(void);
+int speer_dcutr_on_msg_peer(speer_peer_t *peer, const uint8_t *data, size_t len);
 int speer_dcutr_on_msg(const uint8_t *data, size_t len);
+void speer_dcutr_peer_reset(speer_peer_t *peer);
 int speer_dcutr_encode(const speer_dcutr_msg_t *m, uint8_t *out, size_t cap, size_t *out_len);
 int speer_dcutr_decode(speer_dcutr_msg_t *m, const uint8_t *in, size_t in_len);
 

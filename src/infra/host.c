@@ -311,7 +311,7 @@ void speer_host_free(speer_host_t *host) {
     free(host);
 }
 
-int speer_host_poll(speer_host_t *host, int timeout_ms) {
+int speer_host_poll_ex(speer_host_t *host, int timeout_ms, unsigned flags) {
     uint8_t buf[SPEER_MAX_PACKET_SIZE];
     struct sockaddr_storage from;
     socklen_t from_len;
@@ -347,19 +347,22 @@ int speer_host_poll(speer_host_t *host, int timeout_ms) {
 
     host->last_poll_ms = speer_timestamp_ms();
 
+#if SPEER_RELAY
+    if (flags & SPEER_POLL_DCUTR) { speer_dcutr_poll(); }
+#endif
+
     return processed;
 }
 
-/*
- * installs app callback invoked from speer_host_poll; user_data alias must remain
- * valid for the host lifetime (callers commonly pass heap ctx or globals)
- */
+int speer_host_poll(speer_host_t *host, int timeout_ms) {
+    return speer_host_poll_ex(host, timeout_ms, SPEER_POLL_DCUTR);
+}
+
 void speer_host_set_callback(speer_host_t *host,
                              void (*callback)(speer_host_t *host, const speer_event_t *event,
                                               void *user_data),
                              void *user_data) {
     host->callback = callback;
-    /* codeql[cpp/stack-address-escape]: user_data intentional host lifetime opaque handle */
     host->user_data = user_data;
 }
 

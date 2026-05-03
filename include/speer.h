@@ -95,6 +95,11 @@ speer_host_t *speer_host_new(const uint8_t seed_key[SPEER_PRIVATE_KEY_SIZE],
 
 void speer_host_free(speer_host_t *host);
 
+/* When set, speer_host_poll runs speer_dcutr_poll after UDP I/O (see speer_host_poll_ex). */
+#define SPEER_POLL_DCUTR 1u
+
+int speer_host_poll_ex(speer_host_t *host, int timeout_ms, unsigned flags);
+
 int speer_host_poll(speer_host_t *host, int timeout_ms);
 
 void speer_host_set_callback(speer_host_t *host,

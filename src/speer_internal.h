@@ -296,6 +296,9 @@ struct speer_peer {
     uint32_t max_streams;
 
     void *user_data;
+#if SPEER_RELAY
+    void *dcutr_ctx;
+#endif
     speer_peer_t *next;
     speer_peer_t *prev;
 };

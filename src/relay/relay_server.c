@@ -70,12 +70,6 @@ static void free_circuit(relay_server_t *srv, relay_circuit_t *circ) {
     srv->num_circuits--;
 }
 
-/*
- * decode relay hop protobuf on udp, gate on auth callback, update reservation state
- * emits small status responses into the caller-provided encode buffer
- * maps hop types reserve connect status stop to slab reservations plus active circuits
- * permission denied triggers when auth misses or malformed ids exceed wire caps encoded
- */
 int relay_server_on_hop(relay_server_t *srv, const uint8_t *auth_peer_id, size_t auth_peer_id_len,
                         const uint8_t *data, size_t len, const struct sockaddr_storage *from,
                         socklen_t from_len, uint8_t *response, size_t *response_len) {

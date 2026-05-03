@@ -4,11 +4,18 @@
 
 #include <stdio.h>
 
+#if !defined(_WIN32)
+#include <netinet/in.h>
+#endif
+
 #include "log.h"
 #include "protobuf.h"
 
 #define DCUTR_TIMEOUT_MS        10000
 #define DCUTR_RETRY_INTERVAL_MS 100
+#define DCUTR_ADDR_IPV4         0x04u
+#define DCUTR_ADDR_IPV6         0x06u
+#define DCUTR_POLL_MAX          64
 
 typedef enum {
     DCUTR_STATE_IDLE = 0,
@@ -47,33 +54,53 @@ typedef struct {
     uint32_t stream_id;
 } dcutr_ctx_t;
 
-#define DCUTR_MAX_PEERS 16
-static dcutr_ctx_t g_dcutr_ctxs[DCUTR_MAX_PEERS];
-static speer_peer_t *g_dcutr_peers[DCUTR_MAX_PEERS];
+static dcutr_ctx_t g_fallback_ctx;
+static speer_dcutr_send_fn g_dcutr_default_send;
+static void *g_dcutr_default_send_user;
+static dcutr_ctx_t *g_dcutr_poll_list[DCUTR_POLL_MAX];
 
-#define g_dcutr_ctx (g_dcutr_ctxs[0])
-
-static dcutr_ctx_t *find_or_alloc_ctx(speer_peer_t *peer) {
-    if (!peer) return &g_dcutr_ctxs[0];
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        if (g_dcutr_peers[i] == peer) return &g_dcutr_ctxs[i];
+static void dcutr_poll_register(dcutr_ctx_t *c) {
+    for (int i = 0; i < DCUTR_POLL_MAX; i++) {
+        if (g_dcutr_poll_list[i] == c) return;
     }
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        if (g_dcutr_peers[i] == NULL) {
-            /* codeql[cpp/stack-address-escape]: peer pointers are host-owned allocations */
-            g_dcutr_peers[i] = peer;
-            return &g_dcutr_ctxs[i];
+    for (int i = 0; i < DCUTR_POLL_MAX; i++) {
+        if (!g_dcutr_poll_list[i]) {
+            g_dcutr_poll_list[i] = c;
+            return;
         }
     }
-    return NULL;
+}
+
+static void dcutr_poll_unregister(dcutr_ctx_t *c) {
+    for (int i = 0; i < DCUTR_POLL_MAX; i++) {
+        if (g_dcutr_poll_list[i] == c) {
+            g_dcutr_poll_list[i] = NULL;
+            return;
+        }
+    }
+}
+
+static dcutr_ctx_t *find_or_alloc_ctx(speer_peer_t *peer) {
+    if (!peer) return &g_fallback_ctx;
+    if (!peer->dcutr_ctx) {
+        peer->dcutr_ctx = (void *)calloc(1, sizeof(dcutr_ctx_t));
+        if (!peer->dcutr_ctx) return NULL;
+    }
+    return (dcutr_ctx_t *)peer->dcutr_ctx;
 }
 
 static dcutr_ctx_t *find_ctx(const speer_peer_t *peer) {
-    if (!peer) return &g_dcutr_ctxs[0];
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        if (g_dcutr_peers[i] == peer) return &g_dcutr_ctxs[i];
-    }
-    return NULL;
+    if (!peer) return &g_fallback_ctx;
+    return peer->dcutr_ctx ? (dcutr_ctx_t *)peer->dcutr_ctx : NULL;
+}
+
+static void append_local(dcutr_candidate_t *out, size_t *count, size_t max,
+                         const struct sockaddr_storage *src, socklen_t slen) {
+    if (*count >= max) return;
+    ZERO(&out[*count], sizeof(out[*count]));
+    memcpy(&out[*count].addr, src, slen);
+    out[*count].addr_len = slen;
+    (*count)++;
 }
 
 static int gather_local_addrs(dcutr_ctx_t *ctx, dcutr_candidate_t *out, size_t max) {
@@ -83,55 +110,111 @@ static int gather_local_addrs(dcutr_ctx_t *ctx, dcutr_candidate_t *out, size_t m
         struct sockaddr_storage bound;
         socklen_t bound_len = sizeof(bound);
         ZERO(&bound, sizeof(bound));
-        if (getsockname(host->socket, (struct sockaddr *)&bound, &bound_len) == 0 &&
-            bound.ss_family == AF_INET) {
-            if (count >= max) return (int)count;
-            ZERO(&out[count], sizeof(out[count]));
-            struct sockaddr_in *dst = (struct sockaddr_in *)&out[count].addr;
-            memcpy(dst, &bound, sizeof(*dst));
-            if (dst->sin_port == 0) return (int)count;
-            if (dst->sin_addr.s_addr == htonl(INADDR_ANY)) dst->sin_addr.s_addr = htonl(0x7f000001);
-            out[count].addr_len = sizeof(*dst);
-            count++;
+        if (getsockname(host->socket, (struct sockaddr *)&bound, &bound_len) == 0) {
+            if (bound.ss_family == AF_INET) {
+                struct sockaddr_in *dst = (struct sockaddr_in *)&bound;
+                if (dst->sin_port != 0 && dst->sin_addr.s_addr != htonl(INADDR_ANY)) {
+                    append_local(out, &count, max, &bound, bound_len);
+                }
+            } else if (bound.ss_family == AF_INET6) {
+                struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)&bound;
+                int any = 1;
+                for (size_t k = 0; k < sizeof(s6->sin6_addr); k++) {
+                    if (s6->sin6_addr.s6_addr[k] != 0) {
+                        any = 0;
+                        break;
+                    }
+                }
+                if (s6->sin6_port != 0 && !any) {
+                    append_local(out, &count, max, &bound, bound_len);
+                }
+            }
         }
     }
+
+    if (host && host->config.stun_server && host->config.stun_server[0] != '\0' && count < max) {
+        SPEER_INIT_WINSOCK();
+        struct sockaddr_storage mapped;
+        socklen_t ml = sizeof(mapped);
+        ZERO(&mapped, sizeof(mapped));
+        if (speer_stun_get_mapped_addr(host->config.stun_server, &mapped, &ml) == 0) {
+            append_local(out, &count, max, &mapped, ml);
+        }
+    }
+
     return (int)count;
 }
 
-#define STUB(x) (void)(x)
+static int dcutr_trust_remote_candidate(const speer_peer_t *peer, const struct sockaddr *cand,
+                                        socklen_t cand_len) {
+    (void)cand_len;
+    if (!peer || !cand) return 0;
+    if (peer->state == SPEER_STATE_ESTABLISHED) return 1;
+    if (cand->sa_family == AF_INET) {
+        const struct sockaddr_in *c = (const struct sockaddr_in *)cand;
+        uint32_t a = ntohl(c->sin_addr.s_addr);
+        if (a == 0x7f000001u) return 1;
+        if (peer->addr.ss_family == AF_INET) {
+            uint32_t known_ip = ntohl(((const struct sockaddr_in *)&peer->addr)->sin_addr.s_addr);
+            uint32_t cand_ip = ntohl(c->sin_addr.s_addr);
+            if ((known_ip & 0xffffff00u) == (cand_ip & 0xffffff00u)) return 1;
+        }
+    }
+    if (cand->sa_family == AF_INET6 && peer->addr.ss_family == AF_INET6) {
+        const struct sockaddr_in6 *ck = (const struct sockaddr_in6 *)cand;
+        const struct sockaddr_in6 *pk = (const struct sockaddr_in6 *)&peer->addr;
+        if (memcmp(ck->sin6_addr.s6_addr, pk->sin6_addr.s6_addr, 14) == 0) return 1;
+    }
+    return 0;
+}
+
+static int dcutr_send_udp_probe(speer_peer_t *peer, const struct sockaddr_storage *to,
+                                socklen_t tolen) {
+    if (!peer || !peer->host || peer->host->socket < 0) return -1;
+
+    if (peer->state == SPEER_STATE_ESTABLISHED) {
+        uint8_t frames[32];
+        size_t frames_len = speer_frame_encode_stream(frames, 0, 0, NULL, 0, 0);
+        uint8_t packet[SPEER_MAX_PACKET_SIZE];
+        size_t packet_len = 0;
+        if (speer_packet_encode(packet, &packet_len, frames, frames_len, peer->conn.cid,
+                                peer->conn.cid_len, peer->conn.pkt_num, peer->send_cipher.key) != 0)
+            return -1;
+        if (speer_socket_send(peer->host->socket, packet, packet_len, to, tolen) < 0) return -1;
+        peer->conn.pkt_num++;
+        peer->conn.last_send_ms = speer_timestamp_ms();
+        return 0;
+    }
+
+    uint8_t probe = 0;
+    return speer_socket_send(peer->host->socket, &probe, sizeof(probe), to, tolen) < 0 ? -1 : 0;
+}
 
 int speer_dcutr_init(speer_peer_t *peer, int is_initiator) {
     dcutr_ctx_t *ctx = find_or_alloc_ctx(peer);
     if (!ctx) return -1;
+
     speer_dcutr_send_fn send_fn = ctx->send_fn;
     void *user = ctx->user;
     uint32_t stream_id = ctx->stream_id;
+
     memset(ctx, 0, sizeof(*ctx));
-    ctx->send_fn = send_fn;
-    /* codeql[cpp/stack-address-escape]: opaque user handle from setter contract */
-    ctx->user = user;
+    ctx->send_fn = send_fn ? send_fn : g_dcutr_default_send;
+    ctx->user = user ? user : g_dcutr_default_send_user;
     ctx->stream_id = stream_id;
-    /* codeql[cpp/stack-address-escape]: peer outlives init; slab tracks same pointer */
     ctx->peer = peer;
     ctx->is_initiator = is_initiator;
     ctx->state = DCUTR_STATE_GATHERING;
     ctx->start_ms = speer_timestamp_ms();
-    ctx->num_local = gather_local_addrs(ctx, ctx->local, DCUTR_MAX_ADDRS);
+    ctx->num_local = (size_t)gather_local_addrs(ctx, ctx->local, DCUTR_MAX_ADDRS);
     ctx->sync_count = 0;
+    dcutr_poll_register(ctx);
     return 0;
 }
 
 void speer_dcutr_set_transport(speer_dcutr_send_fn send_fn, void *user) {
-    g_dcutr_ctx.send_fn = send_fn;
-    /* codeql[cpp/stack-address-escape]: global transport retains caller-stable user ctx */
-    g_dcutr_ctx.user = user;
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        if (g_dcutr_peers[i] != NULL && g_dcutr_ctxs[i].send_fn == NULL) {
-            g_dcutr_ctxs[i].send_fn = send_fn;
-            /* codeql[cpp/stack-address-escape]: same user token applied to idle ctx slots */
-            g_dcutr_ctxs[i].user = user;
-        }
-    }
+    g_dcutr_default_send = send_fn;
+    g_dcutr_default_send_user = user;
 }
 
 static int send_stream(void *user, const uint8_t *data, size_t len) {
@@ -170,31 +253,42 @@ int speer_dcutr_on_stream_data(speer_peer_t *peer, uint32_t stream_id, const uin
         ctx->user = ctx;
         if (speer_dcutr_init(peer, 0) != 0) return -1;
     }
-    return speer_dcutr_on_msg(data, len);
+    return speer_dcutr_on_msg_peer(peer, data, len);
+}
+
+void speer_dcutr_peer_reset(speer_peer_t *peer) {
+    if (!peer) return;
+    dcutr_ctx_t *ctx = find_ctx(peer);
+    if (!ctx) return;
+    dcutr_poll_unregister(ctx);
+    free(peer->dcutr_ctx);
+    peer->dcutr_ctx = NULL;
 }
 
 void speer_dcutr_free(void) {
-    memset(g_dcutr_ctxs, 0, sizeof(g_dcutr_ctxs));
-    memset(g_dcutr_peers, 0, sizeof(g_dcutr_peers));
+    dcutr_poll_unregister(&g_fallback_ctx);
+    memset(&g_fallback_ctx, 0, sizeof(g_fallback_ctx));
 }
 
 int speer_dcutr_is_active(void) {
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        dcutr_state_t s = g_dcutr_ctxs[i].state;
+    for (int i = 0; i < DCUTR_POLL_MAX; i++) {
+        dcutr_ctx_t *c = g_dcutr_poll_list[i];
+        if (!c) continue;
+        dcutr_state_t s = c->state;
         if (s != DCUTR_STATE_IDLE && s != DCUTR_STATE_COMPLETE && s != DCUTR_STATE_FAILED) return 1;
     }
     return 0;
 }
 
 int speer_dcutr_success(void) {
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        if (g_dcutr_ctxs[i].state == DCUTR_STATE_COMPLETE) return 1;
+    for (int i = 0; i < DCUTR_POLL_MAX; i++) {
+        if (g_dcutr_poll_list[i] && g_dcutr_poll_list[i]->state == DCUTR_STATE_COMPLETE) return 1;
     }
     return 0;
 }
 
 static int send_msg(dcutr_ctx_t *ctx, const speer_dcutr_msg_t *m) {
-    uint8_t buf[256];
+    uint8_t buf[512];
     size_t len;
     if (speer_dcutr_encode(m, buf, sizeof(buf), &len) != 0) return -1;
     if (ctx->send_fn) return ctx->send_fn(ctx->user, buf, len);
@@ -205,16 +299,26 @@ static void send_connect(dcutr_ctx_t *ctx) {
     speer_dcutr_msg_t m;
     ZERO(&m, sizeof(m));
     m.type = DCUTR_TYPE_CONNECT;
-    m.num_addrs = ctx->num_local;
+    size_t na = 0;
     for (size_t i = 0; i < ctx->num_local; i++) {
+        if (na >= DCUTR_MAX_ADDRS) break;
         if (ctx->local[i].addr.ss_family == AF_INET) {
             struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->local[i].addr;
-            m.addrs[i].bytes[0] = 0x04;
-            memcpy(&m.addrs[i].bytes[1], &sin->sin_addr, 4);
-            memcpy(&m.addrs[i].bytes[5], &sin->sin_port, 2);
-            m.addrs[i].len = 7;
+            m.addrs[na].bytes[0] = DCUTR_ADDR_IPV4;
+            memcpy(&m.addrs[na].bytes[1], &sin->sin_addr, 4);
+            memcpy(&m.addrs[na].bytes[5], &sin->sin_port, 2);
+            m.addrs[na].len = 7;
+            na++;
+        } else if (ctx->local[i].addr.ss_family == AF_INET6) {
+            struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ctx->local[i].addr;
+            m.addrs[na].bytes[0] = DCUTR_ADDR_IPV6;
+            memcpy(&m.addrs[na].bytes[1], &sin6->sin6_addr, 16);
+            memcpy(&m.addrs[na].bytes[17], &sin6->sin6_port, 2);
+            m.addrs[na].len = 19;
+            na++;
         }
     }
+    m.num_addrs = na;
 
     if (send_msg(ctx, &m) >= 0) {
         SPEER_LOG_DEBUG("dcutr", "sending CONNECT with %zu addrs", m.num_addrs);
@@ -243,7 +347,7 @@ static void try_connect(dcutr_ctx_t *ctx) {
 
         if (c->addr.ss_family == AF_INET) {
             struct sockaddr_in *sin = (struct sockaddr_in *)&c->addr;
-            char addr_str[32];
+            char addr_str[64];
             snprintf(addr_str, sizeof(addr_str), "%d.%d.%d.%d:%d", ((uint8_t *)&sin->sin_addr)[0],
                      ((uint8_t *)&sin->sin_addr)[1], ((uint8_t *)&sin->sin_addr)[2],
                      ((uint8_t *)&sin->sin_addr)[3], ntohs(sin->sin_port));
@@ -251,11 +355,15 @@ static void try_connect(dcutr_ctx_t *ctx) {
             SPEER_LOG_DEBUG("dcutr", "attempting hole punch to %s (attempt %d)", addr_str,
                             c->attempts);
 
-            if (ctx->peer && ctx->peer->host) { speer_peer_set_address(ctx->peer, addr_str); }
+            if (ctx->peer) {
+                speer_peer_set_address(ctx->peer, addr_str);
+                dcutr_send_udp_probe(ctx->peer, &c->addr, c->addr_len);
+            }
+        } else if (c->addr.ss_family == AF_INET6) {
             if (ctx->peer && ctx->peer->host && ctx->peer->host->socket >= 0) {
-                uint8_t probe = 0;
-                speer_socket_send(ctx->peer->host->socket, &probe, sizeof(probe), &c->addr,
-                                  c->addr_len);
+                memcpy(&ctx->peer->addr, &c->addr, c->addr_len);
+                ctx->peer->addr_len = c->addr_len;
+                dcutr_send_udp_probe(ctx->peer, &c->addr, c->addr_len);
             }
         }
     }
@@ -307,8 +415,9 @@ static void poll_ctx(dcutr_ctx_t *ctx, uint64_t now) {
 
 void speer_dcutr_poll(void) {
     uint64_t now = speer_timestamp_ms();
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        dcutr_ctx_t *ctx = &g_dcutr_ctxs[i];
+    for (int i = 0; i < DCUTR_POLL_MAX; i++) {
+        dcutr_ctx_t *ctx = g_dcutr_poll_list[i];
+        if (!ctx) continue;
         if (ctx->state == DCUTR_STATE_IDLE || ctx->state == DCUTR_STATE_COMPLETE ||
             ctx->state == DCUTR_STATE_FAILED)
             continue;
@@ -316,19 +425,11 @@ void speer_dcutr_poll(void) {
     }
 }
 
-int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
-    dcutr_ctx_t *ctx = NULL;
-    for (size_t i = 0; i < DCUTR_MAX_PEERS; i++) {
-        if (g_dcutr_ctxs[i].state != DCUTR_STATE_IDLE &&
-            g_dcutr_ctxs[i].state != DCUTR_STATE_COMPLETE &&
-            g_dcutr_ctxs[i].state != DCUTR_STATE_FAILED) {
-            ctx = &g_dcutr_ctxs[i];
-            break;
-        }
-    }
-    if (!ctx) ctx = &g_dcutr_ctxs[0];
-    speer_dcutr_msg_t m;
+int speer_dcutr_on_msg_peer(speer_peer_t *peer, const uint8_t *data, size_t len) {
+    dcutr_ctx_t *ctx = peer ? find_ctx(peer) : &g_fallback_ctx;
+    if (peer && !ctx) return -1;
 
+    speer_dcutr_msg_t m;
     if (speer_dcutr_decode(&m, data, len) != 0) {
         SPEER_LOG_WARN("dcutr", "failed to decode message");
         return -1;
@@ -340,25 +441,30 @@ int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
     case DCUTR_TYPE_CONNECT:
         SPEER_LOG_DEBUG("dcutr", "received CONNECT with %zu addrs", m.num_addrs);
         for (size_t i = 0; i < m.num_addrs && ctx->num_remote < DCUTR_MAX_ADDRS; i++) {
-            if (m.addrs[i].len >= 7 && m.addrs[i].bytes[0] == 0x04) {
+            if (m.addrs[i].len >= 7 && m.addrs[i].bytes[0] == DCUTR_ADDR_IPV4) {
                 struct sockaddr_in cand;
                 ZERO(&cand, sizeof(cand));
                 cand.sin_family = AF_INET;
                 memcpy(&cand.sin_addr, &m.addrs[i].bytes[1], 4);
                 memcpy(&cand.sin_port, &m.addrs[i].bytes[5], 2);
-
-                int trust = 0;
-                if (ctx->peer && ctx->peer->addr.ss_family == AF_INET) {
-                    const struct sockaddr_in *known = (const struct sockaddr_in *)&ctx->peer->addr;
-                    uint32_t known_ip = ntohl(known->sin_addr.s_addr);
-                    uint32_t cand_ip = ntohl(cand.sin_addr.s_addr);
-                    if ((known_ip & 0xffffff00u) == (cand_ip & 0xffffff00u)) trust = 1;
-                }
-                if (!trust) continue;
-
+                if (!dcutr_trust_remote_candidate(ctx->peer, (struct sockaddr *)&cand,
+                                                  sizeof(cand)))
+                    continue;
                 struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->remote[ctx->num_remote].addr;
                 *sin = cand;
                 ctx->remote[ctx->num_remote].addr_len = sizeof(*sin);
+                ctx->num_remote++;
+            } else if (m.addrs[i].len >= 19 && m.addrs[i].bytes[0] == DCUTR_ADDR_IPV6) {
+                struct sockaddr_in6 cand6;
+                ZERO(&cand6, sizeof(cand6));
+                cand6.sin6_family = AF_INET6;
+                memcpy(&cand6.sin6_addr, &m.addrs[i].bytes[1], 16);
+                memcpy(&cand6.sin6_port, &m.addrs[i].bytes[17], 2);
+                if (!dcutr_trust_remote_candidate(ctx->peer, (struct sockaddr *)&cand6,
+                                                  sizeof(cand6)))
+                    continue;
+                memcpy(&ctx->remote[ctx->num_remote].addr, &cand6, sizeof(cand6));
+                ctx->remote[ctx->num_remote].addr_len = sizeof(cand6);
                 ctx->num_remote++;
             }
         }
@@ -379,6 +485,10 @@ int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
     }
 
     return 0;
+}
+
+int speer_dcutr_on_msg(const uint8_t *data, size_t len) {
+    return speer_dcutr_on_msg_peer(NULL, data, len);
 }
 
 int speer_dcutr_encode(const speer_dcutr_msg_t *m, uint8_t *out, size_t cap, size_t *out_len) {

@@ -44,7 +44,7 @@ int speer_relay_encode_hop_status(uint8_t *out, size_t cap, size_t *out_len, int
     speer_pb_writer_t w;
     speer_pb_writer_init(&w, out, cap);
     if (speer_pb_write_int32_field(&w, 1, 2) != 0) return -1;
-    if (speer_pb_write_int32_field(&w, 4, status) != 0) return -1;
+    if (speer_pb_write_int32_field(&w, 5, status) != 0) return -1;
     if (res) {
         uint8_t inner[600];
         speer_pb_writer_t iw;
@@ -73,7 +73,7 @@ int speer_relay_encode_stop_status(uint8_t *out, size_t cap, size_t *out_len, in
     speer_pb_writer_t w;
     speer_pb_writer_init(&w, out, cap);
     if (speer_pb_write_int32_field(&w, 1, 1) != 0) return -1;
-    if (speer_pb_write_int32_field(&w, 2, status) != 0) return -1;
+    if (speer_pb_write_int32_field(&w, 4, status) != 0) return -1;
     if (out_len) *out_len = w.pos;
     return 0;
 }
@@ -112,6 +112,10 @@ int speer_relay_decode(const uint8_t *in, size_t in_len, speer_relay_msg_type_t 
             int32_t v;
             if (speer_pb_read_int32(&r, &v) != 0) return -1;
             if (type) *type = (speer_relay_msg_type_t)v;
+        } else if (f == 5 && wire == PB_WIRE_VARINT) {
+            int32_t v;
+            if (speer_pb_read_int32(&r, &v) != 0) return -1;
+            if (status) *status = v;
         } else if (f == 4 && wire == PB_WIRE_VARINT) {
             int32_t v;
             if (speer_pb_read_int32(&r, &v) != 0) return -1;
@@ -141,9 +145,13 @@ int speer_relay_decode(const uint8_t *in, size_t in_len, speer_relay_msg_type_t 
                     const uint8_t *vd;
                     size_t vl;
                     if (speer_pb_read_bytes(&ir, &vd, &vl) != 0) return -1;
-                    if (vl > sizeof(opt_reservation->voucher)) return -1;
-                    COPY(opt_reservation->voucher, vd, vl);
-                    opt_reservation->voucher_len = vl;
+                    size_t cap = sizeof(opt_reservation->voucher);
+                    if (vl <= cap) {
+                        COPY(opt_reservation->voucher, vd, vl);
+                        opt_reservation->voucher_len = vl;
+                    } else {
+                        opt_reservation->voucher_len = 0;
+                    }
                 } else {
                     if (speer_pb_skip(&ir, ww) != 0) return -1;
                 }

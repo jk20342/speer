@@ -134,6 +134,7 @@ int main(void) {
     if (relay_payload(circuit_id, &msg) != 0) FAIL("relay SYNC payload decode failed\n");
     if (msg.type != DCUTR_TYPE_SYNC) FAIL("expected relay SYNC\n");
 
+    speer_dcutr_peer_reset(&peer);
     speer_dcutr_free();
     relay_client_free(&client);
     puts("dcutr relay integration: ok");

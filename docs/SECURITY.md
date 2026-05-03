@@ -77,9 +77,10 @@ certificate pinning is not built in.
 - mdns records are untrusted hints.
 - dht store values are bounded by `DHT_VALUE_MAX_SIZE`, and store tokens are
   hmac-bound to the sender address.
-- circuit relay state is tied to authenticated peer ids.
-- dcutr is partial. the current candidate trust check is ipv4-only and only
-  accepts candidates in the same `/24` as the authenticated session address.
+- relays see connection metadata (turn-like); bind reservations to authenticated
+  ids in policy.
+- dcutr trust is heuristic (`/24`, ipv6 prefix, established session, loopback in
+  lab); not full ice. `stun_server` exposes your bind attempt to that server.
 
 ## resource limits
 

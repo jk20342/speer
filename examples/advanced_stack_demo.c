@@ -87,9 +87,7 @@ static void demo_relay_client_structure(void) {
     printf("  5) relay_client_poll()     until circuit CONNECTED; send app data via "
            "relay_client_send()\n");
     printf("  6) relay_client_start_dcutr(circuit_id, speer_peer, initiator)\n");
-    printf("     Each loop: relay_client_poll(), speer_dcutr_poll(), speer_host_poll()\n");
-    printf("     DCUtR frames on the circuit are dispatched from relay_client_poll via "
-           "speer_dcutr_on_msg.\n");
+    printf("     Each loop: relay_client_poll(); speer_host_poll() (includes dcutr by default)\n");
     relay_client_free(&relay);
 }
 #endif
