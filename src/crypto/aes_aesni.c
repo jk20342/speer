@@ -76,6 +76,7 @@ static SPEER_AESNI_TARGET __m128i load_round_key(const uint32_t *rk, int idx) {
 }
 
 SPEER_AESNI_TARGET
+/* aes-ni round key expansion for aes-128/192/256 encrypt */
 void speer_aes_set_encrypt_key_aesni(speer_aes_key_t *k, const uint8_t *key, size_t key_bits) {
     __m128i t1, t2, t3;
     uint32_t *rk = k->round_keys;

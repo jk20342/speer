@@ -65,26 +65,30 @@ static int output_file_safe(const char *p) {
     return 0;
 }
 
+/* argv -> keys; optional -o basename only after output_file_safe */
 int main(int argc, char **argv) {
     output_format_t format = FORMAT_HEX;
     const char *output_file = NULL;
     const char *seed_hex = NULL;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+        const char *a = argv[i];
+        int step = 1;
+        if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
             print_usage(argv[0]);
             return 0;
         }
-        if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
+        if (strcmp(a, "-v") == 0 || strcmp(a, "--version") == 0) {
             print_version();
             return 0;
         }
-        if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--format") == 0) {
+        if (strcmp(a, "-f") == 0 || strcmp(a, "--format") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: -f requires an argument\n");
                 return 1;
             }
-            const char *fmt = argv[++i];
+            const char *fmt = argv[i + 1];
+            step = 2;
             if (strcmp(fmt, "hex") == 0)
                 format = FORMAT_HEX;
             else if (strcmp(fmt, "binary") == 0)
@@ -97,22 +101,25 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Error: Unknown format '%s'\n", fmt);
                 return 1;
             }
-        } else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) {
+        } else if (strcmp(a, "-o") == 0 || strcmp(a, "--output") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: -o requires an argument\n");
                 return 1;
             }
-            output_file = argv[++i];
-        } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
+            output_file = argv[i + 1];
+            step = 2;
+        } else if (strcmp(a, "-s") == 0 || strcmp(a, "--seed") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: -s requires an argument\n");
                 return 1;
             }
-            seed_hex = argv[++i];
+            seed_hex = argv[i + 1];
+            step = 2;
         } else {
-            fprintf(stderr, "Error: Unknown option '%s'\n", argv[i]);
+            fprintf(stderr, "Error: Unknown option '%s'\n", a);
             return 1;
         }
+        i += step - 1;
     }
 
     uint8_t seed[32];
@@ -141,8 +148,15 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: refusing unsafe output path (use simple file name paths)\n");
             return 1;
         }
+        size_t ln = strlen(output_file);
+        if (ln >= 276) {
+            fprintf(stderr, "Error: output path too long\n");
+            return 1;
+        }
+        char open_here[276];
+        memcpy(open_here, output_file, ln + 1);
         const char *mode = (format == FORMAT_BINARY) ? "wb" : "w";
-        out = fopen(output_file, mode);
+        out = fopen(open_here, mode);
         if (!out) {
             fprintf(stderr, "Error: Cannot open '%s'\n", output_file);
             return 1;

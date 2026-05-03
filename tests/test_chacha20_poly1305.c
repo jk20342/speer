@@ -1,6 +1,5 @@
 #include "speer_internal.h"
 
-#include "aead_chacha.c"
 #include "aead_iface.h"
 #include "test_crypto.h"
 

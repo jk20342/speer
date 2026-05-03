@@ -75,16 +75,6 @@ static dcutr_ctx_t *find_ctx(const speer_peer_t *peer) {
     return NULL;
 }
 
-static int add_ipv4_candidate(dcutr_candidate_t *out, size_t max, size_t *count,
-                              const struct sockaddr_in *sin) {
-    if (*count >= max || sin->sin_port == 0) return 0;
-    ZERO(&out[*count], sizeof(out[*count]));
-    COPY(&out[*count].addr, sin, sizeof(*sin));
-    out[*count].addr_len = sizeof(*sin);
-    (*count)++;
-    return 1;
-}
-
 static int gather_local_addrs(dcutr_ctx_t *ctx, dcutr_candidate_t *out, size_t max) {
     size_t count = 0;
     speer_host_t *host = ctx->peer ? ctx->peer->host : NULL;
@@ -94,9 +84,15 @@ static int gather_local_addrs(dcutr_ctx_t *ctx, dcutr_candidate_t *out, size_t m
         ZERO(&bound, sizeof(bound));
         if (getsockname(host->socket, (struct sockaddr *)&bound, &bound_len) == 0 &&
             bound.ss_family == AF_INET) {
-            struct sockaddr_in sin = *(struct sockaddr_in *)&bound;
-            if (sin.sin_addr.s_addr == htonl(INADDR_ANY)) sin.sin_addr.s_addr = htonl(0x7f000001);
-            add_ipv4_candidate(out, max, &count, &sin);
+            if (count >= max) return (int)count;
+            struct sockaddr_in cand;
+            memcpy(&cand, &bound, sizeof(cand));
+            if (cand.sin_port == 0) return (int)count;
+            if (cand.sin_addr.s_addr == htonl(INADDR_ANY)) cand.sin_addr.s_addr = htonl(0x7f000001);
+            ZERO(&out[count], sizeof(out[count]));
+            memcpy(&out[count].addr, &cand, sizeof(cand));
+            out[count].addr_len = sizeof(cand);
+            count++;
         }
     }
     return (int)count;

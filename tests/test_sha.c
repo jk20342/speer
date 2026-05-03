@@ -1,6 +1,5 @@
 #include "speer_internal.h"
 
-#include "sha2.c"
 #include "test_crypto.h"
 
 typedef struct {

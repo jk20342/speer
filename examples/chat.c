@@ -21,7 +21,6 @@
 
 static speer_host_t *g_host = NULL;
 static speer_peer_t *g_peer = NULL;
-static volatile int g_running = 1;
 
 static void on_event(speer_host_t *host, const speer_event_t *ev, void *user) {
     (void)host;

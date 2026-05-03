@@ -14,15 +14,16 @@ static int parse_ecdsa_der(const uint8_t *sig, size_t sig_len, const uint8_t **r
     size_t pos = 1;
     size_t total_len;
     if (sig[pos] & 0x80) {
-        size_t n = sig[pos] & 0x7f;
-        if (n != 1 || pos + 1 + n > sig_len) return -1;
-        total_len = sig[pos + 1];
-        pos += 2;
+        size_t nlb = sig[pos] & 0x7f;
+        if (nlb == 0 || nlb > 4 || pos + 1 + nlb > sig_len) return -1;
+        total_len = 0;
+        for (size_t j = 0; j < nlb; j++) total_len = (total_len << 8) | sig[pos + 1 + j];
+        pos += 1 + nlb;
     } else {
         total_len = sig[pos];
         pos += 1;
     }
-    if (pos + total_len != sig_len) return -1;
+    if (pos > sig_len || total_len != sig_len - pos) return -1;
 
     /* parse r,s against remaining bytes in the outer sequence slice */
     const uint8_t *p = sig + pos;

@@ -25,7 +25,6 @@ static int run_aes_tests(const aes_test_vector_t *tests, size_t num_tests, int k
     for (size_t i = 0; i < num_tests; i++) {
         uint8_t key[32];
         uint8_t pt[16];
-        uint8_t ct[16];
         uint8_t expected_ct[16];
         uint8_t output[16];
         speer_aes_key_t aes_key;

@@ -224,7 +224,7 @@ int speer_x509_libp2p_make_self_signed(uint8_t *out, size_t cap, size_t *out_len
 
     uint8_t ext_seq[600];
     size_t ext_seq_len = 0;
-    if (pubkey_proto_len > 250 || ext_seq_len + 2 + pubkey_proto_len > sizeof(ext_seq)) return -1;
+    if (pubkey_proto_len == 0 || pubkey_proto_len > sizeof(pubkey_proto)) return -1;
     ext_seq_len += emit_tlv(ext_seq + ext_seq_len, ASN1_OCTET_STRING, pubkey_proto,
                             pubkey_proto_len);
     ext_seq_len += emit_tlv(ext_seq + ext_seq_len, ASN1_OCTET_STRING, libp2p_sig, 64);

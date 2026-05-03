@@ -12,6 +12,7 @@
         return 1;                     \
     } while (0)
 
+/* round-trip encoder checks for ping ack stream conn close helpers */
 int main(void) {
     uint8_t buf[512];
     speer_qf_writer_t w;
