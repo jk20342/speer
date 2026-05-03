@@ -7,13 +7,16 @@
 #include <immintrin.h>
 #include <wmmintrin.h>
 
-#define SPEER_VAES_TARGET __attribute__((target("vaes", "avx2")))
+/* Clang insists on a single string; GCC accepts the comma-separated features form too. */
+#define SPEER_VAES_TARGET __attribute__((target("vaes,avx2")))
 
-static SPEER_VAES_TARGET INLINE __m128i load_round_key(const uint32_t *rk, int idx) {
+SPEER_VAES_TARGET
+static INLINE __m128i load_round_key(const uint32_t *rk, int idx) {
     return _mm_loadu_si128((const __m128i *)(rk + idx * 4));
 }
 
-static SPEER_VAES_TARGET __m128i vaes_ctr_inc(__m128i ctr, uint64_t add) {
+SPEER_VAES_TARGET
+static INLINE __m128i vaes_ctr_inc(__m128i ctr, uint64_t add) {
     uint8_t buf[16];
     _mm_storeu_si128((__m128i *)buf, ctr);
     uint64_t lo = ((uint64_t)buf[12] << 24) | ((uint64_t)buf[13] << 16) | ((uint64_t)buf[14] << 8) |
@@ -55,17 +58,19 @@ void speer_aes_ctr_vaes(const speer_aes_key_t *k, const uint8_t nonce[16], uint8
 
         for (int r = 1; r < nr; r++) {
             __m128i rkr = load_round_key(rk, r);
-            y01 = _mm256_aesenc_epi128(y01, rkr);
-            y23 = _mm256_aesenc_epi128(y23, rkr);
-            y45 = _mm256_aesenc_epi128(y45, rkr);
-            y67 = _mm256_aesenc_epi128(y67, rkr);
+            __m256i rkv = _mm256_broadcastsi128_si256(rkr);
+            y01 = _mm256_aesenc_epi128(y01, rkv);
+            y23 = _mm256_aesenc_epi128(y23, rkv);
+            y45 = _mm256_aesenc_epi128(y45, rkv);
+            y67 = _mm256_aesenc_epi128(y67, rkv);
         }
 
         __m128i rkN = load_round_key(rk, nr);
-        y01 = _mm256_aesenclast_epi128(y01, rkN);
-        y23 = _mm256_aesenclast_epi128(y23, rkN);
-        y45 = _mm256_aesenclast_epi128(y45, rkN);
-        y67 = _mm256_aesenclast_epi128(y67, rkN);
+        __m256i rkNv = _mm256_broadcastsi128_si256(rkN);
+        y01 = _mm256_aesenclast_epi128(y01, rkNv);
+        y23 = _mm256_aesenclast_epi128(y23, rkNv);
+        y45 = _mm256_aesenclast_epi128(y45, rkNv);
+        y67 = _mm256_aesenclast_epi128(y67, rkNv);
 
         __m128i p0 = _mm_loadu_si128((const __m128i *)(in + 0));
         __m128i p1 = _mm_loadu_si128((const __m128i *)(in + 16));

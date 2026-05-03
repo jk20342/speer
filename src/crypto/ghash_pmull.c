@@ -86,10 +86,10 @@ static SPEER_PMULL_TARGET xm128 xm_srli_si128_12(xm128 x) {
 
 /* Bit-identical port of gfmul_clmul in ghash_clmul.c after xmm byte-reversal */
 static SPEER_PMULL_TARGET xm128 gfmul_pmull(xm128 a, xm128 b) {
-    poly64_t a0 = vreinterpret_p64_u64(vgetq_lane_u64(a, 0));
-    poly64_t a1 = vreinterpret_p64_u64(vgetq_lane_u64(a, 1));
-    poly64_t b0 = vreinterpret_p64_u64(vgetq_lane_u64(b, 0));
-    poly64_t b1 = vreinterpret_p64_u64(vgetq_lane_u64(b, 1));
+    poly64_t a0 = vreinterpret_p64_u64(vmov_n_u64(vgetq_lane_u64(a, 0)));
+    poly64_t a1 = vreinterpret_p64_u64(vmov_n_u64(vgetq_lane_u64(a, 1)));
+    poly64_t b0 = vreinterpret_p64_u64(vmov_n_u64(vgetq_lane_u64(b, 0)));
+    poly64_t b1 = vreinterpret_p64_u64(vmov_n_u64(vgetq_lane_u64(b, 1)));
 
     xm128 tmp3 = vreinterpretq_u64_p128(vmull_p64(a0, b0));
     xm128 tmp4 = vreinterpretq_u64_p128(vmull_p64(a1, b0));
