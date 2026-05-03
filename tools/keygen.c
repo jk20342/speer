@@ -1,10 +1,10 @@
 #include "speer.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include <string.h>
-#include <stdint.h>
 
 #define PROGRAM_NAME "speer-keygen"
 #define VERSION      "0.2.0"

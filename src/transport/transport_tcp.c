@@ -2,19 +2,19 @@
 
 #include "speer_internal.h"
 
-#include "multistream.h"
-#include "varint.h"
-
 #include <stdio.h>
-
-#include "transport_iface.h"
 
 #include <string.h>
 
+#include "multistream.h"
+#include "transport_iface.h"
+#include "varint.h"
+
 #if !defined(_WIN32)
-#include <errno.h>
 #include <sys/select.h>
 #include <sys/types.h>
+
+#include <errno.h>
 #endif
 
 struct speer_transport_endpoint_s {

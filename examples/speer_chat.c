@@ -26,12 +26,12 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include <sys/stat.h>
 
 #include <conio.h>
 #include <direct.h>
 #include <fcntl.h>
 #include <io.h>
-#include <sys/stat.h>
 #define THREAD_T HANDLE
 #define THREAD_CREATE(t, fn, arg) \
     ((*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(fn), (arg), 0, NULL)) != NULL ? 0 : -1)
@@ -53,7 +53,6 @@ static void thread_sleep_ms(int ms) {
 #include <pthread.h>
 
 #include <fcntl.h>
-
 #include <poll.h>
 #include <signal.h>
 #include <termios.h>
@@ -473,11 +472,9 @@ static int ui_netlog_width(void) {
     return 0;
 }
 
-
 #if defined(_WIN32)
 static FILE *fopen_write_bin_private(const char *path) {
-    int fd =
-        _open(path, _O_CREAT | _O_TRUNC | _O_BINARY | _O_WRONLY, _S_IREAD | _S_IWRITE);
+    int fd = _open(path, _O_CREAT | _O_TRUNC | _O_BINARY | _O_WRONLY, _S_IREAD | _S_IWRITE);
     if (fd < 0) return NULL;
     FILE *fp = _fdopen(fd, "wb");
     if (!fp) {
@@ -527,14 +524,11 @@ static void esc_fmt_append(char *buf, size_t cap, int *pos, const char *fmt, ...
     va_end(ap);
 
     room = cap - (size_t)*pos;
-    if (n >= 0 && (size_t)n < room) {
-        *pos += n;
-    }
+    if (n >= 0 && (size_t)n < room) { *pos += n; }
 }
 
 static void utf8_emit(char *buf, size_t cap, int *pos, uint32_t ch) {
-    int need =
-        ch < 128 ? 1 : (ch < 0x800 ? 2 : 3); /* widest UTF-8 rune we emit below */
+    int need = ch < 128 ? 1 : (ch < 0x800 ? 2 : 3); /* widest UTF-8 rune we emit below */
     if (*pos >= 0 && (size_t)*pos + (size_t)need >= cap - 32) esc_buf_flush(buf, pos);
     if (ch < 128) {
         buf[(*pos)++] = (char)ch;
@@ -1143,10 +1137,8 @@ static void render_messages(void) {
     /* Apply scroll: move start_idx back, but never past the oldest real message. */
     if (g_history.scroll > 0 && g_history.count > 0) {
         int max_steps = g_history.count - 1;
-        int steps =
-            g_history.scroll < max_steps ? g_history.scroll : max_steps;
-        for (int i = 0; i < steps; i++)
-            start_idx = (start_idx - 1 + MAX_HISTORY) % MAX_HISTORY;
+        int steps = g_history.scroll < max_steps ? g_history.scroll : max_steps;
+        for (int i = 0; i < steps; i++) start_idx = (start_idx - 1 + MAX_HISTORY) % MAX_HISTORY;
     }
 
     for (int i = 0; i < msgs_to_show && line >= inner_y; i++) {
