@@ -74,6 +74,10 @@ static int output_file_safe(const char *p) {
 
 static FILE *open_safe_output_file(const char *src, const char *mode) {
     char path[276];
+    const char *base_dir = ".";
+    char fullpath[560];
+    char resolved_base[560];
+    char resolved_target[560];
     if (output_file_safe(src) != 0) return NULL;
     for (size_t i = 0;; i++) {
         if (i >= sizeof(path)) return NULL;
@@ -86,9 +90,17 @@ static FILE *open_safe_output_file(const char *src, const char *mode) {
         if (!(isalnum(c) || c == '_' || c == '-' || c == '.')) return NULL;
         path[i] = ch;
     }
+    if (snprintf(fullpath, sizeof(fullpath), "%s/%s", base_dir, path) >= (int)sizeof(fullpath)) return NULL;
+    if (!realpath(base_dir, resolved_base)) return NULL;
+    if (!realpath(fullpath, resolved_target)) return NULL;
+    size_t base_len = strlen(resolved_base);
+    if (strncmp(resolved_base, resolved_target, base_len) != 0 ||
+        (resolved_target[base_len] != '\0' && resolved_target[base_len] != '/')) {
+        return NULL;
+    }
 #if defined(_MSC_VER)
     FILE *fp = NULL;
-    if (fopen_s(&fp, path, mode) != 0) return NULL;
+    if (fopen_s(&fp, resolved_target, mode) != 0) return NULL;
     return fp;
 #else
     int flags = O_WRONLY | O_CREAT | O_TRUNC;
@@ -103,7 +115,7 @@ static FILE *open_safe_output_file(const char *src, const char *mode) {
 #elif defined(_O_BINARY)
     if (strcmp(mode, "wb") == 0) flags |= _O_BINARY;
 #endif
-    int fd = open(path, flags, (mode_t)0600);
+    int fd = open(resolved_target, flags, (mode_t)0600);
     if (fd < 0) return NULL;
     FILE *fp = fdopen(fd, (strcmp(mode, "wb") == 0) ? "wb" : "w");
     if (!fp) {
