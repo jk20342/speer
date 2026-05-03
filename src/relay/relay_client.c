@@ -85,19 +85,13 @@ int relay_client_connect(relay_client_t *client, const char *relay_addr,
     } else {
         client->relay_peer_id_len = 0;
     }
+    if (!host[0]) return -1;
+
+    SPEER_INIT_WINSOCK();
+
     struct sockaddr_in sin;
-    ZERO(&sin, sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(port);
-#if defined(_WIN32)
-    sin.sin_addr.s_addr = inet_addr(host);
-    if (sin.sin_addr.s_addr == INADDR_NONE) {
-        struct hostent *he = gethostbyname(host);
-        if (he && he->h_addrtype == AF_INET) COPY(&sin.sin_addr, he->h_addr, 4);
-    }
-#else
-    inet_pton(AF_INET, host, &sin.sin_addr);
-#endif
+    if (speer_sockaddr_in_resolve(&sin, host, port) != 0) return -1;
+
     client->socket = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (client->socket < 0) return -1;
     if (connect(client->socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
@@ -105,13 +99,11 @@ int relay_client_connect(relay_client_t *client, const char *relay_addr,
         client->socket = -1;
         return -1;
     }
-#if defined(_WIN32)
-    u_long mode = 1;
-    ioctlsocket(client->socket, FIONBIO, &mode);
-#else
-    int flags = fcntl(client->socket, F_GETFL, 0);
-    fcntl(client->socket, F_SETFL, flags | O_NONBLOCK);
-#endif
+    if (speer_fd_set_nonblocking(client->socket, 1) != 0) {
+        CLOSESOCKET(client->socket);
+        client->socket = -1;
+        return -1;
+    }
     client->state = RELAY_STATE_CONNECTING;
     client->connected_ms = speer_timestamp_ms();
     client->last_recv_ms = client->connected_ms;

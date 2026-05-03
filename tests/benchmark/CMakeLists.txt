@@ -22,7 +22,12 @@ foreach(target ${BENCH_TARGETS})
         ${CMAKE_SOURCE_DIR}/src/tls
         ${CMAKE_SOURCE_DIR}/src/quic
     )
-    target_compile_options(${target} PRIVATE -O3)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE
+            $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:/O2>)
+    else()
+        target_compile_options(${target} PRIVATE -O3)
+    endif()
 endforeach()
 
 add_custom_target(benchmark

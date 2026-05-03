@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "aead_iface.h"
+#include "ghash.h"
 
 extern const speer_aead_iface_t speer_aead_aes128_gcm;
 extern const speer_aead_iface_t speer_aead_aes256_gcm;
@@ -115,10 +116,64 @@ static int aes256_gcm_kat(void) {
     return ok ? 0 : 1;
 }
 
+static void fill_pattern(uint8_t *buf, size_t n, uint32_t seed) {
+    for (size_t i = 0; i < n; i++) {
+        seed = seed * 1103515245u + 12345u;
+        buf[i] = (uint8_t)(seed ^ (seed >> 16));
+    }
+}
+
+static int hw_ghash_matches_soft_case(const uint8_t h[16], const uint8_t *data, size_t len,
+                                      int chunked) {
+    uint8_t y_hw[16] = {0};
+    uint8_t y_sw[16] = {0};
+    speer_ghash_state_t s_hw;
+    speer_ghash_state_t s_sw;
+
+    speer_ghash_init(&s_hw, h);
+    speer_ghash_soft_init(&s_sw, h);
+
+    if (!chunked) {
+        speer_ghash_absorb(&s_hw, y_hw, data, len);
+        speer_ghash_soft_absorb(&s_sw, y_sw, data, len);
+    } else {
+        static const size_t chunk_lens[] = {13, 18, SIZE_MAX};
+        size_t remaining = len;
+        const uint8_t *p = data;
+        for (size_t c = 0; remaining > 0; c++) {
+            size_t take = chunk_lens[c];
+            if (take == SIZE_MAX || take > remaining) take = remaining;
+            speer_ghash_absorb(&s_hw, y_hw, p, take);
+            speer_ghash_soft_absorb(&s_sw, y_sw, p, take);
+            p += take;
+            remaining -= take;
+        }
+    }
+
+    return memcmp(y_hw, y_sw, 16) != 0;
+}
+
+static int ghash_hw_matches_soft(void) {
+    static const uint8_t h_aes_block[16] = {0x66, 0xe9, 0x4b, 0xd4, 0xef, 0x8a, 0x2c, 0x3b,
+                                            0x88, 0x4e, 0xaf, 0x96, 0xce, 0xb9, 0x3f, 0x21};
+    uint8_t buf[192];
+    fill_pattern(buf, sizeof(buf), 0xdeadbeefu);
+
+    int fail = hw_ghash_matches_soft_case(h_aes_block, NULL, 0, 0);
+    fail |= hw_ghash_matches_soft_case(h_aes_block, buf, 47, 0);
+    fail |= hw_ghash_matches_soft_case(h_aes_block, buf, 129, 0);
+    fail |= hw_ghash_matches_soft_case(h_aes_block, buf + 40, (size_t)(192 - 40), 1);
+
+    int ok = !fail;
+    printf("ghash (hw vs soft): %s\n", ok ? "ok" : "fail");
+    return ok ? 0 : 1;
+}
+
 int main(void) {
     int rc = 0;
     rc |= chacha_check();
     rc |= aes128_gcm_kat();
     rc |= aes256_gcm_kat();
+    rc |= ghash_hw_matches_soft();
     return rc;
 }

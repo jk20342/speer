@@ -37,10 +37,11 @@ int main(void) {
     uint8_t txt_data[1 + sizeof(dnsaddr_txt) - 1];
     txt_data[0] = (uint8_t)(sizeof(dnsaddr_txt) - 1);
     memcpy(txt_data + 1, dnsaddr_txt, sizeof(dnsaddr_txt) - 1);
-    if (mdns_register_service(&ctx, "MyNode", "_p2p._udp", 4001, txt_data, sizeof(txt_data)) != 0)
+    static const char inst_fqdn[] = "MyPeer._p2p._udp.local";
+    if (mdns_register_service(&ctx, inst_fqdn, "_p2p._udp", 4001, txt_data, sizeof(txt_data)) != 0)
         FAIL("mdns_register_service failed\n");
     if (ctx.num_services != 1) FAIL("should have 1 service\n");
-    if (strcmp(ctx.services[0].instance_name, "MyNode") != 0) FAIL("instance name mismatch\n");
+    if (strcmp(ctx.services[0].instance_name, inst_fqdn) != 0) FAIL("instance name mismatch\n");
     if (ctx.services[0].srv.port != 4001) FAIL("port mismatch\n");
     if (ctx.services[0].txt.num_fields != 1) FAIL("should have 1 txt field\n");
     if (strcmp(ctx.services[0].txt.fields[0].key, "dnsaddr") != 0) FAIL("txt key mismatch\n");
@@ -73,7 +74,7 @@ int main(void) {
         FAIL("mdns_build_libp2p_service_name failed\n");
     if (strcmp(svc_name, "_p2p._udp.local") != 0) FAIL("service name format wrong\n");
 
-    if (mdns_unregister_service(&ctx, "MyNode") != 0) FAIL("mdns_unregister_service failed\n");
+    if (mdns_unregister_service(&ctx, inst_fqdn) != 0) FAIL("mdns_unregister_service failed\n");
     if (ctx.num_services != 0) FAIL("unregister should remove service\n");
 
     len = sizeof(packet);

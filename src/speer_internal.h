@@ -191,6 +191,14 @@ typedef int socklen_t;
 #define SPEER_INIT_WINSOCK()
 #endif
 
+#if defined(_WIN32)
+#define SPEER_SOCK_ERR_GET()  ((int)WSAGetLastError())
+#define SPEER_SOCK_ERR_SET(e) (void)WSASetLastError(e)
+#else
+#define SPEER_SOCK_ERR_GET()  (errno)
+#define SPEER_SOCK_ERR_SET(e) (void)(errno = (e))
+#endif
+
 /* error checking helpers */
 #define CHECK(expr)                 \
     do {                            \
@@ -430,6 +438,10 @@ int speer_socket_send(int sock, const uint8_t *buf, size_t len, const struct soc
                       socklen_t addr_len);
 void speer_socket_close(int sock);
 int speer_socket_set_nonblocking(int sock);
+int speer_sockaddr_in_resolve(struct sockaddr_in *sin, const char *host_opt, uint16_t port);
+int speer_fd_set_rcvtimeo_ms(int fd, unsigned ms);
+int speer_fd_set_sndtimeo_ms(int fd, unsigned ms);
+int speer_fd_set_nonblocking(int fd, int on);
 
 int speer_stun_get_mapped_addr(const char *stun_server, struct sockaddr_storage *mapped_addr,
                                socklen_t *mapped_len);

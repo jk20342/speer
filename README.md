@@ -16,8 +16,8 @@ but here we are.
 it has noise xx, libp2p over tcp, yamux, mdns, dht bits, partial quic, and a
 tls 1.3 core. no external deps.
 
-source size: 17,941 lines across 111 `.c`/`.h` files in `src/` and `include/`
-(15,682 nonblank). tests, examples, rust, and build output are not counted.
+source size: 19,180 lines across 121 `.c`/`.h` files in `src/` and `include/`
+(16,747 nonblank). tests, examples, rust, and build output are not counted.
 
 more detail:
 

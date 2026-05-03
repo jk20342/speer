@@ -70,6 +70,66 @@ static int append_name(uint8_t *out, size_t *pos, size_t max, const char *name) 
     return 0;
 }
 
+static int append_dns_labels_then_ptr(uint8_t *out, size_t *pos, size_t max, const char *labels,
+                                      uint16_t ptr_target) {
+    if (labels == NULL || labels[0] == 0) {
+        if (*pos + 2 > max) return -1;
+        out[(*pos)++] = (uint8_t)(0xC0 | (ptr_target >> 8));
+        out[(*pos)++] = (uint8_t)(ptr_target & 0xFF);
+        return 0;
+    }
+    const char *p = labels;
+    size_t saved = *pos;
+    while (*p) {
+        const char *dot = strchr(p, '.');
+        size_t chunk = dot ? (size_t)(dot - p) : strlen(p);
+        if (chunk > 63 || *pos + 1 + chunk > max) goto fail;
+        out[(*pos)++] = (uint8_t)chunk;
+        memcpy(out + *pos, p, chunk);
+        *pos += chunk;
+        if (!dot) break;
+        p = dot + 1;
+    }
+    if (*pos + 2 > max) goto fail;
+    out[(*pos)++] = (uint8_t)(0xC0 | (ptr_target >> 8));
+    out[(*pos)++] = (uint8_t)(ptr_target & 0xFF);
+    return 0;
+fail:
+    *pos = saved;
+    return -1;
+}
+
+/*
+ * Encode PTR-target / instance fqdn matching how append_name(service_name) was written earlier.
+ * When instance suffix matches svc_fqdn (same fqdn bytes as PTR owner wire name), omit repeated
+ * labels and use a backwards pointer — same compression style as TXT record names elsewhere.
+ */
+static int append_instance_name_maybe_compressed(uint8_t *out, size_t *pos, size_t max,
+                                                 const char *instance_full, const char *svc_fqdn,
+                                                 uint16_t svc_wire_offset) {
+    size_t ilen = strlen(instance_full);
+    size_t slen = strlen(svc_fqdn);
+    if (slen > 0 && ilen >= slen && mdns_strcasecmp(instance_full + ilen - slen, svc_fqdn) == 0 &&
+        (ilen == slen || instance_full[ilen - slen - 1] == '.')) {
+        size_t pref_len = (ilen > slen) ? ilen - slen - 1 : 0;
+        char pref[MDNS_MAX_NAME_LENGTH];
+
+        if (pref_len >= sizeof(pref)) return -1;
+        if (pref_len > 0) {
+            memcpy(pref, instance_full, pref_len);
+            pref[pref_len] = 0;
+        }
+
+        /* Must point at the compressed name's beginning (same semantics as uncompressed write) */
+        if (svc_wire_offset > 0x3FFFu) return -1;
+        if (pref_len == 0) {
+            return append_dns_labels_then_ptr(out, pos, max, NULL, svc_wire_offset);
+        }
+        return append_dns_labels_then_ptr(out, pos, max, pref, svc_wire_offset);
+    }
+    return append_name(out, pos, max, instance_full);
+}
+
 static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, char *out,
                           size_t out_cap, int depth) {
     (void)depth;
@@ -140,13 +200,11 @@ int mdns_init(mdns_ctx_t *ctx) {
         ctx->socket_ipv4 = -1;
         return -1;
     }
-#if defined(_WIN32)
-    u_long mode = 1;
-    ioctlsocket(ctx->socket_ipv4, FIONBIO, &mode);
-#else
-    int flags = fcntl(ctx->socket_ipv4, F_GETFL, 0);
-    fcntl(ctx->socket_ipv4, F_SETFL, flags | O_NONBLOCK);
-#endif
+    if (speer_fd_set_nonblocking(ctx->socket_ipv4, 1) != 0) {
+        CLOSESOCKET(ctx->socket_ipv4);
+        ctx->socket_ipv4 = -1;
+        return -1;
+    }
     ctx->socket_ipv6 = -1;
     return 0;
 }
@@ -226,6 +284,7 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     }
     if (n < 0 || (size_t)n >= sizeof(service_name)) return -1;
 
+    uint16_t svc_name_wire_off = (uint16_t)pos;
     if (append_name(out, &pos, max, service_name) != 0) return -1;
     if (pos + 10 > max) return -1;
     STORE16_BE(out + pos, MDNS_TYPE_PTR);
@@ -238,7 +297,9 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     pos += 2;
     size_t ptr_rdata_start = pos;
     size_t peer_name_offset = pos;
-    if (append_name(out, &pos, max, svc->instance_name) != 0) return -1;
+    if (append_instance_name_maybe_compressed(out, &pos, max, svc->instance_name, service_name,
+                                              svc_name_wire_off) != 0)
+        return -1;
     STORE16_BE(out + ptr_rdlen_pos, (uint16_t)(pos - ptr_rdata_start));
 
     for (uint32_t i = 0; i < txt_count; i++) {

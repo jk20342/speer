@@ -84,13 +84,10 @@ int speer_socket_create(uint16_t port, const char *bind_addr) {
         return -1;
     }
 
-#if defined(_WIN32)
-    DWORD timeout = 1;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
-#else
-    struct timeval tv = {0, 1000};
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
+    if (speer_fd_set_rcvtimeo_ms(sock, 1u) != 0) {
+        CLOSESOCKET(sock);
+        return -1;
+    }
 
     return sock;
 }
@@ -112,23 +109,85 @@ void speer_socket_close(int sock) {
     CLOSESOCKET(sock);
 }
 
+int speer_fd_set_nonblocking(int fd, int on) {
+#if defined(_WIN32)
+    u_long mode = on ? 1u : 0u;
+    return ioctlsocket((SOCKET)fd, FIONBIO, &mode) == 0 ? 0 : -1;
+#else
+    int fl = fcntl(fd, F_GETFL, 0);
+    if (fl < 0) return -1;
+    if (on)
+        fl |= O_NONBLOCK;
+    else
+        fl &= ~O_NONBLOCK;
+    if (fcntl(fd, F_SETFL, fl) < 0) return -1;
+    return 0;
+#endif
+}
+
 int speer_socket_set_nonblocking(int sock) {
+    return speer_fd_set_nonblocking(sock, 1);
+}
+
+int speer_sockaddr_in_resolve(struct sockaddr_in *sin, const char *host, uint16_t port) {
+    ZERO(sin, sizeof(*sin));
+    sin->sin_family = AF_INET;
+    sin->sin_port = htons(port);
+    if (!host || host[0] == 0) {
+        sin->sin_addr.s_addr = htonl(INADDR_ANY);
+        return 0;
+    }
 #if defined(_WIN32)
-    (void)sock;
-    return 0;
+    {
+        struct sockaddr_in parsed;
+        int sz = sizeof(parsed);
+        ZERO(&parsed, sizeof(parsed));
+        if (WSAStringToAddressA((char *)host, AF_INET, NULL, (struct sockaddr *)&parsed, &sz) ==
+            0) {
+            sin->sin_addr = parsed.sin_addr;
+            return 0;
+        }
+    }
 #else
-    (void)sock;
-    return 0;
+    if (inet_pton(AF_INET, host, &sin->sin_addr) == 1) return 0;
 #endif
-#if 0
+    struct addrinfo hints;
+    ZERO(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *res = NULL;
+    if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) return -1;
+    int ok = -1;
+    for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
+        if (ai->ai_family == AF_INET && ai->ai_addrlen >= sizeof(struct sockaddr_in)) {
+            struct sockaddr_in *r = (struct sockaddr_in *)ai->ai_addr;
+            sin->sin_addr = r->sin_addr;
+            ok = 0;
+            break;
+        }
+    }
+    freeaddrinfo(res);
+    return ok;
+}
+
+static int sock_set_timeout_ms(int fd, int optname, unsigned ms) {
 #if defined(_WIN32)
-    u_long mode = 1;
-    return ioctlsocket(sock, FIONBIO, &mode);
+    DWORD tv = (DWORD)ms;
+    return setsockopt(fd, SOL_SOCKET, optname, (const char *)&tv, sizeof(tv)) != 0 ? -1 : 0;
 #else
-    int flags = fcntl(sock, F_GETFL, 0);
-    return fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+    struct timeval tv;
+    tv.tv_sec = (long)(ms / 1000u);
+    tv.tv_usec = (long)((ms % 1000u) * 1000u);
+    return setsockopt(fd, SOL_SOCKET, optname, (const char *)&tv, sizeof(tv)) != 0 ? -1 : 0;
 #endif
-#endif
+}
+
+int speer_fd_set_rcvtimeo_ms(int fd, unsigned ms) {
+    return sock_set_timeout_ms(fd, SO_RCVTIMEO, ms);
+}
+
+int speer_fd_set_sndtimeo_ms(int fd, unsigned ms) {
+    return sock_set_timeout_ms(fd, SO_SNDTIMEO, ms);
 }
 
 static int parse_address(const char *str, struct sockaddr_storage *addr, socklen_t *addr_len) {
