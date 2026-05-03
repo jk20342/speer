@@ -137,8 +137,13 @@ void speer_dcutr_set_transport(speer_dcutr_send_fn send_fn, void *user) {
 static int send_stream(void *user, const uint8_t *data, size_t len) {
     dcutr_ctx_t *ctx = (dcutr_ctx_t *)user;
     if (!ctx || !ctx->peer) return -1;
-    speer_stream_t stream = {.peer = ctx->peer, .id = ctx->stream_id};
-    return speer_stream_write(&stream, data, len);
+    speer_stream_t *stream = (speer_stream_t *)calloc(1, sizeof(*stream));
+    if (!stream) return -1;
+    stream->peer = ctx->peer;
+    stream->id = ctx->stream_id;
+    int r = speer_stream_write(stream, data, len);
+    free(stream);
+    return r;
 }
 
 int speer_dcutr_start_stream(speer_peer_t *peer, uint32_t stream_id, int is_initiator) {

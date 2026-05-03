@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <ctype.h>
 #include <string.h>
 
 #define PROGRAM_NAME "speer-keygen"
@@ -47,10 +48,20 @@ static void print_hex(FILE *f, const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) { fprintf(f, "%02x", data[i]); }
 }
 
-/* Refuse obvious path traversal fragments (write-only CLI). */
+/* constrain -o to a cwd-relative base name; avoids odd fopen paths */
 static int output_file_safe(const char *p) {
-    if (!p || !p[0]) return 0;
+    if (!p || !p[0]) return -1;
     if (strstr(p, "..")) return -1;
+#if defined(_WIN32)
+    if (strpbrk(p, "/\\:?*\"<>|")) return -1;
+#else
+    if (*p == '/' || strchr(p, '/') != NULL) return -1;
+#endif
+    for (const char *q = p; *q; q++) {
+        unsigned char c = (unsigned char)*q;
+        if (!(isalnum(c) || c == '_' || c == '-' || c == '.')) return -1;
+    }
+    if ((size_t)strlen(p) >= 260) return -1;
     return 0;
 }
 

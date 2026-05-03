@@ -24,34 +24,39 @@ static int parse_ecdsa_der(const uint8_t *sig, size_t sig_len, const uint8_t **r
     }
     if (pos + total_len != sig_len) return -1;
 
-    if (pos + 2 > sig_len || sig[pos] != 0x02) return -1;
-    size_t r_der = sig[pos + 1];
+    /* parse r,s against remaining bytes in the outer sequence slice */
+    const uint8_t *p = sig + pos;
+    size_t left = total_len;
+
+    if (left < 2 || p[0] != 0x02) return -1;
+    size_t r_der = p[1];
     if (r_der == 0 || r_der > 0x7f) return -1;
-    if (pos + 2 + r_der > sig_len) return -1;
-    const uint8_t *rp = sig + pos + 2;
+    if (2 + r_der > left) return -1;
+    const uint8_t *rp = p + 2;
     size_t r_l = r_der;
-    if (r_l > 1 && rp[0] == 0 && (rp[1] & 0x80) == 0) return -1;
-    if (rp[0] == 0 && r_l > 0) {
+    if (r_der >= 2 && rp[0] == 0 && (rp[1] & 0x80) == 0) return -1;
+    while (r_l > 1 && rp[0] == 0 && (rp[1] & 0x80) != 0) {
         rp++;
         r_l--;
     }
 
-    pos += 2 + r_der;
+    left -= 2 + r_der;
+    p += 2 + r_der;
 
-    if (pos + 2 > sig_len || sig[pos] != 0x02) return -1;
-    size_t s_der = sig[pos + 1];
+    if (left < 2 || p[0] != 0x02) return -1;
+    size_t s_der = p[1];
     if (s_der == 0 || s_der > 0x7f) return -1;
-    if (pos + 2 + s_der > sig_len) return -1;
-    const uint8_t *sp = sig + pos + 2;
+    if (2 + s_der > left) return -1;
+    const uint8_t *sp = p + 2;
     size_t s_l = s_der;
-    if (s_l > 1 && sp[0] == 0 && (sp[1] & 0x80) == 0) return -1;
-    if (sp[0] == 0 && s_l > 0) {
+    if (s_der >= 2 && sp[0] == 0 && (sp[1] & 0x80) == 0) return -1;
+    while (s_l > 1 && sp[0] == 0 && (sp[1] & 0x80) != 0) {
         sp++;
         s_l--;
     }
 
-    pos += 2 + s_der;
-    if (pos != sig_len) return -1;
+    left -= 2 + s_der;
+    if (left != 0) return -1;
 
     *r_out = rp;
     *r_len = r_l;
@@ -108,7 +113,6 @@ static int parse_rsa_pubkey(const uint8_t *spki, size_t spki_len, const uint8_t 
     if (spki_len < 4 || spki[0] != 0x30) return -1;
     size_t pos = 1;
     size_t seq_len;
-    if (pos >= spki_len) return -1;
     if (spki[pos] & 0x80) {
         size_t k = spki[pos] & 0x7f;
         if (k == 0 || k > 4) return -1;

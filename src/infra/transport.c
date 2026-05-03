@@ -67,7 +67,8 @@ static void sent_queue_add(sent_pkt_queue_t *q, uint64_t pkt_num, const uint8_t 
     if (q->tail - q->head >= MAX_SENT_PKTS) {
         sent_pkt_t *old = &q->pkts[q->head % MAX_SENT_PKTS];
         if (old->in_flight) q->bytes_in_flight -= old->len;
-        if (old->data) free(old->data);
+        free(old->data);
+        old->data = NULL;
         q->head++;
     }
 
@@ -190,9 +191,6 @@ static void recovery_on_packet_sent(recovery_ctx_t *rcv, uint64_t pkt_num, const
 static void recovery_on_packet_received(recovery_ctx_t *rcv, uint64_t pkt_num, uint64_t now_ms) {
     if (recv_tracker_should_ack(&rcv->received, pkt_num, now_ms)) {
         ack_frame_add(&rcv->pending_ack, pkt_num);
-
-        if (rcv->pending_ack.largest_acked - rcv->last_ack_sent_pkt >= rcv->ack_frequency ||
-            now_ms - rcv->last_ack_sent_time >= rcv->max_ack_delay) {}
     }
     rcv->conn->last_recv_ms = now_ms;
 }

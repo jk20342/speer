@@ -24,7 +24,7 @@ speer/
 |-- src/relay/      circuit relay and dcutr
 |-- src/quic/       quic packets, initial keys, header protection
 |-- src/tls/        tls 1.3 and x.509/web pki, optional in cmake
-|-- examples/       small demos and the bigger terminal chat demo
+|-- examples/       small c demos (full terminal chat is rust `speer-chat`)
 `-- tests/          unit, integration, fuzz, and protocol checks
 ```
 
@@ -96,7 +96,7 @@ exist for peers and streams.
 the lower-level tcp path is exposed by `include/speer_libp2p_tcp.h` and the
 headers under `src/libp2p/`, `src/transport/`, and `src/wire/`.
 
-the chat demo and rust chat app use this path:
+the rust `speer-chat` app (and lightweight c `examples/chat`) use this path:
 
 ```text
 tcp dial/listen
@@ -106,8 +106,8 @@ tcp dial/listen
   -> app frames
 ```
 
-`speer_chat.c` uses mdns discovery, tcp, libp2p noise, yamux, protobuf chat
-frames, and file transfer messages over `/speer/chat/1.0.0`.
+rust `speer-chat` uses mdns discovery, tcp, noise, yamux, protobuf chat frames,
+and file transfer over `/speer/chat/1.0.0`.
 
 ## discovery
 

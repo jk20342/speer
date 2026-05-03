@@ -151,14 +151,21 @@ static void emit_stream_frames(speer_host_t *host, speer_peer_t *peer, const uin
         }
 #endif
         buffer_stream_data(peer, (uint32_t)stream_id, data + pos, (size_t)data_len);
-        speer_stream_t stream = {.peer = peer, .id = (uint32_t)stream_id};
+        speer_stream_t *ev_stream = (speer_stream_t *)calloc(1, sizeof(speer_stream_t));
+        if (!ev_stream) {
+            pos += (size_t)data_len;
+            continue;
+        }
+        ev_stream->peer = peer;
+        ev_stream->id = (uint32_t)stream_id;
         speer_event_t ev = {.type = SPEER_EVENT_STREAM_DATA,
                             .peer = peer,
-                            .stream = &stream,
+                            .stream = ev_stream,
                             .stream_id = (uint32_t)stream_id,
                             .data = data + pos,
                             .len = (size_t)data_len};
         if (host->callback) host->callback(host, &ev, host->user_data);
+        free(ev_stream);
         pos += (size_t)data_len;
     }
 }

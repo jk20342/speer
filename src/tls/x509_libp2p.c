@@ -174,6 +174,14 @@ static size_t emit_tlv(uint8_t *out, uint8_t tag, const uint8_t *val, size_t val
     return 1 + n + val_len;
 }
 
+/* append into fixed asn buffer; bounds checked here */
+static int buf_put(uint8_t *tb, size_t *used, size_t cap, const void *src, size_t n) {
+    if (*used > cap || n > cap - *used) return -1;
+    if (n && src) COPY(tb + *used, src, n);
+    *used += n;
+    return 0;
+}
+
 static const uint8_t ED25519_ALG_ID[] = {0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70};
 
 int speer_x509_libp2p_make_self_signed(uint8_t *out, size_t cap, size_t *out_len,
@@ -182,6 +190,7 @@ int speer_x509_libp2p_make_self_signed(uint8_t *out, size_t cap, size_t *out_len
                                        speer_libp2p_keytype_t libp2p_kt, const uint8_t *libp2p_pub,
                                        size_t libp2p_pub_len, const uint8_t *libp2p_priv,
                                        size_t libp2p_priv_len) {
+    /* build libp2p tls self-signed cert bytes (ed25519-only) */
     if (libp2p_kt != SPEER_LIBP2P_KEY_ED25519) return -1;
     if (libp2p_pub_len != 32 || libp2p_priv_len != 32) return -1;
     if (!out || !out_len || !cert_priv_key || !cert_pub_key) return -1;
@@ -250,42 +259,25 @@ int speer_x509_libp2p_make_self_signed(uint8_t *out, size_t cap, size_t *out_len
     uint8_t tbs_body[2048];
     size_t tbs_body_len = 0;
     static const uint8_t version_v3[] = {0xa0, 0x03, 0x02, 0x01, 0x02};
-    if (tbs_body_len + sizeof(version_v3) > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, version_v3, sizeof(version_v3));
-    tbs_body_len += sizeof(version_v3);
-
     static const uint8_t serial[] = {0x02, 0x01, 0x01};
-    if (tbs_body_len + sizeof(serial) > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, serial, sizeof(serial));
-    tbs_body_len += sizeof(serial);
-
-    if (tbs_body_len + sizeof(ED25519_ALG_ID) > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, ED25519_ALG_ID, sizeof(ED25519_ALG_ID));
-    tbs_body_len += sizeof(ED25519_ALG_ID);
-
     static const uint8_t empty_seq[] = {0x30, 0x00};
-    if (tbs_body_len + sizeof(empty_seq) > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, empty_seq, sizeof(empty_seq));
-    tbs_body_len += sizeof(empty_seq);
-
     static const uint8_t validity[] = {0x30, 0x1e, 0x17, 0x0d, '2', '6', '0',  '1',  '0', '1', '0',
                                        '0',  '0',  '0',  '0',  '0', 'Z', 0x17, 0x0d, '4', '9', '0',
                                        '1',  '0',  '1',  '0',  '0', '0', '0',  '0',  '0', 'Z'};
-    if (tbs_body_len + sizeof(validity) > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, validity, sizeof(validity));
-    tbs_body_len += sizeof(validity);
-
-    if (tbs_body_len + sizeof(empty_seq) > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, empty_seq, sizeof(empty_seq));
-    tbs_body_len += sizeof(empty_seq);
-
-    if (tbs_body_len + spki_len > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, spki, spki_len);
-    tbs_body_len += spki_len;
-
-    if (tbs_body_len + exts_a3_len > sizeof(tbs_body)) return -1;
-    COPY(tbs_body + tbs_body_len, exts_a3, exts_a3_len);
-    tbs_body_len += exts_a3_len;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), version_v3, sizeof(version_v3)) != 0)
+        return -1;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), serial, sizeof(serial)) != 0) return -1;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), ED25519_ALG_ID,
+                sizeof(ED25519_ALG_ID)) != 0)
+        return -1;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), empty_seq, sizeof(empty_seq)) != 0)
+        return -1;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), validity, sizeof(validity)) != 0)
+        return -1;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), empty_seq, sizeof(empty_seq)) != 0)
+        return -1;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), spki, spki_len) != 0) return -1;
+    if (buf_put(tbs_body, &tbs_body_len, sizeof(tbs_body), exts_a3, exts_a3_len) != 0) return -1;
 
     uint8_t tbs[2200];
     size_t tbs_len = emit_tlv(tbs, ASN1_SEQUENCE, tbs_body, tbs_body_len);
@@ -295,21 +287,18 @@ int speer_x509_libp2p_make_self_signed(uint8_t *out, size_t cap, size_t *out_len
 
     uint8_t cert_body[2400];
     size_t cert_body_len = 0;
-    if (cert_body_len + tbs_len > sizeof(cert_body)) return -1;
-    COPY(cert_body + cert_body_len, tbs, tbs_len);
-    cert_body_len += tbs_len;
-    if (cert_body_len + sizeof(ED25519_ALG_ID) > sizeof(cert_body)) return -1;
-    COPY(cert_body + cert_body_len, ED25519_ALG_ID, sizeof(ED25519_ALG_ID));
-    cert_body_len += sizeof(ED25519_ALG_ID);
+    if (buf_put(cert_body, &cert_body_len, sizeof(cert_body), tbs, tbs_len) != 0) return -1;
+    if (buf_put(cert_body, &cert_body_len, sizeof(cert_body), ED25519_ALG_ID,
+                sizeof(ED25519_ALG_ID)) != 0)
+        return -1;
 
     uint8_t sig_bs[67];
     sig_bs[0] = 0x03;
     sig_bs[1] = 65;
     sig_bs[2] = 0x00;
     COPY(sig_bs + 3, cert_sig, 64);
-    if (cert_body_len + sizeof(sig_bs) > sizeof(cert_body)) return -1;
-    COPY(cert_body + cert_body_len, sig_bs, sizeof(sig_bs));
-    cert_body_len += sizeof(sig_bs);
+    if (buf_put(cert_body, &cert_body_len, sizeof(cert_body), sig_bs, sizeof(sig_bs)) != 0)
+        return -1;
 
     uint8_t cert[2500];
     size_t cert_len = emit_tlv(cert, ASN1_SEQUENCE, cert_body, cert_body_len);

@@ -77,13 +77,12 @@ full bootstrap including yamux + protocol open is in
 ```bash
 ./examples/echo_server
 ./examples/chat <peer_pubkey> <host:port>
-./examples/speer_chat
 ./examples/libp2p_ping demo
 ./examples/libp2p_quic_ping
 ```
 
-`examples/speer_chat` is the bigger terminal chat demo. it uses mdns discovery,
-tcp, noise xx, yamux, protobuf chat frames, and basic file transfer.
+the terminal chat demo with mdns/tcp/noise/yamux lives in the rust workspace crate
+`speer-chat` (`rust/speer-chat`).
 
 ## install
 

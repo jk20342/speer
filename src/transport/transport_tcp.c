@@ -351,7 +351,6 @@ static uint32_t g_tcp_window_count = 0;
 static uint32_t g_tcp_active_conns = 0;
 
 static int tcp_rate_limit(void) {
-    extern uint64_t speer_timestamp_ms(void);
     uint64_t now = speer_timestamp_ms();
     if (now - g_tcp_window_start_ms >= 1000) {
         g_tcp_window_start_ms = now;
@@ -440,12 +439,12 @@ static int tcp_close_endpoint_op(speer_transport_endpoint_t *ep) {
     return SPEER_TR_OK;
 }
 static int tcp_peer_addr_op(speer_transport_conn_t *c, char *o, size_t cap) {
-    size_t l = 0;
-    while (c->peer_addr[l] && l < cap - 1) {
-        o[l] = c->peer_addr[l];
-        l++;
+    if (!o || cap == 0) return SPEER_TR_INVALID;
+    size_t i = 0;
+    for (; i + 1 < cap && i < sizeof(c->peer_addr) && c->peer_addr[i] != '\0'; i++) {
+        o[i] = c->peer_addr[i];
     }
-    o[l] = 0;
+    o[i] = '\0';
     return SPEER_TR_OK;
 }
 static int tcp_local_addr_op(speer_transport_endpoint_t *ep, char *o, size_t cap) {

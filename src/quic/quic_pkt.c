@@ -176,8 +176,7 @@ int speer_quic_pkt_decode_long(speer_quic_pkt_t *p, uint8_t *pkt, size_t pkt_len
     if (p->version != QUIC_VERSION_V1) return -1;
     size_t pos = 5;
 
-    /* header guaranteed pkt_len >= 7; remainder bounds-checked below via dcid_len / scid_len. */
-    if (pkt_len <= pos) return -1;
+    /* pkt_len >= 7 guarantees index 5 is in range for dcil_len. */
     p->dcid_len = pkt[pos++];
     if (p->dcid_len > QUIC_MAX_CID_LEN) return -1;
     if (p->dcid_len > pkt_len - pos) return -1;

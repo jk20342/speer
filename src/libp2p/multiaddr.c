@@ -229,7 +229,7 @@ int speer_multiaddr_get_p2p_id(const speer_multiaddr_t *ma, const uint8_t **id, 
             i += 2;
         } else if (code == SPEER_MA_QUIC || code == SPEER_MA_QUICV1 ||
                    code == SPEER_MA_P2P_CIRCUIT) {
-        } else {
+            (void)code; /* tlv has no payload for these codecs */
             return -1;
         }
     }

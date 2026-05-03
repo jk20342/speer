@@ -83,10 +83,15 @@ int main(void) {
     if (ret != 0) { client.state = RELAY_STATE_CONNECTING; }
 
     if (relay_client_reserve(&client) != 0) {
-        if (client.state == RELAY_STATE_RESERVING || client.state == RELAY_STATE_CONNECTING) {
-        } else {
-            FAIL("reserve should set reserving state or fail gracefully\n");
+        relay_state_t reserve_ok_states[] = {RELAY_STATE_RESERVING, RELAY_STATE_CONNECTING};
+        int ok_reserve_state = 0;
+        for (size_t wi = 0; wi < sizeof(reserve_ok_states) / sizeof(reserve_ok_states[0]); wi++) {
+            if (client.state == reserve_ok_states[wi]) {
+                ok_reserve_state = 1;
+                break;
+            }
         }
+        if (!ok_reserve_state) FAIL("reserve should set reserving state or fail gracefully\n");
     }
     if (g_send_count == 0) FAIL("reserve should send a frame\n");
     if (g_last_sent_len < 4) FAIL("frame too short\n");
