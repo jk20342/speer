@@ -28,12 +28,9 @@ void speer_aes_ctr_aesni(const speer_aes_key_t *k, const uint8_t nonce[16], uint
                          const uint8_t *in, size_t len);
 #endif
 
-/* VAES CTR: _mm256_aesenc_epi128 (~ GCC 11 non-clang, or Clang >= 13) */
-#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__)) &&            \
-    ((defined(__GNUC__) && !defined(__clang__) &&                                                        \
-      (__GNUC__ > 11 || (__GNUC__ == 11 && __GNUC_MINOR__ > 0))) ||                                   \
-     (defined(__clang__) && (__clang_major__ > 13 ||                                                 \
-                             (__clang_major__ == 13 && __clang_minor__ > 0))))
+/* VAES: tail path uses AES-NI; GCC needs target(aes,...) + recognizable vaes clone (GCC >= 13). */
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__clang__) || (defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 13))
 #define SPEER_AES_VAES_AVAILABLE 1
 void speer_aes_ctr_vaes(const speer_aes_key_t *k, const uint8_t nonce[16], uint8_t *out,
                         const uint8_t *in, size_t len);

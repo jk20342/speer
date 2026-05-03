@@ -37,30 +37,25 @@ void speer_poly1305_blocks_avx2(uint32_t h[5], const uint32_t r[5], const uint8_
                                        (int64_t)(uint64_t)h1, (int64_t)(uint64_t)h0);
         __m256i R0 = _mm256_set_epi64x((int64_t)(uint64_t)s2, (int64_t)(uint64_t)s3,
                                        (int64_t)(uint64_t)s4, (int64_t)(uint64_t)r0);
-        uint64_t d0 =
-            poly1305_hsum4_u64(_mm256_mul_epu32(H0, R0)) + (uint64_t)h4 * (uint64_t)s1;
+        uint64_t d0 = poly1305_hsum4_u64(_mm256_mul_epu32(H0, R0)) + (uint64_t)h4 * (uint64_t)s1;
 
         __m256i H_hi = _mm256_set_epi64x((int64_t)(uint64_t)h3, (int64_t)(uint64_t)h2,
                                          (int64_t)(uint64_t)h1, (int64_t)(uint64_t)h0);
         __m256i R1 = _mm256_set_epi64x((int64_t)(uint64_t)s3, (int64_t)(uint64_t)s4,
                                        (int64_t)(uint64_t)r0, (int64_t)(uint64_t)r1);
-        uint64_t d1 =
-            poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R1)) + (uint64_t)h4 * (uint64_t)s2;
+        uint64_t d1 = poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R1)) + (uint64_t)h4 * (uint64_t)s2;
 
         __m256i R2 = _mm256_set_epi64x((int64_t)(uint64_t)s4, (int64_t)(uint64_t)r0,
                                        (int64_t)(uint64_t)r1, (int64_t)(uint64_t)r2);
-        uint64_t d2 =
-            poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R2)) + (uint64_t)h4 * (uint64_t)s3;
+        uint64_t d2 = poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R2)) + (uint64_t)h4 * (uint64_t)s3;
 
         __m256i R3 = _mm256_set_epi64x((int64_t)(uint64_t)r0, (int64_t)(uint64_t)r1,
                                        (int64_t)(uint64_t)r2, (int64_t)(uint64_t)r3);
-        uint64_t d3 =
-            poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R3)) + (uint64_t)h4 * (uint64_t)s4;
+        uint64_t d3 = poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R3)) + (uint64_t)h4 * (uint64_t)s4;
 
         __m256i R4 = _mm256_set_epi64x((int64_t)(uint64_t)r1, (int64_t)(uint64_t)r2,
                                        (int64_t)(uint64_t)r3, (int64_t)(uint64_t)r4);
-        uint64_t d4 =
-            poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R4)) + (uint64_t)h4 * (uint64_t)r0;
+        uint64_t d4 = poly1305_hsum4_u64(_mm256_mul_epu32(H_hi, R4)) + (uint64_t)h4 * (uint64_t)r0;
 
         uint32_t c = (uint32_t)(d0 >> 26);
         h0 = (uint32_t)d0 & 0x3ffffff;

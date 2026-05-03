@@ -188,13 +188,11 @@ void speer_ghash_vpcl_absorb(speer_ghash_state_t *s, uint8_t y[16], const uint8_
         __m128i d2 = bswap_be_x(_mm_loadu_si128((const __m128i *)(data + 32)));
         __m128i d3 = bswap_be_x(_mm_loadu_si128((const __m128i *)(data + 48)));
 
-        __m256i prod_y_d0 =
-            gfmul_y(_mm256_set_m128i(d0, yv), _mm256_set_m128i(h4, h4));
-        __m256i prod_d1_d2 =
-            gfmul_y(_mm256_set_m128i(d2, d1), _mm256_set_m128i(h2, h3));
+        __m256i prod_y_d0 = gfmul_y(_mm256_set_m128i(d0, yv), _mm256_set_m128i(h4, h4));
+        __m256i prod_d1_d2 = gfmul_y(_mm256_set_m128i(d2, d1), _mm256_set_m128i(h2, h3));
 
         yv = _mm_xor_si128(_mm256_castsi256_si128(prod_y_d0),
-                            _mm256_extracti128_si256(prod_y_d0, 1));
+                           _mm256_extracti128_si256(prod_y_d0, 1));
         yv = _mm_xor_si128(yv, _mm256_extracti128_si256(prod_d1_d2, 1));
         yv = _mm_xor_si128(yv, _mm256_castsi256_si128(prod_d1_d2));
         yv = _mm_xor_si128(yv, gfmul_x(d3, h1));

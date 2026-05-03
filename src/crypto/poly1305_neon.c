@@ -31,33 +31,37 @@ void speer_poly1305_blocks_neon(uint32_t h[5], const uint32_t r[5], const uint8_
         uint32_t c0[4] = {r0, s4, s3, s2};
         uint64x2_t p0_lo = vmull_u32(vget_low_u32(vh), vget_low_u32(vld1q_u32(c0)));
         uint64x2_t p0_hi = vmull_u32(vget_high_u32(vh), vget_high_u32(vld1q_u32(c0)));
-        uint64_t d0 = vgetq_lane_u64(p0_lo, 0) + vgetq_lane_u64(p0_lo, 1) + vgetq_lane_u64(p0_hi, 0) +
-                      vgetq_lane_u64(p0_hi, 1) + (uint64_t)h4 * (uint64_t)s1;
+        uint64_t d0 = vgetq_lane_u64(p0_lo, 0) + vgetq_lane_u64(p0_lo, 1) +
+                      vgetq_lane_u64(p0_hi, 0) + vgetq_lane_u64(p0_hi, 1) +
+                      (uint64_t)h4 * (uint64_t)s1;
 
         uint32_t c1[4] = {r1, r0, s4, s3};
         uint64x2_t p1_lo = vmull_u32(vget_low_u32(vh), vget_low_u32(vld1q_u32(c1)));
         uint64x2_t p1_hi = vmull_u32(vget_high_u32(vh), vget_high_u32(vld1q_u32(c1)));
-        uint64_t d1 = vgetq_lane_u64(p1_lo, 0) + vgetq_lane_u64(p1_lo, 1) + vgetq_lane_u64(p1_hi, 0) +
-                      vgetq_lane_u64(p1_hi, 1) + (uint64_t)h4 * (uint64_t)s2;
+        uint64_t d1 = vgetq_lane_u64(p1_lo, 0) + vgetq_lane_u64(p1_lo, 1) +
+                      vgetq_lane_u64(p1_hi, 0) + vgetq_lane_u64(p1_hi, 1) +
+                      (uint64_t)h4 * (uint64_t)s2;
 
         uint32_t c2[4] = {r2, r1, r0, s4};
         uint64x2_t p2_lo = vmull_u32(vget_low_u32(vh), vget_low_u32(vld1q_u32(c2)));
         uint64x2_t p2_hi = vmull_u32(vget_high_u32(vh), vget_high_u32(vld1q_u32(c2)));
-        uint64_t d2 = vgetq_lane_u64(p2_lo, 0) + vgetq_lane_u64(p2_lo, 1) + vgetq_lane_u64(p2_hi, 0) +
-                      vgetq_lane_u64(p2_hi, 1) + (uint64_t)h4 * (uint64_t)s3;
+        uint64_t d2 = vgetq_lane_u64(p2_lo, 0) + vgetq_lane_u64(p2_lo, 1) +
+                      vgetq_lane_u64(p2_hi, 0) + vgetq_lane_u64(p2_hi, 1) +
+                      (uint64_t)h4 * (uint64_t)s3;
 
         uint32_t c3[4] = {r3, r2, r1, r0};
         uint64x2_t p3_lo = vmull_u32(vget_low_u32(vh), vget_low_u32(vld1q_u32(c3)));
         uint64x2_t p3_hi = vmull_u32(vget_high_u32(vh), vget_high_u32(vld1q_u32(c3)));
-        uint64_t d3 = vgetq_lane_u64(p3_lo, 0) + vgetq_lane_u64(p3_lo, 1) + vgetq_lane_u64(p3_hi, 0) +
-                      vgetq_lane_u64(p3_hi, 1) + (uint64_t)h4 * (uint64_t)s4;
+        uint64_t d3 = vgetq_lane_u64(p3_lo, 0) + vgetq_lane_u64(p3_lo, 1) +
+                      vgetq_lane_u64(p3_hi, 0) + vgetq_lane_u64(p3_hi, 1) +
+                      (uint64_t)h4 * (uint64_t)s4;
 
         uint32_t c4[4] = {r4, r3, r2, r1};
         uint64x2_t p4_lo = vmull_u32(vget_low_u32(vh), vget_low_u32(vld1q_u32(c4)));
         uint64x2_t p4_hi = vmull_u32(vget_high_u32(vh), vget_high_u32(vld1q_u32(c4)));
-        uint64_t d4 =
-            vgetq_lane_u64(p4_lo, 0) + vgetq_lane_u64(p4_lo, 1) + vgetq_lane_u64(p4_hi, 0) +
-            vgetq_lane_u64(p4_hi, 1) + (uint64_t)h4 * (uint64_t)r0;
+        uint64_t d4 = vgetq_lane_u64(p4_lo, 0) + vgetq_lane_u64(p4_lo, 1) +
+                      vgetq_lane_u64(p4_hi, 0) + vgetq_lane_u64(p4_hi, 1) +
+                      (uint64_t)h4 * (uint64_t)r0;
 
         uint32_t c = (uint32_t)(d0 >> 26);
         h0 = (uint32_t)d0 & 0x3ffffff;

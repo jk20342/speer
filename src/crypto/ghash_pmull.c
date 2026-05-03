@@ -14,13 +14,14 @@
 typedef uint64x2_t xm128;
 
 static SPEER_PMULL_TARGET xm128 xmm_bswap_be(xm128 v) {
-    static const uint8_t rev[16] = {15, 14, 13, 12, 11, 10, 9, 8,
-                                   7,  6,  5,  4,  3,  2,  1, 0};
+    static const uint8_t rev[16] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
     uint8x16_t tbl = vld1q_u8(rev);
     return vreinterpretq_u64_u8(vqtbl1q_u8(vreinterpretq_u8_u64(v), tbl));
 }
 
-static SPEER_PMULL_TARGET inline xm128 xm_xor(xm128 a, xm128 b) { return veorq_u64(a, b); }
+static SPEER_PMULL_TARGET inline xm128 xm_xor(xm128 a, xm128 b) {
+    return veorq_u64(a, b);
+}
 
 static SPEER_PMULL_TARGET xm128 xm_srli_epi32_31(xm128 v) {
     return vreinterpretq_u64_u32(vshrq_n_u32(vreinterpretq_u32_u64(v), 31));
@@ -108,8 +109,8 @@ static SPEER_PMULL_TARGET xm128 gfmul_pmull(xm128 a, xm128 b) {
     tmp6 = xm_slli_epi32_1(tmp6);
 
     xm128 tmp9 = xm_srli_si128_12(tmp7);
-    tmp8 = xm_slli_si128_4(tmp8);       /* slli_si128(tmp8, 4) */
-    tmp7 = xm_slli_si128_4(tmp7);       /* slli_si128(tmp7, 4) */
+    tmp8 = xm_slli_si128_4(tmp8); /* slli_si128(tmp8, 4) */
+    tmp7 = xm_slli_si128_4(tmp7); /* slli_si128(tmp7, 4) */
     tmp3 = xm_xor(tmp3, tmp7);
     tmp6 = xm_xor(tmp6, tmp8);
     tmp6 = xm_xor(tmp6, tmp9);
@@ -120,7 +121,7 @@ static SPEER_PMULL_TARGET xm128 gfmul_pmull(xm128 a, xm128 b) {
 
     tmp7 = xm_xor(tmp7, tmp8);
     tmp7 = xm_xor(tmp7, tmp9);
-    tmp8 = xm_srli_si128_4(tmp7);      /* SSE: srli_si128(tmp7, 4) */
+    tmp8 = xm_srli_si128_4(tmp7); /* SSE: srli_si128(tmp7, 4) */
     tmp7 = xm_slli_si128_4(xm_slli_si128_8(tmp7));
     tmp3 = xm_xor(tmp3, tmp7);
 

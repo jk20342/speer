@@ -1,6 +1,6 @@
-#include "aes.h"
-
 #include "speer_internal.h"
+
+#include "aes.h"
 
 #if defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
 

@@ -214,7 +214,7 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
         } else
 #endif
 #if defined(SPEER_HAS_POLY1305_NEON)
-        if (blocks >= 4 && poly1305_use_neon()) {
+            if (blocks >= 4 && poly1305_use_neon()) {
             speer_poly1305_blocks_neon(h, r, msg, blocks * 16, 1);
         } else
 #endif

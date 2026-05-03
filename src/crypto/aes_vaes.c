@@ -2,13 +2,15 @@
 
 #include "speer_internal.h"
 
-#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__clang__) || (defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 13))
 
 #include <immintrin.h>
 #include <wmmintrin.h>
 
-/* Clang insists on a single string; GCC accepts the comma-separated features form too. */
-#define SPEER_VAES_TARGET __attribute__((target("vaes,avx2")))
+/* vaes/avx256 round steps + tail blocks use AES-NI _mm_aesenc_si128 (_mm256_* VAES lacks "last
+ * xor"). */
+#define SPEER_VAES_TARGET __attribute__((target("aes,vaes,avx2")))
 
 SPEER_VAES_TARGET
 static INLINE __m128i load_round_key(const uint32_t *rk, int idx) {
@@ -47,14 +49,10 @@ void speer_aes_ctr_vaes(const speer_aes_key_t *k, const uint8_t nonce[16], uint8
         __m128i b6 = _mm_xor_si128(vaes_ctr_inc(ctr, 6), rk0);
         __m128i b7 = _mm_xor_si128(vaes_ctr_inc(ctr, 7), rk0);
 
-        __m256i y01 =
-            _mm256_insertf128_si256(_mm256_castsi128_si256(b0), b1, 1);
-        __m256i y23 =
-            _mm256_insertf128_si256(_mm256_castsi128_si256(b2), b3, 1);
-        __m256i y45 =
-            _mm256_insertf128_si256(_mm256_castsi128_si256(b4), b5, 1);
-        __m256i y67 =
-            _mm256_insertf128_si256(_mm256_castsi128_si256(b6), b7, 1);
+        __m256i y01 = _mm256_insertf128_si256(_mm256_castsi128_si256(b0), b1, 1);
+        __m256i y23 = _mm256_insertf128_si256(_mm256_castsi128_si256(b2), b3, 1);
+        __m256i y45 = _mm256_insertf128_si256(_mm256_castsi128_si256(b4), b5, 1);
+        __m256i y67 = _mm256_insertf128_si256(_mm256_castsi128_si256(b6), b7, 1);
 
         for (int r = 1; r < nr; r++) {
             __m128i rkr = load_round_key(rk, r);
@@ -81,20 +79,16 @@ void speer_aes_ctr_vaes(const speer_aes_key_t *k, const uint8_t nonce[16], uint8
         __m128i p6 = _mm_loadu_si128((const __m128i *)(in + 96));
         __m128i p7 = _mm_loadu_si128((const __m128i *)(in + 112));
 
-        _mm_storeu_si128((__m128i *)(out + 0),
-                         _mm_xor_si128(_mm256_castsi256_si128(y01), p0));
+        _mm_storeu_si128((__m128i *)(out + 0), _mm_xor_si128(_mm256_castsi256_si128(y01), p0));
         _mm_storeu_si128((__m128i *)(out + 16),
                          _mm_xor_si128(_mm256_extracti128_si256(y01, 1), p1));
-        _mm_storeu_si128((__m128i *)(out + 32),
-                         _mm_xor_si128(_mm256_castsi256_si128(y23), p2));
+        _mm_storeu_si128((__m128i *)(out + 32), _mm_xor_si128(_mm256_castsi256_si128(y23), p2));
         _mm_storeu_si128((__m128i *)(out + 48),
                          _mm_xor_si128(_mm256_extracti128_si256(y23, 1), p3));
-        _mm_storeu_si128((__m128i *)(out + 64),
-                         _mm_xor_si128(_mm256_castsi256_si128(y45), p4));
+        _mm_storeu_si128((__m128i *)(out + 64), _mm_xor_si128(_mm256_castsi256_si128(y45), p4));
         _mm_storeu_si128((__m128i *)(out + 80),
                          _mm_xor_si128(_mm256_extracti128_si256(y45, 1), p5));
-        _mm_storeu_si128((__m128i *)(out + 96),
-                         _mm_xor_si128(_mm256_castsi256_si128(y67), p6));
+        _mm_storeu_si128((__m128i *)(out + 96), _mm_xor_si128(_mm256_castsi256_si128(y67), p6));
         _mm_storeu_si128((__m128i *)(out + 112),
                          _mm_xor_si128(_mm256_extracti128_si256(y67, 1), p7));
 
