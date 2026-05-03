@@ -15,6 +15,7 @@
 /*
  * encode sample quic frames and decode them again to guard wire layout regressions
  * covers ping crypto ack stream path_challenge/response handshake_done cc
+ * replays decoder state machine against writer cursor to detect length varint drift
  */
 int main(void) {
     uint8_t buf[512];

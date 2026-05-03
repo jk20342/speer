@@ -71,6 +71,8 @@ static int oid_eq(const speer_asn1_t *n, const uint8_t *o, size_t ol) {
 /*
  * walk x509 extension sequence and set speer_x509_t flags, eku, dns san entries
  * unknown critical oids set unknown_critical_ext without failing the whole parse
+ * parses each extension tuple as oid optional-critical octet-inner and branches on oid
+ * basic constraints ekus san ip/dns fills host-side buffers with bounded strncpy style
  */
 static int parse_extensions(speer_x509_t *x, const speer_asn1_t *exts) {
     speer_asn1_t exts_seq;
@@ -178,6 +180,8 @@ static int parse_extensions(speer_x509_t *x, const speer_asn1_t *exts) {
 /*
  * parse tbscertificate spine, signature oid, validity window, and spki tlv from der
  * callers get raw issuer/subject blobs plus optional extension parse pass later
+ * walks outer certificate sequence enforcing asn1 tagging at each extractor step
+ * copies notbefore/notafter utc/generalized blobs and parses extensions when present
  */
 int speer_x509_parse(speer_x509_t *x, const uint8_t *der, size_t der_len) {
     ZERO(x, sizeof(*x));

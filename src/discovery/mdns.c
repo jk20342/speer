@@ -488,6 +488,8 @@ int mdns_poll(mdns_ctx_t *ctx, int timeout_ms) {
 /*
  * parse dns/mdns answer section and extract txt peer id plus multiaddr ascii hint
  * skips unrelated records; uses sender ipv4 only for ip4 multiaddr construction
+ * walks questions then answers validating name compression limits and ttl ordering
+ * returns first srv/txt pairing that exposes base58-ish peer id buffers to caller heap
  */
 int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *out_peer_id,
                       size_t peer_id_cap, char *out_multiaddr, size_t multiaddr_cap,

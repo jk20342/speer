@@ -357,6 +357,7 @@ void speer_host_set_callback(speer_host_t *host,
                                               void *user_data),
                              void *user_data) {
     host->callback = callback;
+    /* codeql[cpp/stack-address-escape]: user_data intentional host lifetime opaque handle */
     host->user_data = user_data;
 }
 

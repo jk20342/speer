@@ -36,8 +36,9 @@ static SPEER_AVX2_TARGET INLINE __m256i rotl32_avx2(__m256i v, int n) {
 
 SPEER_AVX2_TARGET
 /*
- * avx2 schedules eight consecutive chacha20 blocks and xor's with input plaintext
- * used when runtime cpu reports avx2; falls back elsewhere in dispatcher
+ * avx2 schedules eight concurrent chacha20 quarter rounds across eight block lanes
+ * used when runtime cpu reports avx2; omitted targets use the scalar chacha dispatcher
+ * splats state constants into ymm registers then drains serialized little-endian xor
  */
 void speer_chacha20_avx2_8blocks(const uint32_t state[16], const uint8_t *in, uint8_t *out) {
     const __m256i rot16_mask = _mm256_set_epi8(13, 12, 15, 14, 9, 8, 11, 10, 5, 4, 7, 6, 1, 0, 3, 2,

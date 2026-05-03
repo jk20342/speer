@@ -7,6 +7,12 @@
 #include <ctype.h>
 #include <string.h>
 
+#if !defined(_MSC_VER)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #define PROGRAM_NAME "speer-keygen"
 #define VERSION      "0.2.0"
 
@@ -84,21 +90,42 @@ static FILE *open_safe_output_file(const char *src, const char *mode) {
     if (fopen_s(&fp, path, mode) != 0) return NULL;
     return fp;
 #else
-    return fopen(path, mode);
+    int flags = O_WRONLY | O_CREAT | O_TRUNC;
+#if defined(O_NOFOLLOW)
+    flags |= O_NOFOLLOW;
+#endif
+#if defined(O_CLOEXEC)
+    flags |= O_CLOEXEC;
+#endif
+#if defined(O_BINARY)
+    if (strcmp(mode, "wb") == 0) flags |= O_BINARY;
+#elif defined(_O_BINARY)
+    if (strcmp(mode, "wb") == 0) flags |= _O_BINARY;
+#endif
+    int fd = open(path, flags, (mode_t)0600);
+    if (fd < 0) return NULL;
+    FILE *fp = fdopen(fd, (strcmp(mode, "wb") == 0) ? "wb" : "w");
+    if (!fp) {
+        (void)close(fd);
+        return NULL;
+    }
+    return fp;
 #endif
 }
 
-/* argv -> keys; optional safe basename file output opens via sanitized path buf
- * rejects traversal, slashes, weird chars before fopen_s/fopen */
+/* argv -> keys; optional safe basename output uses a sanitized path buffer
+ * rejects traversal, slashes, and odd characters before libc open/fdopen paths
+ * msvc builds use fopen_s; others use open(2) plus fdopen so O_NOFOLLOW can apply
+ * main walks argv for format seed help then emits hex binary header dotenv shapes */
 
 int main(int argc, char **argv) {
     output_format_t format = FORMAT_HEX;
     const char *output_file = NULL;
     const char *seed_hex = NULL;
 
-    int i = 1;
-    while (i < argc) {
-        const char *a = argv[i];
+    int argi = 1;
+    while (argi < argc) {
+        const char *a = argv[argi];
         int step = 1;
         if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
             print_usage(argv[0]);
@@ -109,11 +136,11 @@ int main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(a, "-f") == 0 || strcmp(a, "--format") == 0) {
-            if (i + 1 >= argc) {
+            if (argi + 1 >= argc) {
                 fprintf(stderr, "Error: -f requires an argument\n");
                 return 1;
             }
-            const char *fmt = argv[i + 1];
+            const char *fmt = argv[argi + 1];
             step = 2;
             if (strcmp(fmt, "hex") == 0)
                 format = FORMAT_HEX;
@@ -128,24 +155,24 @@ int main(int argc, char **argv) {
                 return 1;
             }
         } else if (strcmp(a, "-o") == 0 || strcmp(a, "--output") == 0) {
-            if (i + 1 >= argc) {
+            if (argi + 1 >= argc) {
                 fprintf(stderr, "Error: -o requires an argument\n");
                 return 1;
             }
-            output_file = argv[i + 1];
+            output_file = argv[argi + 1];
             step = 2;
         } else if (strcmp(a, "-s") == 0 || strcmp(a, "--seed") == 0) {
-            if (i + 1 >= argc) {
+            if (argi + 1 >= argc) {
                 fprintf(stderr, "Error: -s requires an argument\n");
                 return 1;
             }
-            seed_hex = argv[i + 1];
+            seed_hex = argv[argi + 1];
             step = 2;
         } else {
             fprintf(stderr, "Error: Unknown option '%s'\n", a);
             return 1;
         }
-        i += step;
+        argi += step;
     }
 
     uint8_t seed[32];
@@ -195,15 +222,15 @@ int main(int argc, char **argv) {
     case FORMAT_HEADER:
         fprintf(out, "#ifndef SPEER_KEYS_H\n#define SPEER_KEYS_H\n\n");
         fprintf(out, "static const uint8_t SPEER_PUBLIC_KEY[32] = {\n    ");
-        for (int i = 0; i < 32; i++) {
-            fprintf(out, "0x%02x%s", public_key[i], (i < 31) ? ", " : "");
-            if ((i + 1) % 8 == 0 && i < 31) fprintf(out, "\n    ");
+        for (int bk = 0; bk < 32; bk++) {
+            fprintf(out, "0x%02x%s", public_key[bk], (bk < 31) ? ", " : "");
+            if ((bk + 1) % 8 == 0 && bk < 31) fprintf(out, "\n    ");
         }
         fprintf(out, "\n};\n\n");
         fprintf(out, "static const uint8_t SPEER_PRIVATE_KEY[32] = {\n    ");
-        for (int i = 0; i < 32; i++) {
-            fprintf(out, "0x%02x%s", private_key[i], (i < 31) ? ", " : "");
-            if ((i + 1) % 8 == 0 && i < 31) fprintf(out, "\n    ");
+        for (int bk = 0; bk < 32; bk++) {
+            fprintf(out, "0x%02x%s", private_key[bk], (bk < 31) ? ", " : "");
+            if ((bk + 1) % 8 == 0 && bk < 31) fprintf(out, "\n    ");
         }
         fprintf(out, "\n};\n\n#endif\n");
         break;

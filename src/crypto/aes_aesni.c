@@ -79,6 +79,8 @@ SPEER_AESNI_TARGET
 /*
  * aes-ni key expansion for encrypt; fills speer_aes_key_t round key schedule
  * supports 128/192/256-bit keys and matches software speer_aes_encrypt path
+ * uses aeskeygenassist and shuffles to derive full nr rounds mirrored in decrypt
+ * writes round key material as contiguous u32 words expected by simd encrypt kernel
  */
 void speer_aes_set_encrypt_key_aesni(speer_aes_key_t *k, const uint8_t *key, size_t key_bits) {
     __m128i t1, t2, t3;
