@@ -1,19 +1,21 @@
 #if SPEER_RELAY
 
+#include "speer.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <string.h>
 
 #include "ed25519.h"
 #include "relay_client.h"
-#include "speer.h"
 #include "speer_libp2p_tcp.h"
 #include "transport_tcp.h"
 
-#define SKIP_EXIT 77
+#define SKIP_EXIT                   77
 
-#define DEFAULT_RELAY_HOST "104.131.131.82"
-#define DEFAULT_RELAY_PORT 4001u
+#define DEFAULT_RELAY_HOST          "104.131.131.82"
+#define DEFAULT_RELAY_PORT          4001u
 #define EXPECTED_BOOTSTRAP_PEER_B58 "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
 
 typedef struct {
@@ -85,8 +87,8 @@ int main(void) {
     }
 
     speer_yamux_stream_t *hop = NULL;
-    if (speer_libp2p_tcp_open_protocol_stream(&session, "/libp2p/circuit/relay/0.2.0/hop",
-                                              &hop) != 0) {
+    if (speer_libp2p_tcp_open_protocol_stream(&session, "/libp2p/circuit/relay/0.2.0/hop", &hop) !=
+        0) {
         fprintf(stderr, "relay_public_hop_check: open hop stream failed\n");
         memset(keys.static_priv, 0, sizeof(keys.static_priv));
         memset(keys.ed_seed, 0, sizeof(keys.ed_seed));
