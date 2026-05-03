@@ -151,32 +151,34 @@ static void emit_stream_frames(speer_host_t *host, speer_peer_t *peer, const uin
         }
 #endif
         buffer_stream_data(peer, (uint32_t)stream_id, data + pos, (size_t)data_len);
-        uint8_t *ev_payload = NULL;
-        if ((size_t)data_len > 0) {
-            ev_payload = (uint8_t *)malloc((size_t)data_len);
-            if (!ev_payload) {
+        if (host->callback) {
+            uint8_t *ev_payload = NULL;
+            if ((size_t)data_len > 0) {
+                ev_payload = (uint8_t *)malloc((size_t)data_len);
+                if (!ev_payload) {
+                    pos += (size_t)data_len;
+                    continue;
+                }
+                memcpy(ev_payload, data + pos, (size_t)data_len);
+            }
+            speer_stream_t *ev_stream = (speer_stream_t *)calloc(1, sizeof(speer_stream_t));
+            if (!ev_stream) {
+                free(ev_payload);
                 pos += (size_t)data_len;
                 continue;
             }
-            memcpy(ev_payload, data + pos, (size_t)data_len);
-        }
-        speer_stream_t *ev_stream = (speer_stream_t *)calloc(1, sizeof(speer_stream_t));
-        if (!ev_stream) {
+            ev_stream->peer = peer;
+            ev_stream->id = (uint32_t)stream_id;
+            speer_event_t ev = {.type = SPEER_EVENT_STREAM_DATA,
+                                .peer = peer,
+                                .stream = ev_stream,
+                                .stream_id = (uint32_t)stream_id,
+                                .data = ev_payload,
+                                .len = (size_t)data_len};
+            host->callback(host, &ev, host->user_data);
+            free(ev_stream);
             free(ev_payload);
-            pos += (size_t)data_len;
-            continue;
         }
-        ev_stream->peer = peer;
-        ev_stream->id = (uint32_t)stream_id;
-        speer_event_t ev = {.type = SPEER_EVENT_STREAM_DATA,
-                            .peer = peer,
-                            .stream = ev_stream,
-                            .stream_id = (uint32_t)stream_id,
-                            .data = ev_payload,
-                            .len = (size_t)data_len};
-        if (host->callback) host->callback(host, &ev, host->user_data);
-        free(ev_stream);
-        free(ev_payload);
         pos += (size_t)data_len;
     }
 }

@@ -60,6 +60,8 @@ static void gf_mul_table(uint8_t z[16], const uint8_t y[16], uint8_t T[16][16]) 
 
 void speer_ghash_soft_init(speer_ghash_state_t *s, const uint8_t h[16]) {
     s->use_clmul = 0;
+    s->use_pmull_arm = 0;
+    s->use_vpclmul_x86 = 0;
     for (int i = 0; i < 16; i++) s->h[i] = h[i];
     compute_table(s->htables, h);
 }

@@ -69,22 +69,48 @@ static SPEER_PCLMUL_TARGET __m128i gfmul_clmul(__m128i a, __m128i b) {
 SPEER_PCLMUL_TARGET
 void speer_ghash_clmul_init(speer_ghash_state_t *s, const uint8_t h[16]) {
     s->use_clmul = 1;
+    s->use_pmull_arm = 0;
+    s->use_vpclmul_x86 = 0;
     for (int i = 0; i < 16; i++) s->h[i] = h[i];
     __m128i hv = _mm_loadu_si128((const __m128i *)h);
     hv = bswap_be(hv);
     _mm_storeu_si128((__m128i *)s->htables[0], hv);
+    __m128i h2 = gfmul_clmul(hv, hv);
+    __m128i h3 = gfmul_clmul(h2, hv);
+    __m128i h4 = gfmul_clmul(h3, hv);
+    _mm_storeu_si128((__m128i *)s->htables[1], h2);
+    _mm_storeu_si128((__m128i *)s->htables[2], h3);
+    _mm_storeu_si128((__m128i *)s->htables[3], h4);
 }
 
 SPEER_PCLMUL_TARGET
 void speer_ghash_clmul_absorb(speer_ghash_state_t *s, uint8_t y[16], const uint8_t *data,
                               size_t len) {
-    __m128i hv = _mm_loadu_si128((const __m128i *)s->htables[0]);
+    __m128i h1 = _mm_loadu_si128((const __m128i *)s->htables[0]);
+    __m128i h2 = _mm_loadu_si128((const __m128i *)s->htables[1]);
+    __m128i h3 = _mm_loadu_si128((const __m128i *)s->htables[2]);
+    __m128i h4 = _mm_loadu_si128((const __m128i *)s->htables[3]);
     __m128i yv = bswap_be(_mm_loadu_si128((const __m128i *)y));
 
+    while (len >= 64) {
+        __m128i d0 = bswap_be(_mm_loadu_si128((const __m128i *)data));
+        __m128i d1 = bswap_be(_mm_loadu_si128((const __m128i *)(data + 16)));
+        __m128i d2 = bswap_be(_mm_loadu_si128((const __m128i *)(data + 32)));
+        __m128i d3 = bswap_be(_mm_loadu_si128((const __m128i *)(data + 48)));
+
+        __m128i yn = gfmul_clmul(yv, h4);
+        yv = _mm_xor_si128(yn, gfmul_clmul(d0, h4));
+        yv = _mm_xor_si128(yv, gfmul_clmul(d1, h3));
+        yv = _mm_xor_si128(yv, gfmul_clmul(d2, h2));
+        yv = _mm_xor_si128(yv, gfmul_clmul(d3, h1));
+
+        data += 64;
+        len -= 64;
+    }
     while (len >= 16) {
         __m128i d = bswap_be(_mm_loadu_si128((const __m128i *)data));
         yv = _mm_xor_si128(yv, d);
-        yv = gfmul_clmul(yv, hv);
+        yv = gfmul_clmul(yv, h1);
         data += 16;
         len -= 16;
     }
@@ -93,7 +119,7 @@ void speer_ghash_clmul_absorb(speer_ghash_state_t *s, uint8_t y[16], const uint8
         for (size_t i = 0; i < len; i++) blk[i] = data[i];
         __m128i d = bswap_be(_mm_loadu_si128((const __m128i *)blk));
         yv = _mm_xor_si128(yv, d);
-        yv = gfmul_clmul(yv, hv);
+        yv = gfmul_clmul(yv, h1);
     }
     _mm_storeu_si128((__m128i *)y, bswap_be(yv));
 }

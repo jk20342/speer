@@ -9,6 +9,18 @@
 void speer_chacha20_avx2_8blocks(const uint32_t state[16], const uint8_t *in, uint8_t *out);
 #endif
 
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
+#define SPEER_HAS_POLY1305_AVX2 1
+void speer_poly1305_blocks_avx2(uint32_t h[5], const uint32_t r[5], const uint8_t *m, size_t len,
+                                uint32_t padbit);
+#endif
+
+#if defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
+#define SPEER_HAS_POLY1305_NEON 1
+void speer_poly1305_blocks_neon(uint32_t h[5], const uint32_t r[5], const uint8_t *m, size_t len,
+                                uint32_t padbit);
+#endif
+
 static const uint32_t chacha_const[4] = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
 
 #define QR(a, b, c, d)         \
@@ -72,6 +84,14 @@ void speer_chacha_block(speer_chacha_ctx_t *ctx, uint8_t out[64]) {
 int speer_chacha_block_counter_at_max(const speer_chacha_ctx_t *ctx) {
     return ctx->state[12] == 0xffffffffu;
 }
+
+#if defined(SPEER_HAS_POLY1305_AVX2)
+SPEER_CACHED_DETECT(poly1305_use_avx2, speer_cpu_has_avx2())
+#endif
+
+#if defined(SPEER_HAS_POLY1305_NEON)
+SPEER_CACHED_DETECT(poly1305_use_neon, 1)
+#endif
 
 #if defined(SPEER_HAS_CHACHA_AVX2)
 SPEER_CACHED_DETECT(chacha_use_avx2, speer_cpu_has_avx2())
@@ -188,7 +208,18 @@ void speer_poly1305(uint8_t mac[16], const uint8_t *msg, size_t len, const uint8
     size_t rem = len & 0xf;
 
     if (LIKELY(blocks > 0)) {
-        poly1305_blocks(h, r, msg, blocks * 16, 1);
+#if defined(SPEER_HAS_POLY1305_AVX2)
+        if (blocks >= 4 && poly1305_use_avx2()) {
+            speer_poly1305_blocks_avx2(h, r, msg, blocks * 16, 1);
+        } else
+#endif
+#if defined(SPEER_HAS_POLY1305_NEON)
+        if (blocks >= 4 && poly1305_use_neon()) {
+            speer_poly1305_blocks_neon(h, r, msg, blocks * 16, 1);
+        } else
+#endif
+            poly1305_blocks(h, r, msg, blocks * 16, 1);
+
         msg += blocks * 16;
     }
 

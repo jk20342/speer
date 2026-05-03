@@ -4,6 +4,13 @@
 
 #include "cpu_features.h"
 
+#if defined(SPEER_AES_VAES_AVAILABLE)
+SPEER_CACHED_DETECT(aes_ctr_use_vaes, speer_cpu_has_vaes_avx2())
+#endif
+#if defined(SPEER_AES_ARMV8_AVAILABLE)
+SPEER_CACHED_DETECT(aes_armv8_use, speer_cpu_has_armv8_aes())
+#endif
+
 static const uint8_t sbox[256] = {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -203,6 +210,12 @@ void speer_aes_set_encrypt_key(speer_aes_key_t *k, const uint8_t *key, size_t ke
 }
 
 void speer_aes_encrypt(const speer_aes_key_t *k, const uint8_t in[16], uint8_t out[16]) {
+#if defined(SPEER_AES_ARMV8_AVAILABLE)
+    if (aes_armv8_use()) {
+        speer_aes_encrypt_armv8(k, in, out);
+        return;
+    }
+#endif
 #ifdef SPEER_AESNI_AVAILABLE
     if (k->use_aesni) {
         speer_aes_encrypt_aesni(k, in, out);
@@ -214,6 +227,18 @@ void speer_aes_encrypt(const speer_aes_key_t *k, const uint8_t in[16], uint8_t o
 
 void speer_aes_ctr(const speer_aes_key_t *k, const uint8_t nonce[16], uint8_t *out,
                    const uint8_t *in, size_t len) {
+#if defined(SPEER_AES_VAES_AVAILABLE)
+    if (k->use_aesni && aes_ctr_use_vaes() && len >= 128) {
+        speer_aes_ctr_vaes(k, nonce, out, in, len);
+        return;
+    }
+#endif
+#if defined(SPEER_AES_ARMV8_AVAILABLE)
+    if (aes_armv8_use()) {
+        speer_aes_ctr_armv8(k, nonce, out, in, len);
+        return;
+    }
+#endif
 #ifdef SPEER_AESNI_AVAILABLE
     if (k->use_aesni) {
         speer_aes_ctr_aesni(k, nonce, out, in, len);
