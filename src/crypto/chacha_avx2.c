@@ -35,7 +35,10 @@ static SPEER_AVX2_TARGET INLINE __m256i rotl32_avx2(__m256i v, int n) {
     } while (0)
 
 SPEER_AVX2_TARGET
-/* avx2 eight parallel chacha20 blocks for bulk keystream xor */
+/*
+ * avx2 schedules eight consecutive chacha20 blocks and xor's with input plaintext
+ * used when runtime cpu reports avx2; falls back elsewhere in dispatcher
+ */
 void speer_chacha20_avx2_8blocks(const uint32_t state[16], const uint8_t *in, uint8_t *out) {
     const __m256i rot16_mask = _mm256_set_epi8(13, 12, 15, 14, 9, 8, 11, 10, 5, 4, 7, 6, 1, 0, 3, 2,
                                                13, 12, 15, 14, 9, 8, 11, 10, 5, 4, 7, 6, 1, 0, 3,

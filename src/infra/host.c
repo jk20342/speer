@@ -348,6 +348,10 @@ int speer_host_poll(speer_host_t *host, int timeout_ms) {
     return processed;
 }
 
+/*
+ * installs app callback invoked from speer_host_poll; user_data alias must remain
+ * valid for the host lifetime (callers commonly pass heap ctx or globals)
+ */
 void speer_host_set_callback(speer_host_t *host,
                              void (*callback)(speer_host_t *host, const speer_event_t *event,
                                               void *user_data),

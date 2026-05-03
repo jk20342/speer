@@ -12,7 +12,10 @@
         return 1;                     \
     } while (0)
 
-/* round-trip encoder checks for ping ack stream conn close helpers */
+/*
+ * encode sample quic frames and decode them again to guard wire layout regressions
+ * covers ping crypto ack stream path_challenge/response handshake_done cc
+ */
 int main(void) {
     uint8_t buf[512];
     speer_qf_writer_t w;

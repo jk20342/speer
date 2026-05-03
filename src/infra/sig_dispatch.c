@@ -15,7 +15,7 @@ static int parse_ecdsa_der(const uint8_t *sig, size_t sig_len, const uint8_t **r
     size_t total_len;
     if (sig[pos] & 0x80) {
         size_t nlb = sig[pos] & 0x7f;
-        if (nlb == 0 || nlb > 4 || pos + 1 + nlb > sig_len) return -1;
+        if (nlb == 0 || nlb > 4) return -1;
         total_len = 0;
         for (size_t j = 0; j < nlb; j++) total_len = (total_len << 8) | sig[pos + 1 + j];
         pos += 1 + nlb;

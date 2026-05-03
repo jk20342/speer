@@ -627,7 +627,8 @@ static int handle_certificate(speer_tls13_t *h, const uint8_t *body, size_t body
     return 0;
 }
 
-/* parse client hello cipher list and extensions required for handshake */
+/* parse client hello: legacy version, randoms, cipher list, and tls 1.3 extensions
+ * picks mutually supported aead suite and extracts key shares or libp2p hints */
 static int parse_client_hello(speer_tls13_t *h, const uint8_t *body, size_t body_len) {
     speer_tls_reader_t r;
     speer_tls_reader_init(&r, body, body_len);
@@ -1008,7 +1009,8 @@ static int do_fail(speer_tls13_t *h) {
     return SPEER_TLS_ERR;
 }
 
-/* tls1.3 handshake state machine consuming one handshake record */
+/* tls1.3 handshake state machine: validates msg order, transcripts, derives keys
+ * returns speer_tls ok, need-out, handshake-in-progress codes or transitions to error */
 int speer_tls13_handshake_consume(speer_tls13_t *h, uint8_t msg_type, const uint8_t *body,
                                   size_t body_len) {
     if (h->state == TLS_ST_ERROR) return SPEER_TLS_ERR;

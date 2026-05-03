@@ -485,7 +485,10 @@ int mdns_poll(mdns_ctx_t *ctx, int timeout_ms) {
     return received;
 }
 
-/* parse dns response bytes for srv txt peer id and multiaddr hints */
+/*
+ * parse dns/mdns answer section and extract txt peer id plus multiaddr ascii hint
+ * skips unrelated records; uses sender ipv4 only for ip4 multiaddr construction
+ */
 int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *out_peer_id,
                       size_t peer_id_cap, char *out_multiaddr, size_t multiaddr_cap,
                       uint32_t sender_ipv4_s_addr) {

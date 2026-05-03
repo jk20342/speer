@@ -85,13 +85,12 @@ static int gather_local_addrs(dcutr_ctx_t *ctx, dcutr_candidate_t *out, size_t m
         if (getsockname(host->socket, (struct sockaddr *)&bound, &bound_len) == 0 &&
             bound.ss_family == AF_INET) {
             if (count >= max) return (int)count;
-            struct sockaddr_in cand;
-            memcpy(&cand, &bound, sizeof(cand));
-            if (cand.sin_port == 0) return (int)count;
-            if (cand.sin_addr.s_addr == htonl(INADDR_ANY)) cand.sin_addr.s_addr = htonl(0x7f000001);
             ZERO(&out[count], sizeof(out[count]));
-            memcpy(&out[count].addr, &cand, sizeof(cand));
-            out[count].addr_len = sizeof(cand);
+            struct sockaddr_in *dst = (struct sockaddr_in *)&out[count].addr;
+            memcpy(dst, &bound, sizeof(*dst));
+            if (dst->sin_port == 0) return (int)count;
+            if (dst->sin_addr.s_addr == htonl(INADDR_ANY)) dst->sin_addr.s_addr = htonl(0x7f000001);
+            out[count].addr_len = sizeof(*dst);
             count++;
         }
     }

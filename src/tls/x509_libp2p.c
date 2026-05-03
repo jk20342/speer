@@ -190,7 +190,10 @@ int speer_x509_libp2p_make_self_signed(uint8_t *out, size_t cap, size_t *out_len
                                        speer_libp2p_keytype_t libp2p_kt, const uint8_t *libp2p_pub,
                                        size_t libp2p_pub_len, const uint8_t *libp2p_priv,
                                        size_t libp2p_priv_len) {
-    /* build libp2p tls self-signed cert bytes (ed25519-only) */
+    /*
+     * build libp2p-signed tls certificate: tbscert, pubkey proto tlv, dual signatures
+     * libp2p keys sign embedded spki blob; separate cert keys sign the full tbs
+     */
     if (libp2p_kt != SPEER_LIBP2P_KEY_ED25519) return -1;
     if (libp2p_pub_len != 32 || libp2p_priv_len != 32) return -1;
     if (!out || !out_len || !cert_priv_key || !cert_pub_key) return -1;

@@ -65,13 +65,39 @@ static int output_file_safe(const char *p) {
     return 0;
 }
 
-/* argv -> keys; optional -o basename only after output_file_safe */
+static FILE *open_safe_output_file(const char *src, const char *mode) {
+    char path[276];
+    if (output_file_safe(src) != 0) return NULL;
+    for (size_t i = 0;; i++) {
+        if (i >= sizeof(path)) return NULL;
+        char ch = src[i];
+        if (ch == 0) {
+            path[i] = 0;
+            break;
+        }
+        unsigned char c = (unsigned char)ch;
+        if (!(isalnum(c) || c == '_' || c == '-' || c == '.')) return NULL;
+        path[i] = ch;
+    }
+#if defined(_MSC_VER)
+    FILE *fp = NULL;
+    if (fopen_s(&fp, path, mode) != 0) return NULL;
+    return fp;
+#else
+    return fopen(path, mode);
+#endif
+}
+
+/* argv -> keys; optional safe basename file output opens via sanitized path buf
+ * rejects traversal, slashes, weird chars before fopen_s/fopen */
+
 int main(int argc, char **argv) {
     output_format_t format = FORMAT_HEX;
     const char *output_file = NULL;
     const char *seed_hex = NULL;
 
-    for (int i = 1; i < argc; i++) {
+    int i = 1;
+    while (i < argc) {
         const char *a = argv[i];
         int step = 1;
         if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
@@ -119,7 +145,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: Unknown option '%s'\n", a);
             return 1;
         }
-        i += step - 1;
+        i += step;
     }
 
     uint8_t seed[32];
@@ -144,21 +170,10 @@ int main(int argc, char **argv) {
 
     FILE *out = stdout;
     if (output_file) {
-        if (output_file_safe(output_file) != 0) {
-            fprintf(stderr, "Error: refusing unsafe output path (use simple file name paths)\n");
-            return 1;
-        }
-        size_t ln = strlen(output_file);
-        if (ln >= 276) {
-            fprintf(stderr, "Error: output path too long\n");
-            return 1;
-        }
-        char open_here[276];
-        memcpy(open_here, output_file, ln + 1);
         const char *mode = (format == FORMAT_BINARY) ? "wb" : "w";
-        out = fopen(open_here, mode);
+        out = open_safe_output_file(output_file, mode);
         if (!out) {
-            fprintf(stderr, "Error: Cannot open '%s'\n", output_file);
+            fprintf(stderr, "Error: Cannot open output file (check name and permissions)\n");
             return 1;
         }
     }
