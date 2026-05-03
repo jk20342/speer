@@ -107,7 +107,7 @@ int main(void) {
         .type = YAMUX_TYPE_PING,
         .flags = YAMUX_FLAG_SYN,
         .stream_id = 0,
-        .length = 0xdeadbeefu,
+        .length = 0xf1a9f1a9u,
     };
     uint8_t ph[12];
     speer_yamux_hdr_pack(ph, &ping_syn);
@@ -118,7 +118,7 @@ int main(void) {
     speer_yamux_hdr_t ackh;
     if (peek_unpack(&cb.q, &ackh) != 0) FAIL("peek ping ack\n");
     if (ackh.type != YAMUX_TYPE_PING || (ackh.flags & YAMUX_FLAG_ACK) == 0 ||
-        ackh.length != 0xdeadbeefu)
+        ackh.length != 0xf1a9f1a9u)
         FAIL("ping ack fields\n");
     drain_hdr(&cb.q);
 

@@ -49,4 +49,6 @@ static inline void print_hex(const char *label, const uint8_t *data, size_t len)
     printf("\n");
 }
 
+/* Optional: mnemonic 32-bit test sentinels, e.g. TEST_U32_HEX_F1A9F1A9 — see test_hex_speak.h */
+
 #endif

@@ -157,7 +157,7 @@ static int ghash_hw_matches_soft(void) {
     static const uint8_t h_aes_block[16] = {0x66, 0xe9, 0x4b, 0xd4, 0xef, 0x8a, 0x2c, 0x3b,
                                             0x88, 0x4e, 0xaf, 0x96, 0xce, 0xb9, 0x3f, 0x21};
     uint8_t buf[192];
-    fill_pattern(buf, sizeof(buf), 0xdeadbeefu);
+    fill_pattern(buf, sizeof(buf), 0xf1a9f1a9u);
 
     int fail = hw_ghash_matches_soft_case(h_aes_block, NULL, 0, 0);
     fail |= hw_ghash_matches_soft_case(h_aes_block, buf, 47, 0);
