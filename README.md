@@ -61,12 +61,12 @@ libp2p-over-tcp session (interop with other libp2p implementations on tcp):
 #include "transport_tcp.h"
 
 speer_libp2p_identity_t id;
-/* fill id from keys — copy pattern in examples/libp2p_tcp_full_session.c */
+/* fill id from keys - copy pattern in examples/libp2p_tcp_full_session.c */
 int fd;
 speer_tcp_dial(&fd, "127.0.0.1", 4001);
 speer_libp2p_tcp_session_t session;
 speer_libp2p_tcp_session_init_dialer(&session, fd, &id);
-/* then yamux + multistream per stream — same example file */
+/* then yamux + multistream per stream - same example file */
 ```
 
 full bootstrap including yamux + protocol open is in
