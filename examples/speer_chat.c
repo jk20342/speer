@@ -31,6 +31,7 @@
 #include <direct.h>
 #include <fcntl.h>
 #include <io.h>
+#include <sys/stat.h>
 #define THREAD_T HANDLE
 #define THREAD_CREATE(t, fn, arg) \
     ((*(t) = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(fn), (arg), 0, NULL)) != NULL ? 0 : -1)
@@ -50,6 +51,8 @@ static void thread_sleep_ms(int ms) {
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <pthread.h>
+
+#include <fcntl.h>
 
 #include <poll.h>
 #include <signal.h>
@@ -470,6 +473,81 @@ static int ui_netlog_width(void) {
     return 0;
 }
 
+
+#if defined(_WIN32)
+static FILE *fopen_write_bin_private(const char *path) {
+    int fd =
+        _open(path, _O_CREAT | _O_TRUNC | _O_BINARY | _O_WRONLY, _S_IREAD | _S_IWRITE);
+    if (fd < 0) return NULL;
+    FILE *fp = _fdopen(fd, "wb");
+    if (!fp) {
+        _close(fd);
+        return NULL;
+    }
+    return fp;
+}
+#else
+static FILE *fopen_write_bin_private(const char *path) {
+    int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+    if (fd < 0) return NULL;
+    FILE *fp = fdopen(fd, "wb");
+    if (!fp) {
+        close(fd);
+        return NULL;
+    }
+    return fp;
+}
+#endif
+
+static void esc_buf_flush(char *buf, int *pos) {
+    if (*pos <= 0) return;
+    fwrite(buf, 1, (size_t)*pos, stdout);
+    *pos = 0;
+}
+
+static void esc_fmt_append(char *buf, size_t cap, int *pos, const char *fmt, ...) {
+    if (*pos < 0 || (size_t)*pos >= cap - 96) esc_buf_flush(buf, pos);
+
+    va_list ap;
+    va_start(ap, fmt);
+
+    va_list aq;
+    va_copy(aq, ap);
+    size_t room = cap - (size_t)*pos;
+    int n = vsnprintf(buf + *pos, room, fmt, aq);
+    va_end(aq);
+
+    if (n >= 0 && (size_t)n >= room) {
+        esc_buf_flush(buf, pos);
+        room = cap - (size_t)*pos;
+        va_copy(aq, ap);
+        n = vsnprintf(buf + *pos, room, fmt, aq);
+        va_end(aq);
+    }
+    va_end(ap);
+
+    room = cap - (size_t)*pos;
+    if (n >= 0 && (size_t)n < room) {
+        *pos += n;
+    }
+}
+
+static void utf8_emit(char *buf, size_t cap, int *pos, uint32_t ch) {
+    int need =
+        ch < 128 ? 1 : (ch < 0x800 ? 2 : 3); /* widest UTF-8 rune we emit below */
+    if (*pos >= 0 && (size_t)*pos + (size_t)need >= cap - 32) esc_buf_flush(buf, pos);
+    if (ch < 128) {
+        buf[(*pos)++] = (char)ch;
+    } else if (ch < 0x800) {
+        buf[(*pos)++] = (char)(0xc0 | (ch >> 6));
+        buf[(*pos)++] = (char)(0x80 | (ch & 0x3f));
+    } else {
+        buf[(*pos)++] = (char)(0xe0 | (ch >> 12));
+        buf[(*pos)++] = (char)(0x80 | ((ch >> 6) & 0x3f));
+        buf[(*pos)++] = (char)(0x80 | (ch & 0x3f));
+    }
+}
+
 /* Diff and render to terminal */
 static void screen_present(void) {
     /* Build output string with minimal escape sequences */
@@ -491,63 +569,49 @@ static void screen_present(void) {
         }
         if (!line_dirty) continue;
 
-        /* Move cursor to start of line */
-        pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[%d;1H", y + 1);
+        esc_fmt_append(buf, sizeof(buf), &pos, "\x1b[%d;1H", y + 1);
 
         for (int x = 0; x < g_screen.cols; x++) {
             cell_t *c = &g_screen.back[y][x];
 
             /* Set attributes if changed */
             if (c->bold != cur_bold || c->dim != cur_dim) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[22m");
+                esc_fmt_append(buf, sizeof(buf), &pos, "\x1b[22m");
                 cur_bold = 0;
                 cur_dim = 0;
                 if (c->bold) {
-                    pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[1m");
+                    esc_fmt_append(buf, sizeof(buf), &pos, "\x1b[1m");
                     cur_bold = 1;
                 }
                 if (c->dim) {
-                    pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[2m");
+                    esc_fmt_append(buf, sizeof(buf), &pos, "\x1b[2m");
                     cur_dim = 1;
                 }
             }
             if (c->fg != cur_fg) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[38;2;%u;%u;%um",
-                                (c->fg >> 16) & 0xff, (c->fg >> 8) & 0xff, c->fg & 0xff);
+                esc_fmt_append(buf, sizeof(buf), &pos, "\x1b[38;2;%u;%u;%um",
+                               (unsigned)((c->fg >> 16) & 0xff), (unsigned)((c->fg >> 8) & 0xff),
+                               (unsigned)(c->fg & 0xff));
                 cur_fg = c->fg;
             }
             if (c->bg != cur_bg) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos, "\x1b[48;2;%u;%u;%um",
-                                (c->bg >> 16) & 0xff, (c->bg >> 8) & 0xff, c->bg & 0xff);
+                esc_fmt_append(buf, sizeof(buf), &pos, "\x1b[48;2;%u;%u;%um",
+                               (unsigned)((c->bg >> 16) & 0xff), (unsigned)((c->bg >> 8) & 0xff),
+                               (unsigned)(c->bg & 0xff));
                 cur_bg = c->bg;
             }
             /* Output character */
-            if (c->ch < 128) {
-                buf[pos++] = (char)c->ch;
-            } else {
-                /* UTF-8 encode */
-                if (c->ch < 0x800) {
-                    buf[pos++] = (char)(0xc0 | (c->ch >> 6));
-                    buf[pos++] = (char)(0x80 | (c->ch & 0x3f));
-                } else {
-                    buf[pos++] = (char)(0xe0 | (c->ch >> 12));
-                    buf[pos++] = (char)(0x80 | ((c->ch >> 6) & 0x3f));
-                    buf[pos++] = (char)(0x80 | (c->ch & 0x3f));
-                }
-            }
+            utf8_emit(buf, sizeof(buf), &pos, c->ch);
 
             /* Flush periodically */
-            if (pos > 60000) {
-                fwrite(buf, 1, pos, stdout);
-                pos = 0;
-            }
+            if (pos > 60000) esc_buf_flush(buf, &pos);
         }
 
         /* Copy back to front */
         memcpy(g_screen.front[y], g_screen.back[y], g_screen.cols * sizeof(cell_t));
     }
 
-    if (pos > 0) { fwrite(buf, 1, pos, stdout); }
+    if (pos > 0) esc_buf_flush(buf, &pos);
     fflush(stdout);
 }
 
@@ -1076,12 +1140,13 @@ static void render_messages(void) {
     int msgs_to_show = inner_h;
     int start_idx = (g_history.head - 1 + MAX_HISTORY) % MAX_HISTORY;
 
-    /* Apply scroll */
-    if (g_history.scroll > 0) {
-        for (int i = 0; i < g_history.scroll && msgs_to_show > 0; i++) {
+    /* Apply scroll: move start_idx back, but never past the oldest real message. */
+    if (g_history.scroll > 0 && g_history.count > 0) {
+        int max_steps = g_history.count - 1;
+        int steps =
+            g_history.scroll < max_steps ? g_history.scroll : max_steps;
+        for (int i = 0; i < steps; i++)
             start_idx = (start_idx - 1 + MAX_HISTORY) % MAX_HISTORY;
-            if ((int)i >= g_history.count - 1) break;
-        }
     }
 
     for (int i = 0; i < msgs_to_show && line >= inner_y; i++) {
@@ -2647,7 +2712,7 @@ static void cmd_accept_file(const char *arg) {
     MUTEX_LOCK(&g_file_mu);
     rx_file_t *rx = &g_rx_files[chosen];
     if (rx->active && !rx->fp) {
-        fp = fopen(rx->path, "wb");
+        fp = fopen_write_bin_private(rx->path);
         if (fp) {
             rx->fp = fp;
             id = rx->id;

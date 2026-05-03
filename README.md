@@ -1,6 +1,17 @@
 # speer
 
-a small libp2p-ish stack in c.
+a small libp2p-ish stack in c. solo-maintained; scope is a lot for one person
+but here we are.
+
+**two entrypoints (same repo, different wire):**
+
+| api | wire | peers |
+| --- | --- | --- |
+| `speer.h` | udp + speer `packet.c` format (noise **xx** embedded; not libp2p tcp/quic) | native speer only |
+| `speer_libp2p_tcp.h` | tcp + multistream + noise xx + yamux | kubo, py-libp2p, rust-libp2p, … on tcp |
+
+`examples/libp2p_tcp_full_session.c` dials a normal libp2p tcp host (noise → yamux
+→ stream proto); it has been checked against py-libp2p.
 
 it has noise xx, libp2p over tcp, yamux, mdns, dht bits, partial quic, and a
 tls 1.3 core. no external deps.
@@ -30,7 +41,7 @@ mingw32-make
 
 ## quick use
 
-native speer host over udp:
+native speer host over udp (speer-to-speer only on the wire):
 
 ```c
 #include "speer.h"
@@ -43,24 +54,23 @@ speer_stream_write(s, (uint8_t*)"hello", 5);
 while (running) speer_host_poll(host, 100);
 ```
 
-libp2p tcp pieces are lower-level and can be used directly:
+libp2p-over-tcp session (interop with other libp2p implementations on tcp):
 
 ```c
+#include "speer_libp2p_tcp.h"
 #include "transport_tcp.h"
-#include "libp2p_noise.h"
-#include "yamux.h"
 
-speer_transport_ops_t* tcp = speer_tcp_transport();
-void* conn = tcp->dial(NULL, "1.2.3.4", 4001);
-
-speer_libp2p_noise_ctx_t noise;
-speer_libp2p_noise_init(&noise, 1, libp2p_priv, libp2p_pub);
-speer_libp2p_noise_handshake(&noise, conn, tcp);
-
-speer_yamux_t mux;
-speer_yamux_init(&mux, 1);
-speer_yamux_stream_t* stream = speer_yamux_open_stream(&mux);
+speer_libp2p_identity_t id;
+/* fill id from keys — copy pattern in examples/libp2p_tcp_full_session.c */
+int fd;
+speer_tcp_dial(&fd, "127.0.0.1", 4001);
+speer_libp2p_tcp_session_t session;
+speer_libp2p_tcp_session_init_dialer(&session, fd, &id);
+/* then yamux + multistream per stream — same example file */
 ```
+
+full bootstrap including yamux + protocol open is in
+`examples/libp2p_tcp_full_session.c`.
 
 ## examples
 

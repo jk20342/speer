@@ -25,30 +25,32 @@ static int parse_ecdsa_der(const uint8_t *sig, size_t sig_len, const uint8_t **r
     if (pos + total_len != sig_len) return -1;
 
     if (pos + 2 > sig_len || sig[pos] != 0x02) return -1;
-    size_t r_l = sig[pos + 1];
-    if (r_l == 0 || r_l > 0x7f) return -1;
-    if (pos + 2 + r_l > sig_len) return -1;
+    size_t r_der = sig[pos + 1];
+    if (r_der == 0 || r_der > 0x7f) return -1;
+    if (pos + 2 + r_der > sig_len) return -1;
     const uint8_t *rp = sig + pos + 2;
+    size_t r_l = r_der;
     if (r_l > 1 && rp[0] == 0 && (rp[1] & 0x80) == 0) return -1;
     if (rp[0] == 0 && r_l > 0) {
         rp++;
         r_l--;
     }
 
-    pos += 2 + sig[pos + 1];
+    pos += 2 + r_der;
 
     if (pos + 2 > sig_len || sig[pos] != 0x02) return -1;
-    size_t s_l = sig[pos + 1];
-    if (s_l == 0 || s_l > 0x7f) return -1;
-    if (pos + 2 + s_l > sig_len) return -1;
+    size_t s_der = sig[pos + 1];
+    if (s_der == 0 || s_der > 0x7f) return -1;
+    if (pos + 2 + s_der > sig_len) return -1;
     const uint8_t *sp = sig + pos + 2;
+    size_t s_l = s_der;
     if (s_l > 1 && sp[0] == 0 && (sp[1] & 0x80) == 0) return -1;
     if (sp[0] == 0 && s_l > 0) {
         sp++;
         s_l--;
     }
 
-    pos += 2 + sig[pos + 1];
+    pos += 2 + s_der;
     if (pos != sig_len) return -1;
 
     *r_out = rp;

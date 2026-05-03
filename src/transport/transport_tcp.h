@@ -16,4 +16,7 @@ int speer_tcp_set_io_timeout(int fd, int timeout_ms);
 int speer_tcp_recv_all(int fd, uint8_t *buf, size_t len);
 int speer_tcp_send_all(int fd, const uint8_t *data, size_t len);
 
+/* 1 = next bytes are libp2p multistream client hello, 0 = not, -1 = inconclusive (e.g. timeout). */
+int speer_tcp_peek_libp2p_multistream_client_hello(int fd);
+
 #endif

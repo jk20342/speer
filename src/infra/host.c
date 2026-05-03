@@ -442,23 +442,29 @@ speer_peer_t *speer_connect(speer_host_t *host, const uint8_t public_key[SPEER_P
 speer_stream_t *speer_stream_open(speer_peer_t *peer, uint32_t stream_id) {
     if (!peer || peer->state != SPEER_STATE_ESTABLISHED) return NULL;
 
-    speer_stream_internal_t *s = speer_stream_lookup(peer, stream_id);
-    if (!s) {
-        s = speer_stream_create(peer, stream_id);
-        if (!s) return NULL;
-
-        speer_event_t ev = {.type = SPEER_EVENT_STREAM_OPENED,
-                            .peer = peer,
-                            .stream = (speer_stream_t *)s,
-                            .stream_id = stream_id};
-        if (peer->host->callback) { peer->host->callback(peer->host, &ev, peer->host->user_data); }
+    speer_stream_internal_t *internal = speer_stream_lookup(peer, stream_id);
+    int created_internal = 0;
+    if (!internal) {
+        internal = speer_stream_create(peer, stream_id);
+        if (!internal) return NULL;
+        created_internal = 1;
     }
 
-    speer_stream_t *wrapper = (speer_stream_t *)malloc(sizeof(speer_stream_t));
-    if (!wrapper) return NULL;
-
+    speer_stream_t *wrapper = (speer_stream_t *)calloc(1, sizeof(speer_stream_t));
+    if (!wrapper) {
+        if (created_internal) speer_stream_destroy(peer, internal);
+        return NULL;
+    }
     wrapper->peer = peer;
     wrapper->id = stream_id;
+
+    if (created_internal && peer->host->callback) {
+        speer_event_t ev = {.type = SPEER_EVENT_STREAM_OPENED,
+                            .peer = peer,
+                            .stream = wrapper,
+                            .stream_id = stream_id};
+        peer->host->callback(peer->host, &ev, peer->host->user_data);
+    }
 
     return wrapper;
 }

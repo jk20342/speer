@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include <string.h>
+#include <stdint.h>
 
 #define PROGRAM_NAME "speer-keygen"
 #define VERSION      "0.2.0"
@@ -44,6 +45,13 @@ static int hex_to_bytes(const char *hex, uint8_t *out, size_t out_len) {
 
 static void print_hex(FILE *f, const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) { fprintf(f, "%02x", data[i]); }
+}
+
+/* Refuse obvious path traversal fragments (write-only CLI). */
+static int output_file_safe(const char *p) {
+    if (!p || !p[0]) return 0;
+    if (strstr(p, "..")) return -1;
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -118,6 +126,10 @@ int main(int argc, char **argv) {
 
     FILE *out = stdout;
     if (output_file) {
+        if (output_file_safe(output_file) != 0) {
+            fprintf(stderr, "Error: refusing unsafe output path (use simple file name paths)\n");
+            return 1;
+        }
         const char *mode = (format == FORMAT_BINARY) ? "wb" : "w";
         out = fopen(output_file, mode);
         if (!out) {

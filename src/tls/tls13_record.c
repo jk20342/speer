@@ -29,7 +29,6 @@ int speer_tls13_record_seal(speer_tls13_record_dir_t *d, uint8_t inner_type,
         inner_type != TLS_CT_ALERT)
         return -1;
     size_t inner_len = pt_len + 1;
-    if (inner_len + 16 > 0xffff) return -1;
     size_t total = 5 + inner_len + 16;
     if (total > out_cap) return -1;
 
@@ -64,7 +63,6 @@ int speer_tls13_record_open(speer_tls13_record_dir_t *d, const uint8_t *record, 
     if (record[1] != 0x03 || record[2] != 0x03) return -1;
     size_t body_len = ((size_t)record[3] << 8) | record[4];
     if (body_len < 16 || 5 + body_len != record_len) return -1;
-    if (body_len > TLS13_MAX_RECORD_PLAINTEXT + 256 + 16) return -1;
     size_t ct_len = body_len - 16;
     if (ct_len > out_cap) return -1;
 

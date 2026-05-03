@@ -2,13 +2,29 @@
 
 #include "speer_internal.h"
 
+#include "multistream.h"
+#include "varint.h"
+
 #include <stdio.h>
 
 #include "transport_iface.h"
 
+#include <string.h>
+
 #if !defined(_WIN32)
+#include <errno.h>
+#include <sys/select.h>
 #include <sys/types.h>
 #endif
+
+struct speer_transport_endpoint_s {
+    int listen_fd;
+};
+
+struct speer_transport_conn_s {
+    int fd;
+    char peer_addr[64];
+};
 
 static int sock_v4_addr(struct sockaddr_in *sin, const char *host, uint16_t port) {
     ZERO(sin, sizeof(*sin));
@@ -208,6 +224,40 @@ int speer_tcp_set_io_timeout(int fd, int timeout_ms) {
     return 0;
 }
 
+int speer_tcp_peek_libp2p_multistream_client_hello(int fd) {
+    uint8_t buf[64];
+#if defined(_WIN32)
+    int n = recv(fd, (char *)buf, (int)sizeof(buf), MSG_PEEK);
+    if (n == SOCKET_ERROR) {
+        int e = WSAGetLastError();
+        if (e == WSAEWOULDBLOCK || e == WSAETIMEDOUT) return -1;
+        return 0;
+    }
+#else
+    ssize_t n = recv(fd, (void *)buf, sizeof(buf), MSG_PEEK);
+    if (n < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR || errno == ETIMEDOUT)
+            return -1;
+        return 0;
+    }
+#endif
+    if (n == 0) return 0;
+
+    uint64_t plen = 0;
+    size_t vlen = speer_uvarint_decode(buf, (size_t)n, &plen);
+    const size_t proto_line = strlen(MULTISTREAM_PROTO) + 1;
+
+    if (vlen == 0) {
+        if ((size_t)n < 10) return -1;
+        return 0;
+    }
+    if (plen != proto_line) return 0;
+    if ((size_t)n < vlen + (size_t)plen) return -1;
+    if (memcmp(buf + vlen, MULTISTREAM_PROTO, strlen(MULTISTREAM_PROTO)) != 0) return 0;
+    if (buf[vlen + strlen(MULTISTREAM_PROTO)] != '\n') return 0;
+    return 1;
+}
+
 int speer_tcp_dial_timeout(int *out_fd, const char *host, uint16_t port, int connect_ms) {
     if (connect_ms <= 0) return speer_tcp_dial(out_fd, host, port);
     SPEER_INIT_WINSOCK();
@@ -235,6 +285,12 @@ int speer_tcp_dial_timeout(int *out_fd, const char *host, uint16_t port, int con
             CLOSESOCKET(fd);
             return -1;
         }
+#if !defined(_WIN32)
+        if (fd < 0 || fd >= FD_SETSIZE) {
+            CLOSESOCKET(fd);
+            return -1;
+        }
+#endif
         fd_set wset, eset;
         FD_ZERO(&wset);
         FD_ZERO(&eset);
@@ -262,15 +318,6 @@ int speer_tcp_dial_timeout(int *out_fd, const char *host, uint16_t port, int con
     if (out_fd) *out_fd = fd;
     return 0;
 }
-
-struct speer_transport_endpoint_s {
-    int listen_fd;
-};
-
-struct speer_transport_conn_s {
-    int fd;
-    char peer_addr[64];
-};
 
 static int tcp_listen_op(speer_transport_endpoint_t **out_ep, const char *addr, void *cfg) {
     (void)cfg;

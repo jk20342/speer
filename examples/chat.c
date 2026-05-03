@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 
 #include <string.h>
 
@@ -100,9 +101,17 @@ int main(int argc, char **argv) {
         }
 
         uint8_t peer_pk[32];
-        for (int i = 0; i < 32 && i * 2 < (int)strlen(argv[1]); i++) {
+        size_t hex_len = strlen(argv[1]);
+        if (hex_len != 64) {
+            fprintf(stderr, "error: peer public key must be 64 hex chars\n");
+            return 1;
+        }
+        for (int i = 0; i < 32; i++) {
             unsigned int byte;
-            sscanf(argv[1] + i * 2, "%2x", &byte);
+            if (sscanf(argv[1] + i * 2, "%2x", &byte) != 1) {
+                fprintf(stderr, "error: invalid hex in peer public key\n");
+                return 1;
+            }
             peer_pk[i] = (uint8_t)byte;
         }
 

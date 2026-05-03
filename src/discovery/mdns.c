@@ -341,7 +341,6 @@ static int mdns_enum_local_ipv4(uint32_t *out, int cap) {
 int mdns_query(mdns_ctx_t *ctx, const char *service_name) {
     uint8_t pkt[256];
     size_t pos = 0;
-    if (pos + 12 > sizeof(pkt)) return -1;
     memset(pkt, 0, 12);
     STORE16_BE(pkt + 4, 1);
     pos += 12;
