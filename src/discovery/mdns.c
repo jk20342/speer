@@ -405,16 +405,16 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
     }
 
     /* srv record: required by libp2p mdns spec; target = <instance>.local */
-    char host_label[MDNS_MAX_NAME_LENGTH];
+    char hostname_fqdn[MDNS_MAX_NAME_LENGTH];
     {
         const char *dot = strchr(svc->instance_name, '.');
         size_t hlen = dot ? (size_t)(dot - svc->instance_name) : strlen(svc->instance_name);
-        if (hlen >= sizeof(host_label)) hlen = sizeof(host_label) - 1;
-        memcpy(host_label, svc->instance_name, hlen);
-        host_label[hlen] = 0;
+        /* leave room for ".local\0" (7 bytes) */
+        size_t hmax = sizeof(hostname_fqdn) - 7;
+        if (hlen > hmax) hlen = hmax;
+        memcpy(hostname_fqdn, svc->instance_name, hlen);
+        memcpy(hostname_fqdn + hlen, ".local", 7);
     }
-    char hostname_fqdn[MDNS_MAX_NAME_LENGTH];
-    snprintf(hostname_fqdn, sizeof(hostname_fqdn), "%s.local", host_label);
 
     if (peer_name_offset <= 0x3FFF) {
         if (pos + 2 > max) return -1;
