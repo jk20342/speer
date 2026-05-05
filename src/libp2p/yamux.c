@@ -193,7 +193,6 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
     if (speer_yamux_hdr_unpack(&h, hbuf) != 0) return -1;
 
     if (h.type == YAMUX_TYPE_DATA) {
-        if (h.length > YAMUX_INITIAL_WINDOW) return -1;
         speer_yamux_stream_t *st = find_stream(s, h.stream_id);
         if (!st && (h.flags & YAMUX_FLAG_SYN)) {
             st = alloc_stream(s, h.stream_id);
@@ -202,7 +201,20 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
                 return -1;
             }
         }
-        if (h.length > 0 && st) {
+        /* data for unknown stream without syn is a protocol error; drain then fail */
+        if (!st) {
+            if (h.length > 0) {
+                uint8_t *tmp = (uint8_t *)malloc(h.length);
+                if (!tmp) return -1;
+                if (s->recv_raw(s->user, tmp, h.length, &got) != 0 || got != h.length) {
+                    free(tmp);
+                    return -1;
+                }
+                free(tmp);
+            }
+            return -1;
+        }
+        if (h.length > 0) {
             if (h.length > st->recv_window) return -1;
             uint8_t *tmp = (uint8_t *)malloc(h.length);
             if (!tmp) return -1;
@@ -220,17 +232,9 @@ int speer_yamux_pump(speer_yamux_session_t *s) {
                 speer_yamux_send_window_update(s, st, YAMUX_INITIAL_WINDOW - st->recv_window);
                 st->recv_window = YAMUX_INITIAL_WINDOW;
             }
-        } else if (h.length > 0) {
-            uint8_t *tmp = (uint8_t *)malloc(h.length);
-            if (!tmp) return -1;
-            if (s->recv_raw(s->user, tmp, h.length, &got) != 0 || got != h.length) {
-                free(tmp);
-                return -1;
-            }
-            free(tmp);
         }
-        if (st && (h.flags & YAMUX_FLAG_FIN)) st->remote_closed = 1;
-        if (st && (h.flags & YAMUX_FLAG_RST)) {
+        if (h.flags & YAMUX_FLAG_FIN) st->remote_closed = 1;
+        if (h.flags & YAMUX_FLAG_RST) {
             st->reset = 1;
             st->remote_closed = 1;
         }

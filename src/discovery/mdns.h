@@ -63,6 +63,10 @@ typedef struct {
     void (*on_peer_discovered)(void *user, const char *peer_id, const char *multiaddr);
     void *user;
     uint8_t recv_buffer[MDNS_MAX_PACKET_SIZE];
+    /* pending delayed response (rfc6762 6: 20-500ms random delay before replying) */
+    uint8_t pending_resp[MDNS_MAX_PACKET_SIZE];
+    size_t pending_resp_len;
+    uint64_t pending_resp_send_at_ms;
 } mdns_ctx_t;
 
 int mdns_init(mdns_ctx_t *ctx);

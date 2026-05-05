@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include <string.h>
+#include <time.h>
 
 #include "../speer_internal.h"
 #include "../util/ct_helpers.h"
@@ -14,27 +15,35 @@
 #include <arpa/inet.h>
 #endif
 
-static uint8_t g_dht_token_secret[32];
-static int g_dht_token_secret_initialized = 0;
+/* two-epoch token rotation: current and previous secret, rotated every 5 minutes */
+#define DHT_TOKEN_EPOCH_SECS 300
 
-static int dht_token_init_if_needed(void) {
-    if (g_dht_token_secret_initialized) return 0;
-    if (speer_random_bytes_or_fail(g_dht_token_secret, sizeof(g_dht_token_secret)) != 0) {
-        return -1;
+static uint8_t g_dht_token_cur[32];
+static uint8_t g_dht_token_prev[32];
+static int g_dht_token_initialized = 0;
+static time_t g_dht_token_epoch = -1;
+
+static int dht_token_refresh(void) {
+    time_t epoch = time(NULL) / DHT_TOKEN_EPOCH_SECS;
+    if (g_dht_token_initialized && epoch == g_dht_token_epoch) return 0;
+    if (g_dht_token_initialized) {
+        COPY(g_dht_token_prev, g_dht_token_cur, 32);
+    } else {
+        if (speer_random_bytes_or_fail(g_dht_token_prev, 32) != 0) return -1;
     }
-    g_dht_token_secret_initialized = 1;
+    if (speer_random_bytes_or_fail(g_dht_token_cur, 32) != 0) return -1;
+    g_dht_token_epoch = epoch;
+    g_dht_token_initialized = 1;
     return 0;
 }
 
-int dht_compute_store_token(dht_t *dht, const char *sender_addr, uint8_t token[16]) {
-    (void)dht;
-    if (!sender_addr || !token) return -1;
-    if (dht_token_init_if_needed() != 0) return -1;
+static int compute_token_with_secret(const uint8_t secret[32], const char *sender_addr,
+                                     uint8_t token[16]) {
     uint8_t k_ipad[64], k_opad[64];
     ZERO(k_ipad, sizeof(k_ipad));
     ZERO(k_opad, sizeof(k_opad));
-    COPY(k_ipad, g_dht_token_secret, sizeof(g_dht_token_secret));
-    COPY(k_opad, g_dht_token_secret, sizeof(g_dht_token_secret));
+    COPY(k_ipad, secret, 32);
+    COPY(k_opad, secret, 32);
     for (size_t i = 0; i < sizeof(k_ipad); i++) {
         k_ipad[i] ^= 0x36;
         k_opad[i] ^= 0x5c;
@@ -57,9 +66,21 @@ int dht_compute_store_token(dht_t *dht, const char *sender_addr, uint8_t token[1
     return 0;
 }
 
+int dht_compute_store_token(dht_t *dht, const char *sender_addr, uint8_t token[16]) {
+    (void)dht;
+    if (!sender_addr || !token) return -1;
+    if (dht_token_refresh() != 0) return -1;
+    return compute_token_with_secret(g_dht_token_cur, sender_addr, token);
+}
+
 int dht_verify_store_token(dht_t *dht, const char *sender_addr, const uint8_t token[16]) {
     uint8_t expect[16];
+    /* try current epoch */
     if (dht_compute_store_token(dht, sender_addr, expect) != 0) return -1;
+    if (speer_ct_memeq(expect, token, 16)) return 0;
+    /* try previous epoch to allow tokens issued just before rotation */
+    if (!g_dht_token_initialized) return -1;
+    if (compute_token_with_secret(g_dht_token_prev, sender_addr, expect) != 0) return -1;
     return speer_ct_memeq(expect, token, 16) ? 0 : -1;
 }
 
@@ -119,11 +140,15 @@ void dht_free(dht_t *dht) {
     dht->total_nodes = 0;
 }
 
+/* only split the bucket whose address range contains our own node id (kademlia §2.2):
+ * remote-only buckets that are full simply reject new nodes */
 static dht_bucket_t *find_bucket(dht_bucket_t *root, const uint8_t *our_id, const uint8_t *node_id,
                                  int depth) {
-    (void)our_id;
     if (!root->left && !root->right) {
-        if (root->node_count < DHT_K || depth >= DHT_MAX_BUCKETS) { return root; }
+        if (root->node_count < DHT_K || depth >= DHT_MAX_BUCKETS) return root;
+        int our_bit = (our_id[depth / 8] >> (7 - (depth % 8))) & 1;
+        int node_bit = (node_id[depth / 8] >> (7 - (depth % 8))) & 1;
+        if (our_bit != node_bit) return root;
         root->left = bucket_new();
         root->right = bucket_new();
         if (!root->left || !root->right) {
@@ -511,10 +536,23 @@ void dht_refresh_buckets(dht_t *dht, uint64_t now_ms) {
     if (!dht) return;
     dht_node_t nodes[DHT_K * 4];
     int count = dht_get_closest_nodes(dht, dht->id, nodes, DHT_K * 4);
+    int removed = 0;
     for (int i = 0; i < count; i++) {
         if (nodes[i].last_seen_ms > 0 && now_ms > nodes[i].last_seen_ms + DHT_REFRESH_INTERVAL_MS) {
-            dht_remove_node(dht, nodes[i].id);
+            /* ping stale node; only evict on failure (kademlia §2.1) */
+            if (dht_ping(dht, nodes[i].address) != 0) {
+                dht_remove_node(dht, nodes[i].id);
+                removed++;
+            }
         }
+    }
+    /* repopulate emptied buckets with a random lookup in our id vicinity */
+    if (removed > 0 && dht->send_rpc) {
+        uint8_t rand_id[DHT_ID_BYTES];
+        COPY(rand_id, dht->id, DHT_ID_BYTES);
+        speer_random_bytes_or_fail(rand_id + DHT_ID_BYTES - 4, 4);
+        dht_node_t result[DHT_K];
+        dht_iterative_find_node(dht, rand_id, result, DHT_K);
     }
 }
 
@@ -541,19 +579,38 @@ int dht_find_value(dht_t *dht, const uint8_t *key) {
     return dht_iterative_find_value(dht, key, value, &value_len);
 }
 
+int dht_handle_get_token(dht_t *dht, const char *sender_addr, uint8_t *response,
+                         size_t *response_len) {
+    if (!dht || !sender_addr || !response || !response_len) return -1;
+    if (*response_len < 16) return -1;
+    if (dht_compute_store_token(dht, sender_addr, response) != 0) return -1;
+    *response_len = 16;
+    return 0;
+}
+
 int dht_store(dht_t *dht, const uint8_t *key, const uint8_t *value, size_t value_len) {
     if (dht_handle_store(dht, key, value, value_len, dht->id) != 0) return -1;
     if (!dht->send_rpc) return 0;
+    if (value_len > DHT_VALUE_MAX_SIZE) return -1;
     dht_node_t nodes[DHT_K];
     int n = dht_get_closest_nodes(dht, key, nodes, DHT_K);
-    uint8_t req[DHT_ID_BYTES + DHT_VALUE_MAX_SIZE];
-    COPY(req, key, DHT_ID_BYTES);
-    COPY(req + DHT_ID_BYTES, value, value_len);
     for (int i = 0; i < n; i++) {
+        /* obtain a store token from the remote node before sending the value */
+        uint8_t token[16];
+        size_t tok_len = sizeof(token);
+        if (dht->send_rpc(dht->user, nodes[i].address, DHT_RPC_GET_TOKEN, dht->id, DHT_ID_BYTES,
+                          token, &tok_len) != 0 ||
+            tok_len != 16)
+            continue;
+        /* wire format: token(16) | key(32) | value */
+        uint8_t req[16 + DHT_ID_BYTES + DHT_VALUE_MAX_SIZE];
+        COPY(req, token, 16);
+        COPY(req + 16, key, DHT_ID_BYTES);
+        COPY(req + 16 + DHT_ID_BYTES, value, value_len);
         uint8_t resp[1];
         size_t resp_len = sizeof(resp);
-        dht->send_rpc(dht->user, nodes[i].address, DHT_RPC_STORE, req, DHT_ID_BYTES + value_len,
-                      resp, &resp_len);
+        dht->send_rpc(dht->user, nodes[i].address, DHT_RPC_STORE, req,
+                      16 + DHT_ID_BYTES + value_len, resp, &resp_len);
     }
     return 0;
 }

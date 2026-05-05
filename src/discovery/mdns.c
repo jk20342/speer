@@ -14,10 +14,32 @@
 #if defined(_WIN32)
 #include <iphlpapi.h>
 #include <winerror.h>
+#include <ws2tcpip.h>
 #else
+#include <sys/select.h>
+#include <netinet/in.h>
+
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <time.h>
 #endif
+
+static uint64_t mdns_now_ms(void) {
+#if defined(_WIN32)
+    return GetTickCount64();
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+#endif
+}
+
+static uint32_t mdns_random_delay_ms(void) {
+    uint8_t b[2];
+    if (speer_random_bytes_or_fail(b, 2) != 0) return 200;
+    uint32_t r = ((uint32_t)b[0] << 8) | b[1];
+    return 20u + (r % 480u);
+}
 
 static int mdns_strcasecmp(const char *a, const char *b) {
     while (*a && *b) {
@@ -152,7 +174,7 @@ static size_t decode_name(const uint8_t *pkt, size_t pkt_len, size_t offset, cha
                 jump_target = offset + 2;
                 jumped = 1;
             }
-            if (new_offset >= offset) return 0;
+            /* depth limit alone prevents loops; forward pointers are valid per rfc1035 §4.1.4 */
             offset = new_offset;
             continue;
         }
@@ -205,7 +227,45 @@ int mdns_init(mdns_ctx_t *ctx) {
         ctx->socket_ipv4 = -1;
         return -1;
     }
-    ctx->socket_ipv6 = -1;
+
+    /* ipv6 socket: join ff02::fb on all interfaces */
+    ctx->socket_ipv6 = (int)socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (ctx->socket_ipv6 >= 0) {
+        setsockopt(ctx->socket_ipv6, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse));
+#ifdef SO_REUSEPORT
+        setsockopt(ctx->socket_ipv6, SOL_SOCKET, SO_REUSEPORT, (const char *)&reuse, sizeof(reuse));
+#endif
+        int v6only = 1;
+        setsockopt(ctx->socket_ipv6, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&v6only,
+                   sizeof(v6only));
+        struct ipv6_mreq mreq6;
+        memset(&mreq6, 0, sizeof(mreq6));
+        mreq6.ipv6mr_interface = 0;
+#if defined(_WIN32)
+        if (InetPtonW(AF_INET6, L"ff02::fb", &mreq6.ipv6mr_multiaddr) != 1) {
+            CLOSESOCKET(ctx->socket_ipv6);
+            ctx->socket_ipv6 = -1;
+        }
+#else
+        if (inet_pton(AF_INET6, MDNS_MULTICAST_ADDR_IPV6, &mreq6.ipv6mr_multiaddr) != 1) {
+            CLOSESOCKET(ctx->socket_ipv6);
+            ctx->socket_ipv6 = -1;
+        }
+#endif
+        if (ctx->socket_ipv6 >= 0) {
+            setsockopt(ctx->socket_ipv6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char *)&mreq6,
+                       sizeof(mreq6));
+            struct sockaddr_in6 sin6;
+            memset(&sin6, 0, sizeof(sin6));
+            sin6.sin6_family = AF_INET6;
+            sin6.sin6_port = htons(MDNS_PORT);
+            if (bind(ctx->socket_ipv6, (struct sockaddr *)&sin6, sizeof(sin6)) < 0 ||
+                speer_fd_set_nonblocking(ctx->socket_ipv6, 1) != 0) {
+                CLOSESOCKET(ctx->socket_ipv6);
+                ctx->socket_ipv6 = -1;
+            }
+        }
+    }
     return 0;
 }
 
@@ -302,6 +362,8 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
         return -1;
     STORE16_BE(out + ptr_rdlen_pos, (uint16_t)(pos - ptr_rdata_start));
 
+    uint16_t add_count = txt_count;
+
     for (uint32_t i = 0; i < txt_count; i++) {
         if (peer_name_offset <= 0x3FFF) {
             if (pos + 2 > max) return -1;
@@ -341,6 +403,83 @@ int mdns_build_announcement(uint8_t *out, size_t *out_len, const mdns_service_t 
         }
         STORE16_BE(out + txt_rdlen_pos, (uint16_t)(pos - txt_rdata_start));
     }
+
+    /* srv record: required by libp2p mdns spec; target = <instance>.local */
+    char host_label[MDNS_MAX_NAME_LENGTH];
+    {
+        const char *dot = strchr(svc->instance_name, '.');
+        size_t hlen = dot ? (size_t)(dot - svc->instance_name) : strlen(svc->instance_name);
+        if (hlen >= sizeof(host_label)) hlen = sizeof(host_label) - 1;
+        memcpy(host_label, svc->instance_name, hlen);
+        host_label[hlen] = 0;
+    }
+    char hostname_fqdn[MDNS_MAX_NAME_LENGTH];
+    snprintf(hostname_fqdn, sizeof(hostname_fqdn), "%s.local", host_label);
+
+    if (peer_name_offset <= 0x3FFF) {
+        if (pos + 2 > max) return -1;
+        out[pos++] = (uint8_t)(0xC0 | (peer_name_offset >> 8));
+        out[pos++] = (uint8_t)(peer_name_offset & 0xFF);
+    } else {
+        if (append_name(out, &pos, max, svc->instance_name) != 0) return -1;
+    }
+    if (pos + 10 > max) return -1;
+    STORE16_BE(out + pos, MDNS_TYPE_SRV);
+    pos += 2;
+    STORE16_BE(out + pos, DNS_CLASS_FLUSH_CACHE);
+    pos += 2;
+    STORE32_BE(out + pos, svc->ttl);
+    pos += 4;
+    size_t srv_rdlen_pos = pos;
+    pos += 2;
+    size_t srv_rdata_start = pos;
+    if (pos + 6 > max) return -1;
+    STORE16_BE(out + pos, 0);
+    pos += 2; /* priority */
+    STORE16_BE(out + pos, 0);
+    pos += 2; /* weight */
+    STORE16_BE(out + pos, svc->srv.port);
+    pos += 2;
+    if (append_name(out, &pos, max, hostname_fqdn) != 0) return -1;
+    STORE16_BE(out + srv_rdlen_pos, (uint16_t)(pos - srv_rdata_start));
+    add_count++;
+
+    /* a record */
+    if (svc->has_ipv4) {
+        if (append_name(out, &pos, max, hostname_fqdn) != 0) return -1;
+        if (pos + 10 + 4 > max) return -1;
+        STORE16_BE(out + pos, MDNS_TYPE_A);
+        pos += 2;
+        STORE16_BE(out + pos, DNS_CLASS_FLUSH_CACHE);
+        pos += 2;
+        STORE32_BE(out + pos, svc->ttl);
+        pos += 4;
+        STORE16_BE(out + pos, 4);
+        pos += 2;
+        memcpy(out + pos, svc->ipv4, 4);
+        pos += 4;
+        add_count++;
+    }
+
+    /* aaaa record */
+    if (svc->has_ipv6) {
+        if (append_name(out, &pos, max, hostname_fqdn) != 0) return -1;
+        if (pos + 10 + 16 > max) return -1;
+        STORE16_BE(out + pos, MDNS_TYPE_AAAA);
+        pos += 2;
+        STORE16_BE(out + pos, DNS_CLASS_FLUSH_CACHE);
+        pos += 2;
+        STORE32_BE(out + pos, svc->ttl);
+        pos += 4;
+        STORE16_BE(out + pos, 16);
+        pos += 2;
+        memcpy(out + pos, svc->ipv6, 16);
+        pos += 16;
+        add_count++;
+    }
+
+    /* patch additional count now that we know the total */
+    STORE16_BE(out + 10, add_count);
 
     *out_len = pos;
     return 0;
@@ -493,55 +632,133 @@ static void mdns_handle_query(mdns_ctx_t *ctx, const uint8_t *data, size_t len,
         }
     }
     if (!matched_any) return;
-    uint8_t packet[MDNS_MAX_PACKET_SIZE];
-    for (uint32_t i = 0; i < ctx->num_services; i++) {
-        size_t plen = sizeof(packet);
-        if (mdns_build_announcement(packet, &plen, &ctx->services[i]) != 0) continue;
-        struct sockaddr_in dest;
-        memset(&dest, 0, sizeof(dest));
-        dest.sin_family = AF_INET;
-        dest.sin_port = htons(MDNS_PORT);
-        dest.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR_IPV4);
-        sendto(ctx->socket_ipv4, (const char *)packet, (int)plen, 0, (struct sockaddr *)&dest,
-               sizeof(dest));
-        if (from && from->sin_addr.s_addr != 0) {
-            sendto(ctx->socket_ipv4, (const char *)packet, (int)plen, 0,
-                   (const struct sockaddr *)from, sizeof(*from));
+    /* rfc6762 §6: wait a random 20-500ms before responding to avoid collisions */
+    if (ctx->pending_resp_len == 0) {
+        /* only queue one pending response; drop if already waiting */
+        size_t plen = sizeof(ctx->pending_resp);
+        for (uint32_t i = 0; i < ctx->num_services && plen > 0; i++) {
+            plen = sizeof(ctx->pending_resp);
+            if (mdns_build_announcement(ctx->pending_resp, &plen, &ctx->services[i]) == 0) {
+                ctx->pending_resp_len = plen;
+                break;
+            }
+        }
+        if (ctx->pending_resp_len > 0) {
+            ctx->pending_resp_send_at_ms = mdns_now_ms() + mdns_random_delay_ms();
         }
     }
+    (void)from;
 }
 
 int mdns_poll(mdns_ctx_t *ctx, int timeout_ms) {
-    (void)timeout_ms;
-    struct sockaddr_in from;
-    socklen_t from_len = sizeof(from);
-    int received = 0;
-    while (1) {
-        int n = recvfrom(ctx->socket_ipv4, (char *)ctx->recv_buffer, MDNS_MAX_PACKET_SIZE, 0,
-                         (struct sockaddr *)&from, &from_len);
-        if (n < 0) {
+    if (ctx->socket_ipv4 >= 0 && timeout_ms > 0) {
 #if defined(_WIN32)
-            if (WSAGetLastError() == WSAEWOULDBLOCK) break;
+        fd_set rfds;
+        SOCKET s4 = (SOCKET)ctx->socket_ipv4;
+        FD_ZERO(&rfds);
+        FD_SET(s4, &rfds);
+        if (ctx->socket_ipv6 >= 0) {
+            SOCKET s6 = (SOCKET)ctx->socket_ipv6;
+            FD_SET(s6, &rfds);
+        }
+        struct timeval tv;
+        tv.tv_sec = (long)(timeout_ms / 1000);
+        tv.tv_usec = (long)((timeout_ms % 1000) * 1000);
+        select(0, &rfds, NULL, NULL, &tv);
 #else
-            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(ctx->socket_ipv4, &rfds);
+        int nfds = ctx->socket_ipv4 + 1;
+        if (ctx->socket_ipv6 >= 0) {
+            FD_SET(ctx->socket_ipv6, &rfds);
+            if (ctx->socket_ipv6 + 1 > nfds) nfds = ctx->socket_ipv6 + 1;
+        }
+        struct timeval tv;
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        select(nfds, &rfds, NULL, NULL, &tv);
 #endif
-            break;
+    }
+
+    /* flush pending delayed response if timer has elapsed */
+    if (ctx->pending_resp_len > 0) {
+        uint64_t now = mdns_now_ms();
+        if (now >= ctx->pending_resp_send_at_ms) {
+            struct sockaddr_in dest;
+            memset(&dest, 0, sizeof(dest));
+            dest.sin_family = AF_INET;
+            dest.sin_port = htons(MDNS_PORT);
+            dest.sin_addr.s_addr = inet_addr(MDNS_MULTICAST_ADDR_IPV4);
+            sendto(ctx->socket_ipv4, (const char *)ctx->pending_resp, (int)ctx->pending_resp_len, 0,
+                   (struct sockaddr *)&dest, sizeof(dest));
+            ctx->pending_resp_len = 0;
+            ctx->pending_resp_send_at_ms = 0;
         }
-        if (n < 12) continue;
-        uint16_t flags = LOAD16_BE(ctx->recv_buffer + 2);
-        uint16_t qcount = LOAD16_BE(ctx->recv_buffer + 4);
-        if ((flags & 0x8000) == 0 && qcount > 0) {
-            mdns_handle_query(ctx, ctx->recv_buffer, (size_t)n, &from);
-        }
-        char peer_id[128];
-        char multiaddr[256];
-        if (mdns_parse_packet(ctx, ctx->recv_buffer, (size_t)n, peer_id, sizeof(peer_id), multiaddr,
-                              sizeof(multiaddr), from.sin_addr.s_addr) == 0) {
-            if (ctx->on_peer_discovered && peer_id[0]) {
-                ctx->on_peer_discovered(ctx->user, peer_id, multiaddr);
+    }
+
+    int received = 0;
+    /* receive on ipv4 socket */
+    {
+        struct sockaddr_in from;
+        socklen_t from_len = sizeof(from);
+        while (1) {
+            int n = recvfrom(ctx->socket_ipv4, (char *)ctx->recv_buffer, MDNS_MAX_PACKET_SIZE, 0,
+                             (struct sockaddr *)&from, &from_len);
+            if (n < 0) {
+#if defined(_WIN32)
+                if (WSAGetLastError() == WSAEWOULDBLOCK) break;
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+#endif
+                break;
             }
+            if (n < 12) continue;
+            uint16_t flags = LOAD16_BE(ctx->recv_buffer + 2);
+            uint16_t qcount = LOAD16_BE(ctx->recv_buffer + 4);
+            if ((flags & 0x8000) == 0 && qcount > 0) {
+                mdns_handle_query(ctx, ctx->recv_buffer, (size_t)n, &from);
+            }
+            char peer_id[128];
+            char multiaddr[256];
+            if (mdns_parse_packet(ctx, ctx->recv_buffer, (size_t)n, peer_id, sizeof(peer_id),
+                                  multiaddr, sizeof(multiaddr), from.sin_addr.s_addr) == 0) {
+                if (ctx->on_peer_discovered && peer_id[0])
+                    ctx->on_peer_discovered(ctx->user, peer_id, multiaddr);
+            }
+            received++;
         }
-        received++;
+    }
+    /* receive on ipv6 socket */
+    if (ctx->socket_ipv6 >= 0) {
+        struct sockaddr_in6 from6;
+        socklen_t from6_len = sizeof(from6);
+        while (1) {
+            int n = recvfrom(ctx->socket_ipv6, (char *)ctx->recv_buffer, MDNS_MAX_PACKET_SIZE, 0,
+                             (struct sockaddr *)&from6, &from6_len);
+            if (n < 0) {
+#if defined(_WIN32)
+                if (WSAGetLastError() == WSAEWOULDBLOCK) break;
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+#endif
+                break;
+            }
+            if (n < 12) continue;
+            uint16_t flags = LOAD16_BE(ctx->recv_buffer + 2);
+            uint16_t qcount = LOAD16_BE(ctx->recv_buffer + 4);
+            if ((flags & 0x8000) == 0 && qcount > 0) {
+                mdns_handle_query(ctx, ctx->recv_buffer, (size_t)n, NULL);
+            }
+            char peer_id[128];
+            char multiaddr[256];
+            if (mdns_parse_packet(ctx, ctx->recv_buffer, (size_t)n, peer_id, sizeof(peer_id),
+                                  multiaddr, sizeof(multiaddr), 0) == 0) {
+                if (ctx->on_peer_discovered && peer_id[0])
+                    ctx->on_peer_discovered(ctx->user, peer_id, multiaddr);
+            }
+            received++;
+        }
     }
     return received;
 }
@@ -648,16 +865,22 @@ int mdns_parse_packet(mdns_ctx_t *ctx, const uint8_t *data, size_t len, char *ou
         }
         pos += rdlen;
     }
-    if (txt_peer_id[0] && txt_dnsaddr[0]) {
+    /* succeed if we got either dnsaddr (preferred, contains embedded peer id) or a bare id= */
+    if (txt_peer_id[0]) {
         size_t id_len = strlen(txt_peer_id);
-        size_t addr_len = strlen(txt_dnsaddr);
         if (id_len < peer_id_cap) memcpy(out_peer_id, txt_peer_id, id_len + 1);
-        if (addr_len < multiaddr_cap) memcpy(out_multiaddr, txt_dnsaddr, addr_len + 1);
+        if (txt_dnsaddr[0]) {
+            size_t addr_len = strlen(txt_dnsaddr);
+            if (addr_len < multiaddr_cap) memcpy(out_multiaddr, txt_dnsaddr, addr_len + 1);
+        } else if (sender_ipv4_s_addr != 0 && port != 0) {
+            /* synthesize a multiaddr from the sender's address */
+            uint32_t a = ntohl(sender_ipv4_s_addr);
+            snprintf(out_multiaddr, multiaddr_cap, "/ip4/%u.%u.%u.%u/tcp/%u", (a >> 24) & 0xff,
+                     (a >> 16) & 0xff, (a >> 8) & 0xff, a & 0xff, port);
+        }
         return 0;
     }
-    (void)port;
     (void)service_name;
-    (void)sender_ipv4_s_addr;
     return -1;
 }
 
@@ -670,8 +893,24 @@ void mdns_set_discovery_callback(mdns_ctx_t *ctx,
 }
 
 int mdns_build_libp2p_service_name(char *out, size_t cap, const uint8_t *peer_id) {
-    (void)peer_id;
     if (cap == 0) return -1;
+    if (peer_id) {
+        /* private network: service name includes base-16 fingerprint of the network key
+         * (first 8 bytes of sha256(peer_id)) per libp2p mdns private-network spec */
+        uint8_t digest[32];
+        sha256_ctx_t ctx;
+        speer_sha256_init(&ctx);
+        speer_sha256_update(&ctx, peer_id, 32);
+        speer_sha256_final(&ctx, digest);
+        char fp[17];
+        for (int i = 0; i < 8; i++) {
+            fp[i * 2] = "0123456789abcdef"[digest[i] >> 4];
+            fp[i * 2 + 1] = "0123456789abcdef"[digest[i] & 0xf];
+        }
+        fp[16] = 0;
+        int n = snprintf(out, cap, "_%s._p2p._udp.local", fp);
+        return (n >= 0 && (size_t)n < cap) ? 0 : -1;
+    }
     int n = snprintf(out, cap, "_p2p._udp.local");
     return (n >= 0 && (size_t)n < cap) ? 0 : -1;
 }

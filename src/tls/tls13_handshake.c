@@ -358,9 +358,8 @@ static int parse_server_hello(speer_tls13_t *h, const uint8_t *body, size_t body
             uint16_t selected = ((uint16_t)ext_data[0] << 8) | ext_data[1];
             if (selected != 0x0304) return -1;
             got_supported_versions = 1;
-        } else {
-            return -1;
         }
+        /* ignore unrecognized extensions per rfc8446 §4.2 */
     }
     if (er.pos != er.len) return -1;
     if (!got_keyshare || !got_supported_versions) return -1;
@@ -673,7 +672,6 @@ static int parse_client_hello(speer_tls13_t *h, const uint8_t *body, size_t body
 
     int got_supported_versions = 0;
     int got_keyshare = 0;
-    int got_ed25519_sigalg = 0;
     int got_x25519_group = 0;
     uint64_t seen = 0;
     speer_tls_reader_t er;
@@ -731,8 +729,6 @@ static int parse_client_hello(speer_tls13_t *h, const uint8_t *body, size_t body
                                sizeof(h->offered_sigalgs) / sizeof(h->offered_sigalgs[0]),
                                &h->offered_sigalgs_len) != 0)
                 return -1;
-            got_ed25519_sigalg = u16_in_list(TLS_SIGSCHEME_ED25519, h->offered_sigalgs,
-                                             h->offered_sigalgs_len);
         } else if (ext == TLS_EXT_SERVER_NAME) {
             speer_tls_reader_t snr;
             speer_tls_reader_init(&snr, ext_data, ext_data_len);
@@ -753,7 +749,7 @@ static int parse_client_hello(speer_tls13_t *h, const uint8_t *body, size_t body
         }
     }
     if (er.pos != er.len) return -1;
-    if (!got_supported_versions || !got_ed25519_sigalg) return -1;
+    if (!got_supported_versions) return -1;
 
     h->cipher_suite = selected_suite;
     if (speer_tls13_init(&h->ks, h->cipher_suite, h->psk_len ? h->psk : NULL, h->psk_len) != 0)

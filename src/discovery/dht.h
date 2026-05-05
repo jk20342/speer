@@ -20,6 +20,7 @@
 #define DHT_RPC_FIND_NODE         0x03
 #define DHT_RPC_FIND_VALUE        0x04
 #define DHT_RPC_ANNOUNCE          0x05
+#define DHT_RPC_GET_TOKEN         0x06
 
 #define DHT_VALUE_MAX_SIZE        1024
 #define DHT_MAX_STORED_VALUES     256
@@ -90,6 +91,8 @@ int dht_handle_store(dht_t *dht, const uint8_t *key, const uint8_t *value, size_
 
 int dht_compute_store_token(dht_t *dht, const char *sender_addr, uint8_t token[16]);
 int dht_verify_store_token(dht_t *dht, const char *sender_addr, const uint8_t token[16]);
+int dht_handle_get_token(dht_t *dht, const char *sender_addr, uint8_t *response,
+                         size_t *response_len);
 int dht_handle_store_with_token(dht_t *dht, const char *sender_addr, const uint8_t token[16],
                                 const uint8_t *key, const uint8_t *value, size_t value_len,
                                 const uint8_t *publisher_id);
