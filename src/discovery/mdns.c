@@ -893,24 +893,8 @@ void mdns_set_discovery_callback(mdns_ctx_t *ctx,
 }
 
 int mdns_build_libp2p_service_name(char *out, size_t cap, const uint8_t *peer_id) {
+    (void)peer_id;
     if (cap == 0) return -1;
-    if (peer_id) {
-        /* private network: service name includes base-16 fingerprint of the network key
-         * (first 8 bytes of sha256(peer_id)) per libp2p mdns private-network spec */
-        uint8_t digest[32];
-        sha256_ctx_t ctx;
-        speer_sha256_init(&ctx);
-        speer_sha256_update(&ctx, peer_id, 32);
-        speer_sha256_final(&ctx, digest);
-        char fp[17];
-        for (int i = 0; i < 8; i++) {
-            fp[i * 2] = "0123456789abcdef"[digest[i] >> 4];
-            fp[i * 2 + 1] = "0123456789abcdef"[digest[i] & 0xf];
-        }
-        fp[16] = 0;
-        int n = snprintf(out, cap, "_%s._p2p._udp.local", fp);
-        return (n >= 0 && (size_t)n < cap) ? 0 : -1;
-    }
     int n = snprintf(out, cap, "_p2p._udp.local");
     return (n >= 0 && (size_t)n < cap) ? 0 : -1;
 }
